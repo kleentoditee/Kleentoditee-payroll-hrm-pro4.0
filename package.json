@@ -1,0 +1,31 @@
+{
+  "name": "kleentoditee-platform",
+  "private": true,
+  "packageManager": "npm@11.11.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "db:generate": "npm run generate --workspace @kleentoditee/db",
+    "db:push": "npm run push --workspace @kleentoditee/db",
+    "db:seed": "npm run seed --workspace @kleentoditee/db",
+    "db:studio": "npm run studio --workspace @kleentoditee/db",
+    "db:sync": "npm run db:generate && npm run db:push",
+    "boot": "npm run db:sync && npm run dev:all",
+    "dev": "npm run dev --workspace admin-web",
+    "dev:admin": "npm run dev --workspace admin-web",
+    "dev:tracker": "npm run dev --workspace employee-tracker",
+    "dev:api": "npm run dev --workspace api",
+    "dev:all": "npm exec concurrently -- -k -n api,admin -c cyan,magenta \"npm run dev:api\" \"npm run dev\"",
+    "build": "npm run build --workspace admin-web && npm run build --workspace employee-tracker && npm run build --workspace api",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

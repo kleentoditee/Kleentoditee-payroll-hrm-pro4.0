@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Kleentoditee Payroll Pro icon">
+  <defs>
+    <linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f3a46" />
+      <stop offset="100%" stop-color="#1f6b73" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#g)" />
+  <rect x="44" y="38" width="168" height="180" rx="24" fill="#ffffff" opacity="0.96" />
+  <rect x="70" y="70" width="116" height="14" rx="7" fill="#d7a74d" />
+  <rect x="70" y="102" width="76" height="12" rx="6" fill="#0f3a46" opacity="0.88" />
+  <rect x="70" y="128" width="116" height="12" rx="6" fill="#0f3a46" opacity="0.28" />
+  <rect x="70" y="154" width="90" height="12" rx="6" fill="#0f3a46" opacity="0.62" />
+  <circle cx="182" cy="184" r="26" fill="#d7a74d" />
+  <path d="M182 170v28M168 184h28" stroke="#0f3a46" stroke-width="10" stroke-linecap="round" />
+</svg>

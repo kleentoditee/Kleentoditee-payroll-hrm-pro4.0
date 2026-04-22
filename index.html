@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f3a46">
+  <meta name="description" content="Kleentoditee Payroll Pro - payroll and timesheet management for administrators.">
+  <link rel="manifest" href="./manifest.webmanifest?v=2">
+  <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css?v=2">
+  <title>Kleentoditee Payroll Pro</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-area">
+        <div class="brand-logo">KP</div>
+        <div>
+          <p class="eyebrow">Payroll control center</p>
+          <h1>Kleentoditee Payroll Pro</h1>
+          <p class="subtle">Built for admin staff to enter time quickly, review payroll clearly, and work comfortably on phones or computers.</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <label class="month-card">
+          <span>Payroll month</span>
+          <input id="monthFocus" type="month">
+        </label>
+        <button id="createDraftButton" class="secondary-button" type="button">Create draft month</button>
+        <button id="openEntryButton" class="primary-button" type="button">New timesheet</button>
+        <button id="openEmployeeButton" class="ghost-button" type="button">New employee</button>
+        <button id="installAppButton" class="ghost-button hidden" type="button">Install app</button>
+        <button id="exportBackupButton" class="ghost-button" type="button">Export backup</button>
+        <label class="ghost-button upload-button">
+          <span>Import backup</span>
+          <input id="importDataInput" type="file" accept="application/json" hidden>
+        </label>
+      </div>
+    </header>
+
+    <nav class="main-tabs" aria-label="Primary navigation">
+      <button class="tab-button active" data-view-target="overviewView" type="button">Overview</button>
+      <button class="tab-button" data-view-target="timesheetsView" type="button">Timesheets</button>
+      <button class="tab-button" data-view-target="employeesView" type="button">Employees</button>
+      <button class="tab-button" data-view-target="payrollView" type="button">Payroll</button>
+      <button class="tab-button" data-view-target="historyView" type="button">History</button>
+    </nav>
+
+    <main class="workspace">
+      <section id="overviewView" class="view active">
+        <section class="hero-panel">
+          <div>
+            <p class="eyebrow">Monthly snapshot</p>
+            <h2 id="overviewTitle">Ready for payroll</h2>
+            <p id="overviewSummary" class="hero-copy"></p>
+          </div>
+          <div class="hero-actions">
+            <button id="jumpToTimesheetsButton" class="primary-button" type="button">Open timesheets</button>
+            <button id="jumpToPayrollButton" class="secondary-button" type="button">Open payroll</button>
+          </div>
+        </section>
+
+        <section id="metricGrid" class="metric-grid"></section>
+
+        <div class="overview-grid">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Admin queue</p>
+                <h3>What needs attention</h3>
+              </div>
+            </div>
+            <div id="attentionList" class="stack-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Sites</p>
+                <h3>Cost by location</h3>
+              </div>
+            </div>
+            <div id="siteList" class="stack-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Payroll status</p>
+                <h3>Current run</h3>
+              </div>
+            </div>
+            <div id="runStatusList" class="stack-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="timesheetsView" class="view">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Time entry</p>
+            <h2>Monthly timesheets</h2>
+          </div>
+          <div class="section-tools">
+            <input id="timesheetSearchInput" class="text-input search-input" type="search" placeholder="Search employee or site">
+            <select id="timesheetStatusFilter" class="text-input compact-control">
+              <option value="all">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="submitted">Submitted</option>
+              <option value="approved">Approved</option>
+              <option value="paid">Paid</option>
+            </select>
+            <button id="addTimesheetButton" class="primary-button" type="button">Add timesheet</button>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div id="timesheetList" class="record-list"></div>
+        </section>
+      </section>
+
+      <section id="employeesView" class="view">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Employee master</p>
+            <h2>Employees and pay setup</h2>
+          </div>
+          <div class="section-tools">
+            <input id="employeeSearchInput" class="text-input search-input" type="search" placeholder="Search employee, role or site">
+            <button id="addEmployeeButton" class="primary-button" type="button">Add employee</button>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div id="employeeList" class="record-list"></div>
+        </section>
+      </section>
+
+      <section id="payrollView" class="view">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Payroll run</p>
+            <h2>Review, approve and export payroll</h2>
+          </div>
+          <div class="section-tools">
+            <button id="finalizePayrollButton" class="primary-button" type="button">Finalize run</button>
+            <button id="markPaidButton" class="secondary-button" type="button">Mark paid</button>
+            <button id="downloadCsvButton" class="ghost-button" type="button">Download CSV</button>
+            <button id="printPayrollButton" class="ghost-button" type="button">Print</button>
+          </div>
+        </div>
+
+        <section id="payrollSummary" class="metric-grid compact-grid"></section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Register</p>
+              <h3>Payroll totals by employee</h3>
+            </div>
+          </div>
+          <div id="payrollTableWrap" class="table-wrap"></div>
+        </section>
+      </section>
+
+      <section id="historyView" class="view">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Archive</p>
+            <h2>Payroll history and audit record</h2>
+          </div>
+        </div>
+
+        <div class="history-grid">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Saved runs</p>
+                <h3>Previous payroll periods</h3>
+              </div>
+            </div>
+            <div id="historyRunList" class="record-list compact-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Detail</p>
+                <h3>Selected payroll snapshot</h3>
+              </div>
+            </div>
+            <div id="historyRunDetail" class="history-detail"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden"></div>
+
+  <section id="employeeModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow">Employee editor</p>
+          <h2 id="employeeModalTitle">New employee</h2>
+        </div>
+        <button class="icon-button" data-close-modal="employeeModal" type="button" aria-label="Close employee editor">×</button>
+      </header>
+
+      <form id="employeeForm" class="modal-form">
+        <input id="employeeId" type="hidden">
+
+        <div class="form-grid two-col">
+          <label>
+            <span>Full name</span>
+            <input id="employeeName" class="text-input" type="text" required>
+          </label>
+          <label>
+            <span>Role / position</span>
+            <input id="employeeRole" class="text-input" type="text" placeholder="Cleaner, porter, supervisor">
+          </label>
+        </div>
+
+        <div class="form-grid two-col">
+          <label>
+            <span>Default work site</span>
+            <input id="employeeSite" class="text-input" type="text" placeholder="Harney's, Flow, Republic Bank">
+          </label>
+          <label>
+            <span>Phone or contact</span>
+            <input id="employeePhone" class="text-input" type="text" placeholder="Optional">
+          </label>
+        </div>
+
+        <div class="form-grid four-col">
+          <label>
+            <span>Pay basis</span>
+            <select id="employeePayType" class="text-input">
+              <option value="daily">Daily rate</option>
+              <option value="hourly">Hourly rate</option>
+              <option value="fixed">Fixed monthly amount</option>
+            </select>
+          </label>
+          <label>
+            <span>Daily rate</span>
+            <input id="employeeDailyRate" class="text-input" type="number" min="0" step="0.01">
+          </label>
+          <label>
+            <span>Hourly rate</span>
+            <input id="employeeHourlyRate" class="text-input" type="number" min="0" step="0.01">
+          </label>
+          <label>
+            <span>Overtime rate</span>
+            <input id="employeeOvertimeRate" class="text-input" type="number" min="0" step="0.01">
+          </label>
+        </div>
+
+        <div class="form-grid four-col">
+          <label>
+            <span>Fixed pay</span>
+            <input id="employeeFixedPay" class="text-input" type="number" min="0" step="0.01">
+          </label>
+          <label>
+            <span>Standard days</span>
+            <input id="employeeStandardDays" class="text-input" type="number" min="0" step="0.5">
+          </label>
+          <label>
+            <span>Standard hours</span>
+            <input id="employeeStandardHours" class="text-input" type="number" min="0" step="0.5">
+          </label>
+          <label>
+            <span>Deductions template</span>
+            <select id="employeeTemplateId" class="text-input"></select>
+          </label>
+        </div>
+
+        <label class="toggle-row">
+          <input id="employeeActive" type="checkbox" checked>
+          <span>Employee is active for payroll</span>
+        </label>
+
+        <label>
+          <span>Notes</span>
+          <textarea id="employeeNotes" class="text-input" rows="3" placeholder="Admin reminder or payroll note"></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button class="primary-button" type="submit">Save employee</button>
+          <button class="ghost-button" data-close-modal="employeeModal" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="entryModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card modal-wide">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow">Timesheet editor</p>
+          <h2 id="entryModalTitle">New timesheet</h2>
+        </div>
+        <button class="icon-button" data-close-modal="entryModal" type="button" aria-label="Close timesheet editor">×</button>
+      </header>
+
+      <div class="editor-layout">
+        <form id="timeEntryForm" class="modal-form">
+          <input id="timeEntryId" type="hidden">
+
+          <div class="form-grid two-col">
+            <label>
+              <span>Employee</span>
+              <select id="entryEmployeeId" class="text-input" required></select>
+            </label>
+            <label>
+              <span>Payroll month</span>
+              <input id="entryMonth" class="text-input" type="month" required>
+            </label>
+          </div>
+
+          <div class="form-grid two-col">
+            <label>
+              <span>Work site</span>
+              <input id="entrySite" class="text-input" type="text" placeholder="Location or contract">
+            </label>
+            <label>
+              <span>Status</span>
+              <select id="entryStatus" class="text-input">
+                <option value="draft">Draft</option>
+                <option value="submitted">Submitted</option>
+                <option value="approved">Approved</option>
+                <option value="paid">Paid</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="form-grid four-col">
+            <label>
+              <span>Days worked</span>
+              <input id="entryDaysWorked" class="text-input" type="number" min="0" step="0.5">
+            </label>
+            <label>
+              <span>Hours worked</span>
+              <input id="entryHoursWorked" class="text-input" type="number" min="0" step="0.5">
+            </label>
+            <label>
+              <span>Overtime hours</span>
+              <input id="entryOvertimeHours" class="text-input" type="number" min="0" step="0.5">
+            </label>
+            <label>
+              <span>Flat gross override</span>
+              <input id="entryFlatGross" class="text-input" type="number" min="0" step="0.01">
+            </label>
+          </div>
+
+          <div class="form-grid four-col">
+            <label>
+              <span>Bonus</span>
+              <input id="entryBonus" class="text-input" type="number" min="0" step="0.01">
+            </label>
+            <label>
+              <span>Allowance</span>
+              <input id="entryAllowance" class="text-input" type="number" min="0" step="0.01">
+            </label>
+            <label>
+              <span>Advance deduction</span>
+              <input id="entryAdvanceDeduction" class="text-input" type="number" min="0" step="0.01">
+            </label>
+            <label>
+              <span>Withdrawal deduction</span>
+              <input id="entryWithdrawalDeduction" class="text-input" type="number" min="0" step="0.01">
+            </label>
+          </div>
+
+          <div class="form-grid four-col">
+            <label>
+              <span>Loan deduction</span>
+              <input id="entryLoanDeduction" class="text-input" type="number" min="0" step="0.01">
+            </label>
+            <label>
+              <span>Other deduction</span>
+              <input id="entryOtherDeduction" class="text-input" type="number" min="0" step="0.01">
+            </label>
+            <label>
+              <span>Deductions template</span>
+              <select id="entryTemplateId" class="text-input"></select>
+            </label>
+          </div>
+
+          <div class="toggle-grid">
+            <label class="toggle-row">
+              <input id="entryApplyNhi" type="checkbox">
+              <span>Apply NHI</span>
+            </label>
+            <label class="toggle-row">
+              <input id="entryApplySsb" type="checkbox">
+              <span>Apply SSB</span>
+            </label>
+            <label class="toggle-row">
+              <input id="entryApplyIncomeTax" type="checkbox">
+              <span>Apply income tax</span>
+            </label>
+          </div>
+
+          <label>
+            <span>Notes</span>
+            <textarea id="entryNotes" class="text-input" rows="3" placeholder="Night shift, advance, or special comment"></textarea>
+          </label>
+
+          <div class="modal-actions">
+            <button class="primary-button" type="submit">Save timesheet</button>
+            <button class="ghost-button" data-close-modal="entryModal" type="button">Cancel</button>
+          </div>
+        </form>
+
+        <aside class="preview-panel">
+          <p class="eyebrow">Live calculation</p>
+          <h3>Payroll preview</h3>
+          <div id="entryPreview" class="preview-content"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden" aria-live="polite"></div>
+
+  <script defer src="./app.js?v=2"></script>
+</body>
+</html>

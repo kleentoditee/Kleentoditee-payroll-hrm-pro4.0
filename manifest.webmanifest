@@ -1,0 +1,17 @@
+{
+  "name": "Kleentoditee Payroll Pro",
+  "short_name": "Payroll Pro",
+  "description": "Mobile-friendly payroll, time entry and payroll history app for Kleentoditee.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f5f7",
+  "theme_color": "#0f3a46",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

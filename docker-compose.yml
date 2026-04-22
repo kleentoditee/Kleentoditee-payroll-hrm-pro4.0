@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kleentoditee
+      POSTGRES_PASSWORD: kleentoditee
+      POSTGRES_DB: kleentoditee
+    ports:
+      - "5432:5432"
+    volumes:
+      - kleentoditee_pg:/var/lib/postgresql/data
+
+volumes:
+  kleentoditee_pg:

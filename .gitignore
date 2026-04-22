@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*.local
+npm-debug.log*
+.DS_Store
+coverage/
+.vercel/
+
+# SQLite local dev database
+packages/db/prisma/dev.db
+packages/db/prisma/dev.db-journal

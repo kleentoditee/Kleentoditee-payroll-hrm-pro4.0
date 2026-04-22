@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Matches master plan Task 4 role list.
+enum Role {
+  platform_owner
+  hr_admin
+  payroll_admin
+  finance_admin
+  operations_manager
+  site_supervisor
+  employee_tracker_user
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  roles        UserRole[]
+  auditLogs    AuditLog[] @relation("AuditActor")
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  role   Role
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([userId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  metadata    Json?
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
+
+/// Payroll pay basis (matches legacy browser app).
+enum PayBasis {
+  daily
+  hourly
+  fixed
+}
+
+enum TimeEntryStatus {
+  draft
+  submitted
+  approved
+  paid
+}
+
+model DeductionTemplate {
+  id             String      @id @default(cuid())
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  name           String
+  nhiRate        Float       @default(0)
+  ssbRate        Float       @default(0)
+  incomeTaxRate  Float       @default(0)
+  applyNhi       Boolean     @default(true)
+  applySsb       Boolean     @default(true)
+  applyIncomeTax Boolean     @default(false)
+  employees      Employee[]
+  timeEntries    TimeEntry[]
+}
+
+model Employee {
+  id            String            @id @default(cuid())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  fullName      String
+  role          String            @default("")
+  defaultSite   String            @default("")
+  phone         String            @default("")
+  basePayType   PayBasis          @default(daily)
+  dailyRate     Float             @default(0)
+  hourlyRate    Float             @default(0)
+  overtimeRate  Float             @default(0)
+  fixedPay      Float             @default(0)
+  standardDays  Float             @default(0)
+  standardHours Float             @default(0)
+  active        Boolean           @default(true)
+  notes         String            @default("")
+  templateId    String
+  template      DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  timeEntries TimeEntry[]
+
+  @@index([templateId])
+  @@index([active])
+  @@index([fullName])
+}
+
+/// Monthly timesheet line (legacy payroll app shape; multiple rows per employee/month allowed for different sites).
+model TimeEntry {
+  id                    String          @id @default(cuid())
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  employeeId            String
+  employee              Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month                 String
+  site                  String          @default("")
+  status                TimeEntryStatus @default(draft)
+  daysWorked            Float           @default(0)
+  hoursWorked           Float           @default(0)
+  overtimeHours         Float           @default(0)
+  flatGross             Float           @default(0)
+  bonus                 Float           @default(0)
+  allowance             Float           @default(0)
+  advanceDeduction      Float           @default(0)
+  withdrawalDeduction   Float           @default(0)
+  loanDeduction         Float           @default(0)
+  otherDeduction        Float           @default(0)
+  templateId            String
+  template              DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  applyNhi              Boolean         @default(true)
+  applySsb              Boolean         @default(true)
+  applyIncomeTax        Boolean         @default(false)
+  notes                 String          @default("")
+
+  @@index([employeeId, month])
+  @@index([month])
+  @@index([status])
+}

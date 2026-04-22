@@ -1,0 +1,19 @@
+Run these in PowerShell or CMD from YOUR machine (the agent could not push from the cloud workspace).
+
+1) Open a terminal in the repo root (folder that contains `package.json` and `start-platform.bat`).
+
+2) Commit and push everything (change the message if you want):
+
+   git add -A
+   git status
+   git commit -m "fix: dev API proxy for admin (no CORS), CORS relax, login/seed/db tooling"
+   git push
+
+3) If there is no remote yet:
+
+   git remote add origin <your-git-url>
+   git push -u origin main
+
+   (Use your real branch name if it is not `main`.)
+
+4) If root `.env` still has NEXT_PUBLIC_API_URL=http://localhost:8787, comment that line out, restart `start-platform.bat`, and try the admin again — the admin should call /__kleentoditee_api on port 3000 in dev.

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# https://docs.coderabbit.ai/getting-started/yaml-configuration
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  review_details: true
+  auto_review:
+    enabled: true
+    drafts: false
+  # Context for PRs that touch local-dev / auth (see docs/PR-LOCAL-DEV-HANDOFF.md)
+  path_instructions:
+    - path: "apps/api/src/routes/auth.ts"
+      instructions: "Verify POST /auth/dev-emergency and /auth/login: production blocks emergency; env flag uses isEnvTruthy; no secrets in responses."
+    - path: "apps/api/src/app.ts"
+      instructions: "CORS: dev origin reflection vs production CORS_ALLOWED_ORIGINS. /dev/db-status and HTML / are dev-only or informational."
+    - path: "apps/admin-web/**"
+      instructions: "In dev, apiBase uses /__kleentoditee_api proxy (next.config rewrites). Login uses readApiJson to avoid throw on HTML errors."
+    - path: "**/*.{bat,cmd,ps1}"
+      instructions: "Windows helpers; paths assume repo root next to start-platform.bat. OneDrive EPERM: repair + copy to C: scripts."
+chat:
+  auto_reply: true
