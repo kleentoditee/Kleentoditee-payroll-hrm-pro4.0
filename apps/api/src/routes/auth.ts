@@ -58,9 +58,9 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "email and password are required" }, 400);
     }
 
-    // Case-insensitive match (SQLite/Postgres) so seed casing and .env do not break login
+    // Stored emails are normalized to lowercase at registration and seed time.
     const user = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
+      where: { email },
       include: { roles: true }
     });
 
