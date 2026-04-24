@@ -92,6 +92,16 @@ async function main() {
     }
   });
 
+  await prisma.user.create({
+    data: {
+      email: "maria.tracker@kleentoditee.local",
+      passwordHash: hash,
+      name: "Maria Monthly",
+      employeeId: monthlyEmployee.id,
+      roles: { create: [{ role: Role.employee_tracker_user }] }
+    }
+  });
+
   const weeklyEmployee = await prisma.employee.create({
     data: {
       fullName: "Wendy Weekly",
@@ -193,7 +203,9 @@ async function main() {
     ]
   });
 
-  console.log(`Seeded templates, admin user, and payroll-ready sample data: ${email} / ${password}`);
+  console.log(
+    `Seeded templates, admin, employee tracker login, and payroll-ready sample data. Admin: ${email} / ${password} · Tracker: maria.tracker@kleentoditee.local / ${password}`
+  );
 }
 
 main()

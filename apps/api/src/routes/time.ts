@@ -24,6 +24,25 @@ const CAN_APPROVE_ENTRIES = [
   Role.site_supervisor
 ] as const;
 
+const SELF_TIME = [Role.employee_tracker_user] as const;
+
+async function resolveLinkedEmployeeId(
+  c: { json: (body: { error: string }, status: number) => Response; get: (k: "userId") => string }
+): Promise<string | Response> {
+  const userId = c.get("userId");
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { employeeId: true }
+  });
+  if (!user?.employeeId) {
+    return c.json(
+      { error: "This account is not linked to an employee. Ask your administrator to connect your profile." },
+      403
+    );
+  }
+  return user.employeeId;
+}
+
 function parseStatus(v: unknown): TimeEntryStatus | null {
   if (v === "draft" || v === "submitted" || v === "approved" || v === "paid") {
     return v;
@@ -366,6 +385,216 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "time_entry.delete",
+      entityType: "TimeEntry",
+      entityId: id,
+      before
+    });
+    return c.body(null, 204);
+  })
+  .get("/self/profile", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const row = await prisma.employee.findUnique({
+      where: { id: eid },
+      include: { template: true }
+    });
+    if (!row) {
+      return c.json({ error: "Employee record missing" }, 404);
+    }
+    return c.json({ employee: row });
+  })
+  .get("/self/entries", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const month = c.req.query("month")?.trim() || monthKey(new Date());
+    const items = await prisma.timeEntry.findMany({
+      where: { employeeId: eid, month },
+      include: { employee: true, template: true },
+      orderBy: [{ site: "asc" }, { updatedAt: "desc" }]
+    });
+    return c.json({ month, items });
+  })
+  .post("/self/entries", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const body = await c.req.json<Record<string, unknown>>();
+    const month = String(body.month ?? "").trim();
+    if (!month) {
+      return c.json({ error: "month (YYYY-MM) is required" }, 400);
+    }
+    const employee = await prisma.employee.findUnique({ where: { id: eid } });
+    if (!employee) {
+      return c.json({ error: "Employee not found" }, 404);
+    }
+    const templateId = String(body.templateId ?? employee.templateId);
+    const tpl = await prisma.deductionTemplate.findUnique({ where: { id: templateId } });
+    if (!tpl) {
+      return c.json({ error: "templateId not found" }, 400);
+    }
+    const periodStart = parseDateInput(body.periodStart);
+    const periodEnd = parseDateInput(body.periodEnd);
+    if (periodStart && periodEnd && periodStart > periodEnd) {
+      return c.json({ error: "periodStart must be on or before periodEnd" }, 400);
+    }
+
+    const row = await prisma.timeEntry.create({
+      data: {
+        employeeId: eid,
+        month,
+        periodStart,
+        periodEnd,
+        site: String(body.site ?? employee.defaultSite ?? ""),
+        status: TimeEntryStatus.draft,
+        daysWorked: Number(body.daysWorked ?? 0),
+        hoursWorked: Number(body.hoursWorked ?? 0),
+        overtimeHours: Number(body.overtimeHours ?? 0),
+        flatGross: Number(body.flatGross ?? 0),
+        bonus: Number(body.bonus ?? 0),
+        allowance: Number(body.allowance ?? 0),
+        advanceDeduction: Number(body.advanceDeduction ?? 0),
+        withdrawalDeduction: Number(body.withdrawalDeduction ?? 0),
+        loanDeduction: Number(body.loanDeduction ?? 0),
+        otherDeduction: Number(body.otherDeduction ?? 0),
+        templateId,
+        applyNhi: body.applyNhi !== undefined ? Boolean(body.applyNhi) : tpl.applyNhi,
+        applySsb: body.applySsb !== undefined ? Boolean(body.applySsb) : tpl.applySsb,
+        applyIncomeTax:
+          body.applyIncomeTax !== undefined ? Boolean(body.applyIncomeTax) : tpl.applyIncomeTax,
+        notes: String(body.notes ?? "")
+      },
+      include: { employee: true, template: true }
+    });
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "time_entry.self_create",
+      entityType: "TimeEntry",
+      entityId: row.id,
+      after: { id: row.id, employeeId: eid, month }
+    });
+    return c.json({ entry: row }, 201);
+  })
+  .patch("/self/entries/:id", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const id = c.req.param("id");
+    const before = await prisma.timeEntry.findUnique({ where: { id } });
+    if (!before || before.employeeId !== eid) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    if (before.status !== TimeEntryStatus.draft) {
+      return c.json({ error: "Only draft entries can be edited in the app" }, 400);
+    }
+    const body = await c.req.json<Record<string, unknown>>();
+    const data: Record<string, unknown> = {};
+    if (body.month !== undefined) {
+      data.month = String(body.month).trim();
+    }
+    if (body.site !== undefined) {
+      data.site = String(body.site);
+    }
+    if (body.periodStart !== undefined) {
+      const periodStart = body.periodStart ? parseDateInput(body.periodStart) : null;
+      if (body.periodStart && !periodStart) {
+        return c.json({ error: "Invalid periodStart" }, 400);
+      }
+      data.periodStart = periodStart;
+    }
+    if (body.periodEnd !== undefined) {
+      const periodEnd = body.periodEnd ? parseDateInput(body.periodEnd) : null;
+      if (body.periodEnd && !periodEnd) {
+        return c.json({ error: "Invalid periodEnd" }, 400);
+      }
+      data.periodEnd = periodEnd;
+    }
+    if (body.daysWorked !== undefined) {
+      data.daysWorked = Number(body.daysWorked);
+    }
+    if (body.hoursWorked !== undefined) {
+      data.hoursWorked = Number(body.hoursWorked);
+    }
+    if (body.overtimeHours !== undefined) {
+      data.overtimeHours = Number(body.overtimeHours);
+    }
+    if (body.notes !== undefined) {
+      data.notes = String(body.notes);
+    }
+    if (Object.keys(data).length === 0) {
+      return c.json({ error: "No fields to update" }, 400);
+    }
+    const nextStart =
+      data.periodStart !== undefined ? (data.periodStart as Date | null) : before.periodStart;
+    const nextEnd = data.periodEnd !== undefined ? (data.periodEnd as Date | null) : before.periodEnd;
+    if (nextStart && nextEnd && nextStart > nextEnd) {
+      return c.json({ error: "periodStart must be on or before periodEnd" }, 400);
+    }
+    const row = await prisma.timeEntry.update({
+      where: { id },
+      data: data as never,
+      include: { employee: true, template: true }
+    });
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "time_entry.self_update",
+      entityType: "TimeEntry",
+      entityId: id,
+      before,
+      after: row
+    });
+    return c.json({ entry: row });
+  })
+  .post("/self/entries/:id/submit", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const id = c.req.param("id");
+    const before = await prisma.timeEntry.findUnique({ where: { id } });
+    if (!before || before.employeeId !== eid) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    if (before.status !== TimeEntryStatus.draft) {
+      return c.json({ error: "Only draft entries can be submitted" }, 400);
+    }
+    const row = await prisma.timeEntry.update({
+      where: { id },
+      data: { status: TimeEntryStatus.submitted },
+      include: { employee: true, template: true }
+    });
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "time_entry.self_submit",
+      entityType: "TimeEntry",
+      entityId: id,
+      before,
+      after: row
+    });
+    return c.json({ entry: row });
+  })
+  .delete("/self/entries/:id", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const id = c.req.param("id");
+    const before = await prisma.timeEntry.findUnique({ where: { id } });
+    if (!before || before.employeeId !== eid) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    if (before.status !== TimeEntryStatus.draft) {
+      return c.json({ error: "Only draft entries can be deleted" }, 400);
+    }
+    await prisma.timeEntry.delete({ where: { id } });
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "time_entry.self_delete",
       entityType: "TimeEntry",
       entityId: id,
       before
