@@ -12,9 +12,9 @@ Use this file as the live coordination board for Codex, Claude, Cursor, and the 
 
 | Lane | Agent | Branch Pattern | Worktree Path | Owned Areas | Status |
 | --- | --- | --- | --- | --- | --- |
-| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Merged Cursor tracker; full verify + push to `codex/consolidate-live-build` |
+| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Ready (tracker merged 2026-04-24; re-run CodeRabbit when rate limit clears) |
 | Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Ready |
-| Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | Self-service time + UI shipped (rebase, db:push, seed) |
+| Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | On `codex/consolidate-live-build` — pull to refresh worktree |
 
 ## Shared File Locks
 
@@ -60,6 +60,6 @@ wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-pay
 | Slice | Best Agent | Why |
 | --- | --- | --- |
 | Finance core models and API | Claude | Backend-heavy and needs careful domain modeling |
-| Employee tracker mobile time submit flow | Cursor | Focused frontend/mobile UX |
-| Cross-app QA, merge cleanup, CodeRabbit follow-up | Codex | Integration and verification lane |
+| Admin or tracker follow-ups (a11y, paywall, prod API URL) | Cursor | UI polish on consolidated build |
+| Cross-app QA, merge cleanup, CodeRabbit follow-up | Codex | Next integration pass after feature branches |
 
