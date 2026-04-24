@@ -14,6 +14,8 @@ reviews:
     drafts: false
   # Context for PRs that touch local-dev / auth (see docs/PR-LOCAL-DEV-HANDOFF.md)
   path_instructions:
+    - path: "apps/api/src/routes/people.ts"
+      instructions: "Templates: GET /people/templates/:id returns single DeductionTemplate; list remains GET /people/templates. Employee CRUD unchanged."
     - path: "apps/api/src/routes/auth.ts"
       instructions: "Verify POST /auth/dev-emergency and /auth/login: production blocks emergency; env flag uses isEnvTruthy; no secrets in responses."
     - path: "apps/api/src/app.ts"

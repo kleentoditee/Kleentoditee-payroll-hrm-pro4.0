@@ -42,7 +42,7 @@ a{color:#5eead4}code{color:#cbd5e1}</style></head>
 <h1>KleenToDiTee API (backend)</h1>
 <p>This port serves JSON for the <strong>admin app</strong> and clients — not the browser UI.</p>
 <p><strong>Admin sign-in &amp; dashboard:</strong> <a href="http://localhost:3000">http://localhost:3000</a></p>
-<p>Routes: <code>GET /health</code> · <code>/auth/*</code> · <code>/people/*</code> · <code>/time/*</code> · <code>/audit/*</code></p>
+<p>Routes: <code>GET /health</code> · <code>/auth/*</code> · <code>/people/*</code> · <code>/time/*</code> · <code>/payroll/*</code> · <code>/audit/*</code></p>
 </body></html>`
   )
 );

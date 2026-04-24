@@ -32,6 +32,7 @@ function formatPeriod(row: Row): string {
 
 export default function TimeEntriesListPage() {
   const [month, setMonth] = useState(currentMonth);
+  const [allMonths, setAllMonths] = useState(false);
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Row[] | null>(null);
@@ -42,7 +43,12 @@ export default function TimeEntriesListPage() {
     const t = setTimeout(() => {
       (async () => {
         try {
-          const params = new URLSearchParams({ month });
+          const params = new URLSearchParams();
+          if (allMonths) {
+            params.set("queue", "all");
+          } else {
+            params.set("month", month);
+          }
           if (status) {
             params.set("status", status);
           }
@@ -74,7 +80,7 @@ export default function TimeEntriesListPage() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [month, status, q]);
+  }, [month, allMonths, status, q]);
 
   return (
     <div className="space-y-6">
@@ -96,13 +102,23 @@ export default function TimeEntriesListPage() {
       </div>
 
       <div className="flex flex-wrap gap-4">
-        <label className="text-sm">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={allMonths}
+            onChange={(e) => setAllMonths(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          <span className="text-slate-700">All months (recent, up to 500)</span>
+        </label>
+        <label className={`text-sm ${allMonths ? "opacity-50" : ""}`}>
           <span className="text-slate-700">Payroll month</span>
           <input
             type="month"
             value={month}
+            disabled={allMonths}
             onChange={(e) => setMonth(e.target.value)}
-            className="mt-1 block rounded-lg border border-slate-200 px-3 py-2"
+            className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 disabled:cursor-not-allowed"
           />
         </label>
         <label className="text-sm">
@@ -138,7 +154,9 @@ export default function TimeEntriesListPage() {
       {!items ? (
         <p className="text-sm text-slate-600">Loading...</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">No timesheets for this month. Add one or change the month.</p>
+        <p className="text-sm text-slate-600">
+          No timesheets match this filter. Add one, change the month, or toggle &quot;All months&quot;.
+        </p>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((entry) => (

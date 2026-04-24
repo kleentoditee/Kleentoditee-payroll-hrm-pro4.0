@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const links = [{ href: "/dashboard/time/entries", label: "Timesheets" }] as const;
+const links = [
+  { href: "/dashboard/time/entries", label: "Timesheets" },
+  { href: "/dashboard/time/approvals", label: "Approvals" }
+] as const;
 
 export default function TimeLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

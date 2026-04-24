@@ -33,6 +33,14 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     const items = await prisma.deductionTemplate.findMany({ orderBy: { name: "asc" } });
     return c.json({ items });
   })
+  .get("/templates/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const id = c.req.param("id");
+    const template = await prisma.deductionTemplate.findUnique({ where: { id } });
+    if (!template) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return c.json({ template });
+  })
   .post("/templates", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const name = String(body.name ?? "").trim();

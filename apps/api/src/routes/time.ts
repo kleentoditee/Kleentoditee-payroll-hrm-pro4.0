@@ -15,6 +15,15 @@ const CAN_VIEW = [
 
 const CAN_EDIT = [Role.platform_owner, Role.hr_admin, Role.payroll_admin] as const;
 
+/** Submit → approve without full timesheet edit rights (manager queue). */
+const CAN_APPROVE_ENTRIES = [
+  Role.platform_owner,
+  Role.hr_admin,
+  Role.payroll_admin,
+  Role.operations_manager,
+  Role.site_supervisor
+] as const;
+
 function parseStatus(v: unknown): TimeEntryStatus | null {
   if (v === "draft" || v === "submitted" || v === "approved" || v === "paid") {
     return v;
@@ -95,13 +104,14 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     return c.json({ preview });
   })
   .get("/entries", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const queueAll = c.req.query("queue") === "all";
     const month = c.req.query("month")?.trim() || monthKey(new Date());
     const q = (c.req.query("q") ?? "").trim().toLowerCase();
     const statusFilter = c.req.query("status")?.trim();
 
     const items = await prisma.timeEntry.findMany({
       where: {
-        month,
+        ...(queueAll ? {} : { month }),
         ...(statusFilter && parseStatus(statusFilter) ? { status: parseStatus(statusFilter)! } : {}),
         ...(q
           ? {
@@ -114,9 +124,54 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
           : {})
       },
       include: { employee: true, template: true },
-      orderBy: [{ employee: { fullName: "asc" } }, { site: "asc" }]
+      orderBy: queueAll
+        ? [{ updatedAt: "desc" }]
+        : [{ employee: { fullName: "asc" } }, { site: "asc" }],
+      take: queueAll ? 500 : undefined
     });
-    return c.json({ month, items });
+    return c.json({ month: queueAll ? null : month, queueAll, items });
+  })
+  .post("/entries/bulk-approve", authRequired, requireRole(...CAN_APPROVE_ENTRIES), async (c) => {
+    const body = await c.req.json<{ ids?: unknown }>();
+    const raw = Array.isArray(body.ids) ? body.ids : [];
+    const ids = [...new Set(raw.map((id) => String(id).trim()).filter(Boolean))];
+    if (ids.length === 0) {
+      return c.json({ error: "ids array is required" }, 400);
+    }
+    if (ids.length > 100) {
+      return c.json({ error: "At most 100 entries per request" }, 400);
+    }
+
+    const found = await prisma.timeEntry.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, status: true }
+    });
+    const submittedIds = found
+      .filter((row) => row.status === TimeEntryStatus.submitted)
+      .map((row) => row.id);
+    if (submittedIds.length === 0) {
+      return c.json(
+        { error: "No submitted entries in selection (wrong id or status).", updated: 0 },
+        400
+      );
+    }
+
+    await prisma.timeEntry.updateMany({
+      where: { id: { in: submittedIds }, status: TimeEntryStatus.submitted },
+      data: { status: TimeEntryStatus.approved }
+    });
+
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "time_entry.bulk_approve",
+      entityType: "TimeEntry",
+      metadata: { entryIds: submittedIds, count: submittedIds.length }
+    });
+
+    return c.json({
+      updated: submittedIds.length,
+      skipped: ids.filter((id) => !submittedIds.includes(id))
+    });
   })
   .get("/entries/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const id = c.req.param("id");

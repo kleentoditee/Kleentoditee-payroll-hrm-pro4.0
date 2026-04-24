@@ -64,6 +64,11 @@
    - export CSV
    - open paystub
 
+### Verification log
+
+- **2026-04-24:** Steps 1–5 passed on this machine. For step 6, **`db:seed` was run** (resets payroll + time + users; re-creates admin `admin@kleentoditee.local` / `ChangeMe!Dev123`). Seeded time entries use **April 2026** — use a **monthly** period `2026-04-01`–`2026-04-30` (or matching weekly/biweekly ranges from seed) or the draft run will be empty and finalize will fail. API smoke test: create period → `POST /payroll/runs` → finalize → export CSV → `GET /payroll/paystubs/:id` all succeeded for Maria Monthly. **Still do a quick pass in the browser** on `/dashboard/payroll/periods` when convenient (login + UI).
+- **2026-04-24:** `start-platform.bat` was normalized to ASCII after `cmd.exe` broke on Unicode punctuation in the launcher banner/help text. Live verification from the canonical repo succeeded again: `http://127.0.0.1:8787/health` returned OK and `http://127.0.0.1:3000/login` returned 200 after launching outside the sandbox.
+
 ## If login breaks again
 
 - Check API health: `http://127.0.0.1:8787/health`
