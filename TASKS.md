@@ -12,7 +12,7 @@ Use this file as the live coordination board for Codex, Claude, Cursor, and the 
 
 | Lane | Agent | Branch Pattern | Worktree Path | Owned Areas | Status |
 | --- | --- | --- | --- | --- | --- |
-| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Ready |
+| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Merged Cursor tracker; full verify + push to `codex/consolidate-live-build` |
 | Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Ready |
 | Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | Self-service time + UI shipped (rebase, db:push, seed) |
 
