@@ -13,7 +13,7 @@ Use this file as the live coordination board for Codex, Claude, Cursor, and the 
 | Lane | Agent | Branch Pattern | Worktree Path | Owned Areas | Status |
 | --- | --- | --- | --- | --- | --- |
 | Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Ready |
-| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Task 9 shipped on branch; ready for Task 10 (sales/expense transactions) next |
+| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | In progress — Phase 3 Task 10 (sales & expense transactions) |
 | Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | Ready |
 
 ## Shared File Locks
@@ -22,9 +22,9 @@ Only one lane should edit these at a time. Add a row before touching a shared fi
 
 | File | Locked By | Reason | Status |
 | --- | --- | --- | --- |
-| `packages/db/prisma/schema.prisma` | None | Shared data model | Free |
+| `packages/db/prisma/schema.prisma` | Claude / finance-core | Adding Phase 3 Task 10 transaction models (invoices, bills, payments, expenses, deposits) | Locked |
 | `package.json` / `package-lock.json` | None | Dependencies/scripts | Free |
-| `apps/api/src/app.ts` | None | Route mounting | Free |
+| `apps/api/src/app.ts` | Claude / finance-core | Mounting `/finance/*` transaction routes for Task 10 | Locked |
 
 ## Lane Start Checklist
 
