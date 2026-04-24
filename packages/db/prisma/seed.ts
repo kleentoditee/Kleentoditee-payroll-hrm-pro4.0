@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { PayBasis, PaySchedule, Role, TimeEntryStatus } from "@prisma/client";
+import { AccountType, PayBasis, PaySchedule, ProductKind, Role, TimeEntryStatus } from "@prisma/client";
 import { prisma } from "../src/index";
 
 const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@kleentoditee.local").trim().toLowerCase();
@@ -18,6 +18,10 @@ async function main() {
   await prisma.timeEntry.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.deductionTemplate.deleteMany();
+  await prisma.product.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.supplier.deleteMany();
+  await prisma.account.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.user.deleteMany();
 
@@ -193,7 +197,110 @@ async function main() {
     ]
   });
 
-  console.log(`Seeded templates, admin user, and payroll-ready sample data: ${email} / ${password}`);
+  // Finance master data (Phase 3 Task 9) — small starter chart of accounts
+  // plus one customer, supplier, and service so invoice/bill flows have
+  // something to point at when Task 10 lands.
+  const [cash, ar, ap, salesRevenue, cogs, officeExpense] = await Promise.all([
+    prisma.account.create({
+      data: {
+        code: "1000",
+        name: "Cash",
+        type: AccountType.asset,
+        subtype: "Bank",
+        description: "Primary operating cash account"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "1100",
+        name: "Accounts Receivable",
+        type: AccountType.asset,
+        subtype: "Accounts Receivable",
+        description: "Amounts owed by customers"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "2000",
+        name: "Accounts Payable",
+        type: AccountType.liability,
+        subtype: "Accounts Payable",
+        description: "Amounts owed to suppliers"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "4000",
+        name: "Sales Revenue",
+        type: AccountType.revenue,
+        subtype: "Sales",
+        description: "Revenue from services rendered"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "5000",
+        name: "Cost of Goods Sold",
+        type: AccountType.expense,
+        subtype: "Direct Costs",
+        description: "Direct costs of delivering services"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "6000",
+        name: "Office Expenses",
+        type: AccountType.expense,
+        subtype: "Operating Expenses",
+        description: "General office and administrative"
+      }
+    })
+  ]);
+
+  void cash;
+  void ar;
+  void ap;
+  void cogs;
+
+  await prisma.customer.create({
+    data: {
+      displayName: "Belize Bay Resort",
+      companyName: "Belize Bay Resort Ltd.",
+      primaryContact: "Sandra Torres",
+      email: "ap@belizebay.example",
+      phone: "501-500-7001",
+      billingAddress: "Marine Parade, Belize City",
+      notes: "Weekly housekeeping contract"
+    }
+  });
+
+  await prisma.supplier.create({
+    data: {
+      displayName: "Caribbean Cleaning Supply",
+      companyName: "Caribbean Cleaning Supply Co.",
+      primaryContact: "Miguel Ramos",
+      email: "orders@ccsupply.example",
+      phone: "501-500-7201",
+      mailingAddress: "Industrial Park, Ladyville",
+      notes: "Primary consumables vendor"
+    }
+  });
+
+  await prisma.product.create({
+    data: {
+      sku: "SVC-CLEAN-STD",
+      name: "Standard cleaning service",
+      kind: ProductKind.service,
+      description: "Per-visit standard site cleaning",
+      salesPrice: 150,
+      purchaseCost: 0,
+      taxable: false,
+      incomeAccountId: salesRevenue.id,
+      expenseAccountId: officeExpense.id
+    }
+  });
+
+  console.log(`Seeded templates, admin user, payroll-ready data, and finance master data: ${email} / ${password}`);
 }
 
 main()

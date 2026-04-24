@@ -259,3 +259,103 @@ model PayrollExport {
 
   @@index([runId])
 }
+
+/// Finance master data (Phase 3 Task 9).
+/// QuickBooks-style chart of accounts. `code` is the numeric account number
+/// (e.g. "1000" Cash, "4000" Sales Revenue). `type` drives reporting
+/// classification and which side increases the balance.
+enum AccountType {
+  asset
+  liability
+  equity
+  revenue
+  expense
+}
+
+/// Item kind for sellable / purchasable records.
+enum ProductKind {
+  service
+  product
+  bundle
+}
+
+model Account {
+  id          String      @id @default(cuid())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  code        String      @unique
+  name        String
+  type        AccountType
+  subtype     String      @default("")
+  description String      @default("")
+  active      Boolean     @default(true)
+  parentId    String?
+  parent      Account?    @relation("AccountTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Account[]   @relation("AccountTree")
+
+  productsAsIncome  Product[] @relation("ProductIncome")
+  productsAsExpense Product[] @relation("ProductExpense")
+
+  @@index([type, active])
+  @@index([parentId])
+  @@index([name])
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  displayName    String   @unique
+  companyName    String   @default("")
+  primaryContact String   @default("")
+  email          String   @default("")
+  phone          String   @default("")
+  billingAddress String   @default("")
+  taxId          String   @default("")
+  notes          String   @default("")
+  active         Boolean  @default(true)
+
+  @@index([active])
+  @@index([displayName])
+}
+
+model Supplier {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  displayName    String   @unique
+  companyName    String   @default("")
+  primaryContact String   @default("")
+  email          String   @default("")
+  phone          String   @default("")
+  mailingAddress String   @default("")
+  taxId          String   @default("")
+  notes          String   @default("")
+  active         Boolean  @default(true)
+
+  @@index([active])
+  @@index([displayName])
+}
+
+model Product {
+  id                String      @id @default(cuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  sku               String      @unique
+  name              String
+  kind              ProductKind @default(service)
+  description       String      @default("")
+  salesPrice        Float       @default(0)
+  purchaseCost      Float       @default(0)
+  taxable           Boolean     @default(false)
+  active            Boolean     @default(true)
+  incomeAccountId   String
+  incomeAccount     Account     @relation("ProductIncome", fields: [incomeAccountId], references: [id], onDelete: Restrict)
+  expenseAccountId  String?
+  expenseAccount    Account?    @relation("ProductExpense", fields: [expenseAccountId], references: [id], onDelete: SetNull)
+
+  @@index([kind, active])
+  @@index([incomeAccountId])
+  @@index([expenseAccountId])
+  @@index([name])
+}

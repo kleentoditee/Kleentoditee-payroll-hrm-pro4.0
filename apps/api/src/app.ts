@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
+import { financeRoutes } from "./routes/finance.js";
 import { peopleRoutes } from "./routes/people.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { timeRoutes } from "./routes/time.js";
@@ -42,7 +43,7 @@ a{color:#5eead4}code{color:#cbd5e1}</style></head>
 <h1>KleenToDiTee API (backend)</h1>
 <p>This port serves JSON for the <strong>admin app</strong> and clients — not the browser UI.</p>
 <p><strong>Admin sign-in &amp; dashboard:</strong> <a href="http://localhost:3000">http://localhost:3000</a></p>
-<p>Routes: <code>GET /health</code> · <code>/auth/*</code> · <code>/people/*</code> · <code>/time/*</code> · <code>/payroll/*</code> · <code>/audit/*</code></p>
+<p>Routes: <code>GET /health</code> · <code>/auth/*</code> · <code>/people/*</code> · <code>/time/*</code> · <code>/payroll/*</code> · <code>/finance/*</code> · <code>/audit/*</code></p>
 </body></html>`
   )
 );
@@ -85,6 +86,7 @@ if (process.env.NODE_ENV !== "production") {
 
 app.route("/auth", authRoutes);
 app.route("/audit", auditRoutes);
+app.route("/finance", financeRoutes);
 app.route("/people", peopleRoutes);
 app.route("/payroll", payrollRoutes);
 app.route("/time", timeRoutes);

@@ -14,7 +14,7 @@ const PINNED: { label: string; href?: string }[] = [
   { label: "People", href: "/dashboard/people/employees" },
   { label: "Payroll", href: "/dashboard/payroll/periods" },
   { label: "Time", href: "/dashboard/time/entries" },
-  { label: "Finance" },
+  { label: "Finance", href: "/dashboard/finance/accounts" },
   { label: "Hiring" },
   { label: "Reports" }
 ];
