@@ -63,10 +63,23 @@ enum PayBasis {
   fixed
 }
 
+enum PaySchedule {
+  weekly
+  biweekly
+  monthly
+}
+
 enum TimeEntryStatus {
   draft
   submitted
   approved
+  paid
+}
+
+enum PayRunStatus {
+  draft
+  finalized
+  exported
   paid
 }
 
@@ -100,16 +113,19 @@ model Employee {
   fixedPay      Float             @default(0)
   standardDays  Float             @default(0)
   standardHours Float             @default(0)
+  paySchedule   PaySchedule       @default(monthly)
   active        Boolean           @default(true)
   notes         String            @default("")
   templateId    String
   template      DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
 
-  timeEntries TimeEntry[]
+  timeEntries  TimeEntry[]
+  payRunItems  PayRunItem[]
 
   @@index([templateId])
   @@index([active])
   @@index([fullName])
+  @@index([paySchedule, active])
 }
 
 /// Monthly timesheet line (legacy payroll app shape; multiple rows per employee/month allowed for different sites).
@@ -120,6 +136,8 @@ model TimeEntry {
   employeeId            String
   employee              Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   month                 String
+  periodStart           DateTime?
+  periodEnd             DateTime?
   site                  String          @default("")
   status                TimeEntryStatus @default(draft)
   daysWorked            Float           @default(0)
@@ -142,4 +160,103 @@ model TimeEntry {
   @@index([employeeId, month])
   @@index([month])
   @@index([status])
+  @@index([periodStart, periodEnd])
+}
+
+model PayPeriod {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  label     String
+  schedule  PaySchedule
+  startDate DateTime
+  endDate   DateTime
+  payDate   DateTime?
+  notes     String      @default("")
+  runs      PayRun[]
+
+  @@unique([schedule, startDate, endDate])
+  @@index([schedule, startDate])
+  @@index([endDate])
+}
+
+model PayRun {
+  id         String        @id @default(cuid())
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  periodId   String
+  period     PayPeriod     @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  status     PayRunStatus  @default(draft)
+  notes      String        @default("")
+  finalizedAt DateTime?
+  exportedAt DateTime?
+  paidAt     DateTime?
+  items      PayRunItem[]
+  exports    PayrollExport[]
+
+  @@index([periodId])
+  @@index([status])
+}
+
+model PayRunItem {
+  id                  String      @id @default(cuid())
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  runId               String
+  run                 PayRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId          String
+  employee            Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  employeeName        String
+  employeeRole        String      @default("")
+  defaultSite         String      @default("")
+  paySchedule         PaySchedule
+  payBasis            PayBasis
+  templateName        String      @default("")
+  sourceEntryIds      Json?
+  sourceSummary       Json?
+  gross               Float       @default(0)
+  nhi                 Float       @default(0)
+  ssb                 Float       @default(0)
+  incomeTax           Float       @default(0)
+  manualDeductions    Float       @default(0)
+  totalDeductions     Float       @default(0)
+  net                 Float       @default(0)
+  daysWorked          Float       @default(0)
+  hoursWorked         Float       @default(0)
+  overtimeHours       Float       @default(0)
+  bonus               Float       @default(0)
+  allowance           Float       @default(0)
+  flatGross           Float       @default(0)
+  advanceDeduction    Float       @default(0)
+  withdrawalDeduction Float       @default(0)
+  loanDeduction       Float       @default(0)
+  otherDeduction      Float       @default(0)
+  paystub             Paystub?
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+}
+
+model Paystub {
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  payRunItemId String     @unique
+  payRunItem   PayRunItem @relation(fields: [payRunItemId], references: [id], onDelete: Cascade)
+  stubNumber   String     @unique
+  issuedAt     DateTime   @default(now())
+  payload      Json?
+}
+
+model PayrollExport {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  runId     String
+  run       PayRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  format    String
+  fileName  String
+  contents  String
+
+  @@index([runId])
 }

@@ -7,38 +7,44 @@ export default function DashboardPage() {
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Home</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Dashboard</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          You are signed in to the new admin shell. Global search, widgets, and payroll APIs come in later
-          phases. Audit events from login and future mutations are stored in PostgreSQL.
+          You are signed in to the new admin shell. People, time, audit, and the first payroll workflow are now
+          available from this console.
         </p>
         <p className="mt-4 flex flex-wrap gap-4">
           <Link
             href="/dashboard/people/employees"
             className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
           >
-            People — employees →
+            People - employees
           </Link>
           <Link
             href="/dashboard/time/entries"
             className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
           >
-            Time — timesheets →
+            Time - timesheets
+          </Link>
+          <Link
+            href="/dashboard/payroll/periods"
+            className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
+          >
+            Payroll - periods and runs
           </Link>
           <Link
             href="/dashboard/audit"
             className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
           >
-            Audit log →
+            Audit log
           </Link>
         </p>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
         {[
-          { title: "Needs attention", body: "Pending approvals and exceptions will appear here." },
-          { title: "Payroll status", body: "Phase 2 will connect live payroll state to this console." },
+          { title: "Needs attention", body: "Pending approvals, payroll rebuilds, and future exceptions will appear here." },
+          { title: "Payroll status", body: "Pay periods, pay runs, paystubs, and general CSV export are now connected to the admin console." },
           {
-            title: "Legacy payroll data",
-            body: "Employees and runs in the browser app are still at http://localhost:8081 until migrated."
+            title: "Time to payroll",
+            body: "Approved monthly, weekly, and biweekly timesheets can now be frozen into payroll snapshots."
           },
           { title: "API", body: "Authenticated routes use JWT from /auth/login. Health check stays public at /health." }
         ].map((card) => (

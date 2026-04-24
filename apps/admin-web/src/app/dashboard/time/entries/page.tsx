@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 type Row = {
   id: string;
   month: string;
+  periodStart: string | null;
+  periodEnd: string | null;
   site: string;
   status: string;
   daysWorked: number;
@@ -19,6 +21,13 @@ type Row = {
 function currentMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatPeriod(row: Row): string {
+  if (row.periodStart && row.periodEnd) {
+    return `${row.periodStart.slice(0, 10)} to ${row.periodEnd.slice(0, 10)}`;
+  }
+  return row.month;
 }
 
 export default function TimeEntriesListPage() {
@@ -60,6 +69,7 @@ export default function TimeEntriesListPage() {
         }
       })();
     }, 200);
+
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -73,8 +83,8 @@ export default function TimeEntriesListPage() {
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Time</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Timesheets</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Monthly lines per employee (legacy-compatible). Multiple rows per employee/month are allowed for
-            different sites.
+            Monthly lines still work, but each entry can now carry a real period start and end date for weekly
+            and biweekly payroll imports.
           </p>
         </div>
         <Link
@@ -126,25 +136,28 @@ export default function TimeEntriesListPage() {
       ) : null}
 
       {!items ? (
-        <p className="text-sm text-slate-600">Loading…</p>
+        <p className="text-sm text-slate-600">Loading...</p>
       ) : items.length === 0 ? (
         <p className="text-sm text-slate-600">No timesheets for this month. Add one or change the month.</p>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {items.map((e) => (
-            <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          {items.map((entry) => (
+            <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
               <div>
-                <p className="font-medium text-slate-900">{e.employee.fullName}</p>
+                <p className="font-medium text-slate-900">{entry.employee.fullName}</p>
                 <p className="text-sm text-slate-600">
-                  {e.site || "—"} · {e.daysWorked}d / {e.hoursWorked}h
+                  {entry.site || "-"} | {formatPeriod(entry)} | {entry.daysWorked}d / {entry.hoursWorked}h
                 </p>
-                <p className="text-xs text-slate-500">{e.template.name}</p>
+                <p className="text-xs text-slate-500">{entry.template.name}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-700">
-                  {e.status}
+                  {entry.status}
                 </span>
-                <Link href={`/dashboard/time/entries/${e.id}`} className="text-sm font-semibold text-brand hover:underline">
+                <Link
+                  href={`/dashboard/time/entries/${entry.id}`}
+                  className="text-sm font-semibold text-brand hover:underline"
+                >
                   Edit
                 </Link>
               </div>

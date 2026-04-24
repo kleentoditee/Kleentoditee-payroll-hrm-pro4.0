@@ -28,6 +28,18 @@ function monthKey(d: Date): string {
   return `${y}-${m}`;
 }
 
+function parseDateInput(value: unknown): Date | null {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return null;
+  }
+  const date = new Date(`${text}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
 export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
   .post("/preview", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
@@ -134,11 +146,18 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "templateId not found" }, 400);
     }
     const status = parseStatus(body.status) ?? TimeEntryStatus.draft;
+    const periodStart = parseDateInput(body.periodStart);
+    const periodEnd = parseDateInput(body.periodEnd);
+    if (periodStart && periodEnd && periodStart > periodEnd) {
+      return c.json({ error: "periodStart must be on or before periodEnd" }, 400);
+    }
 
     const row = await prisma.timeEntry.create({
       data: {
         employeeId,
         month,
+        periodStart,
+        periodEnd,
         site: String(body.site ?? employee.defaultSite ?? ""),
         status,
         daysWorked: Number(body.daysWorked ?? 0),
@@ -183,6 +202,27 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     if (body.site !== undefined) {
       data.site = String(body.site);
+    }
+    if (body.periodStart !== undefined) {
+      const periodStart = body.periodStart ? parseDateInput(body.periodStart) : null;
+      if (body.periodStart && !periodStart) {
+        return c.json({ error: "Invalid periodStart" }, 400);
+      }
+      data.periodStart = periodStart;
+    }
+    if (body.periodEnd !== undefined) {
+      const periodEnd = body.periodEnd ? parseDateInput(body.periodEnd) : null;
+      if (body.periodEnd && !periodEnd) {
+        return c.json({ error: "Invalid periodEnd" }, 400);
+      }
+      data.periodEnd = periodEnd;
+    }
+    const nextPeriodStart =
+      data.periodStart !== undefined ? (data.periodStart as Date | null) : before.periodStart;
+    const nextPeriodEnd =
+      data.periodEnd !== undefined ? (data.periodEnd as Date | null) : before.periodEnd;
+    if (nextPeriodStart && nextPeriodEnd && nextPeriodStart > nextPeriodEnd) {
+      return c.json({ error: "periodStart must be on or before periodEnd" }, 400);
     }
     if (body.status !== undefined) {
       const s = parseStatus(body.status);

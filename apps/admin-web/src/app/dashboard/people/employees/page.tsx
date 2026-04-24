@@ -12,6 +12,7 @@ type EmployeeRow = {
   defaultSite: string;
   active: boolean;
   basePayType: string;
+  paySchedule: string;
   template: { name: string };
 };
 
@@ -46,6 +47,7 @@ export default function EmployeesListPage() {
         }
       })();
     }, 200);
+
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -59,8 +61,8 @@ export default function EmployeesListPage() {
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">People</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Employees</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Master records for payroll. Matches fields from the legacy browser app; stored in SQLite/Postgres via
-            the API.
+            Master records for payroll. Employees now carry both a pay basis and a pay schedule so payroll runs
+            can group monthly, weekly, and biweekly staff correctly.
           </p>
         </div>
         <Link
@@ -87,30 +89,34 @@ export default function EmployeesListPage() {
       ) : null}
 
       {!items ? (
-        <p className="text-sm text-slate-600">Loading…</p>
+        <p className="text-sm text-slate-600">Loading...</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">No employees yet. Add one or run <code className="rounded bg-slate-100 px-1">npm run db:seed</code> after pulling schema updates.</p>
+        <p className="text-sm text-slate-600">
+          No employees yet. Add one or run <code className="rounded bg-slate-100 px-1">npm run db:seed</code>{" "}
+          after pulling schema updates.
+        </p>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {items.map((e) => (
-            <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          {items.map((employee) => (
+            <li key={employee.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
               <div>
-                <p className="font-medium text-slate-900">{e.fullName}</p>
+                <p className="font-medium text-slate-900">{employee.fullName}</p>
                 <p className="text-sm text-slate-600">
-                  {e.role || "—"} · {e.defaultSite || "No site"} · {e.basePayType}
+                  {employee.role || "-"} | {employee.defaultSite || "No site"} | {employee.basePayType} |{" "}
+                  {employee.paySchedule}
                 </p>
-                <p className="text-xs text-slate-500">Template: {e.template.name}</p>
+                <p className="text-xs text-slate-500">Template: {employee.template.name}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    e.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
+                    employee.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
                   }`}
                 >
-                  {e.active ? "Active" : "Inactive"}
+                  {employee.active ? "Active" : "Inactive"}
                 </span>
                 <Link
-                  href={`/dashboard/people/employees/${e.id}`}
+                  href={`/dashboard/people/employees/${employee.id}`}
                   className="text-sm font-semibold text-brand hover:underline"
                 >
                   Edit

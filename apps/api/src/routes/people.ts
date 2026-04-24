@@ -21,6 +21,13 @@ function parsePayBasis(v: unknown): PayBasis | null {
   return null;
 }
 
+function parsePaySchedule(v: unknown): "weekly" | "biweekly" | "monthly" | null {
+  if (v === "weekly" || v === "biweekly" || v === "monthly") {
+    return v;
+  }
+  return null;
+}
+
 export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/templates", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const items = await prisma.deductionTemplate.findMany({ orderBy: { name: "asc" } });
@@ -161,6 +168,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!basis) {
       return c.json({ error: "basePayType must be daily, hourly, or fixed" }, 400);
     }
+    const paySchedule = parsePaySchedule(body.paySchedule) ?? "monthly";
     const row = await prisma.employee.create({
       data: {
         fullName,
@@ -174,6 +182,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
         fixedPay: Number(body.fixedPay ?? 0),
         standardDays: Number(body.standardDays ?? 0),
         standardHours: Number(body.standardHours ?? 0),
+        paySchedule,
         active: body.active !== undefined ? Boolean(body.active) : true,
         notes: String(body.notes ?? ""),
         templateId
@@ -233,6 +242,13 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     if (body.standardHours !== undefined) {
       data.standardHours = Number(body.standardHours);
+    }
+    if (body.paySchedule !== undefined) {
+      const paySchedule = parsePaySchedule(body.paySchedule);
+      if (!paySchedule) {
+        return c.json({ error: "paySchedule must be weekly, biweekly, or monthly" }, 400);
+      }
+      data.paySchedule = paySchedule;
     }
     if (body.active !== undefined) {
       data.active = Boolean(body.active);

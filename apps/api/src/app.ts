@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
 import { peopleRoutes } from "./routes/people.js";
+import { payrollRoutes } from "./routes/payroll.js";
 import { timeRoutes } from "./routes/time.js";
 
 const app = new Hono();
@@ -85,6 +86,7 @@ if (process.env.NODE_ENV !== "production") {
 app.route("/auth", authRoutes);
 app.route("/audit", auditRoutes);
 app.route("/people", peopleRoutes);
+app.route("/payroll", payrollRoutes);
 app.route("/time", timeRoutes);
 
 export { app };

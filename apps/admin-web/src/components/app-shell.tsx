@@ -12,7 +12,7 @@ const RAIL = [
 
 const PINNED: { label: string; href?: string }[] = [
   { label: "People", href: "/dashboard/people/employees" },
-  { label: "Payroll" },
+  { label: "Payroll", href: "/dashboard/payroll/periods" },
   { label: "Time", href: "/dashboard/time/entries" },
   { label: "Finance" },
   { label: "Hiring" },

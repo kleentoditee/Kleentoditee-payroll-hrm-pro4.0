@@ -15,6 +15,7 @@ type Employee = {
   defaultSite: string;
   phone: string;
   basePayType: "daily" | "hourly" | "fixed";
+  paySchedule: "weekly" | "biweekly" | "monthly";
   dailyRate: number;
   hourlyRate: number;
   overtimeRate: number;
@@ -41,6 +42,7 @@ export default function EditEmployeePage() {
   const [defaultSite, setDefaultSite] = useState("");
   const [phone, setPhone] = useState("");
   const [basePayType, setBasePayType] = useState<"daily" | "hourly" | "fixed">("daily");
+  const [paySchedule, setPaySchedule] = useState<"weekly" | "biweekly" | "monthly">("monthly");
   const [dailyRate, setDailyRate] = useState("0");
   const [hourlyRate, setHourlyRate] = useState("0");
   const [overtimeRate, setOvertimeRate] = useState("0");
@@ -55,34 +57,35 @@ export default function EditEmployeePage() {
     let cancelled = false;
     (async () => {
       try {
-        const [tRes, eRes] = await Promise.all([
+        const [templateRes, employeeRes] = await Promise.all([
           fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } }),
           fetch(`${apiBase()}/people/employees/${id}`, { headers: { ...authHeaders() } })
         ]);
-        if (!tRes.ok || !eRes.ok) {
+        if (!templateRes.ok || !employeeRes.ok) {
           throw new Error("Failed to load");
         }
-        const tData = (await tRes.json()) as { items: Template[] };
-        const eData = (await eRes.json()) as { employee: Employee };
+        const templateData = (await templateRes.json()) as { items: Template[] };
+        const employeeData = (await employeeRes.json()) as { employee: Employee };
         if (cancelled) {
           return;
         }
-        setTemplates(tData.items);
-        const e = eData.employee;
-        setFullName(e.fullName);
-        setRole(e.role);
-        setDefaultSite(e.defaultSite);
-        setPhone(e.phone);
-        setBasePayType(e.basePayType);
-        setDailyRate(String(e.dailyRate));
-        setHourlyRate(String(e.hourlyRate));
-        setOvertimeRate(String(e.overtimeRate));
-        setFixedPay(String(e.fixedPay));
-        setStandardDays(String(e.standardDays));
-        setStandardHours(String(e.standardHours));
-        setTemplateId(e.templateId);
-        setNotes(e.notes);
-        setActive(e.active);
+        setTemplates(templateData.items);
+        const employee = employeeData.employee;
+        setFullName(employee.fullName);
+        setRole(employee.role);
+        setDefaultSite(employee.defaultSite);
+        setPhone(employee.phone);
+        setBasePayType(employee.basePayType);
+        setPaySchedule(employee.paySchedule);
+        setDailyRate(String(employee.dailyRate));
+        setHourlyRate(String(employee.hourlyRate));
+        setOvertimeRate(String(employee.overtimeRate));
+        setFixedPay(String(employee.fixedPay));
+        setStandardDays(String(employee.standardDays));
+        setStandardHours(String(employee.standardHours));
+        setTemplateId(employee.templateId);
+        setNotes(employee.notes);
+        setActive(employee.active);
         setError(null);
       } catch {
         if (!cancelled) {
@@ -113,6 +116,7 @@ export default function EditEmployeePage() {
           defaultSite,
           phone,
           basePayType,
+          paySchedule,
           dailyRate: Number(dailyRate),
           hourlyRate: Number(hourlyRate),
           overtimeRate: Number(overtimeRate),
@@ -154,7 +158,7 @@ export default function EditEmployeePage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-600">Loading…</p>;
+    return <p className="text-sm text-slate-600">Loading...</p>;
   }
 
   return (
@@ -162,7 +166,7 @@ export default function EditEmployeePage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="font-serif text-xl text-slate-900">Edit employee</h2>
         <Link href="/dashboard/people/employees" className="text-sm font-semibold text-brand hover:underline">
-          ← Back
+          {"<-"} Back
         </Link>
       </div>
 
@@ -183,7 +187,11 @@ export default function EditEmployeePage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-slate-700">Role</span>
-            <input value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+            <input
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+            />
           </label>
           <label className="block text-sm">
             <span className="text-slate-700">Default site</span>
@@ -196,20 +204,38 @@ export default function EditEmployeePage() {
         </div>
         <label className="block text-sm">
           <span className="text-slate-700">Phone</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
-        </label>
-        <label className="block text-sm">
-          <span className="text-slate-700">Pay basis</span>
-          <select
-            value={basePayType}
-            onChange={(e) => setBasePayType(e.target.value as typeof basePayType)}
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-          >
-            <option value="daily">Daily rate</option>
-            <option value="hourly">Hourly</option>
-            <option value="fixed">Fixed monthly</option>
-          </select>
+          />
         </label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="text-slate-700">Pay basis</span>
+            <select
+              value={basePayType}
+              onChange={(e) => setBasePayType(e.target.value as typeof basePayType)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+            >
+              <option value="daily">Daily rate</option>
+              <option value="hourly">Hourly</option>
+              <option value="fixed">Fixed monthly</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-slate-700">Pay schedule</span>
+            <select
+              value={paySchedule}
+              onChange={(e) => setPaySchedule(e.target.value as typeof paySchedule)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+            >
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly</option>
+            </select>
+          </label>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-slate-700">Daily rate</span>
@@ -280,9 +306,9 @@ export default function EditEmployeePage() {
             onChange={(e) => setTemplateId(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
           >
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
               </option>
             ))}
           </select>
@@ -293,7 +319,12 @@ export default function EditEmployeePage() {
         </label>
         <label className="block text-sm">
           <span className="text-slate-700">Notes</span>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+          />
         </label>
         <div className="flex flex-wrap gap-3">
           <button
@@ -301,7 +332,7 @@ export default function EditEmployeePage() {
             disabled={saving}
             className="rounded-lg bg-brand px-4 py-2 font-semibold text-white disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? "Saving..." : "Save changes"}
           </button>
           <button
             type="button"
