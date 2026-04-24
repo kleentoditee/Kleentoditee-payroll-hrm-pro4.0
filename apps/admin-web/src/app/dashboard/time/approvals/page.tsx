@@ -41,12 +41,11 @@ export default function TimeApprovalsPage() {
     const res = await fetch(`${apiBase()}/time/entries?${params}`, {
       headers: { ...authHeaders() }
     });
+    const data = (await res.json()) as { error?: string; items?: Row[] };
     if (!res.ok) {
-      const j = (await res.json()) as { error?: string };
-      throw new Error(j.error ?? res.statusText);
+      throw new Error(data.error ?? res.statusText);
     }
-    const data = (await res.json()) as { items: Row[] };
-    return data.items;
+    return data.items ?? [];
   }, [q]);
 
   useEffect(() => {

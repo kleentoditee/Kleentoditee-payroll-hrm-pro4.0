@@ -45,7 +45,7 @@ export default function PayrollPeriodDetailPage() {
   const [payDate, setPayDate] = useState("");
   const [notes, setNotes] = useState("");
 
-  const loadPeriod = useCallback(async () => {
+  const loadPeriod = useCallback(async (isCancelled: () => boolean = () => false) => {
     try {
       const res = await fetch(`${apiBase()}/payroll/periods/${id}`, {
         headers: { ...authHeaders() }
@@ -53,6 +53,9 @@ export default function PayrollPeriodDetailPage() {
       const data = (await res.json()) as { error?: string; period?: PeriodDetail };
       if (!res.ok || !data.period) {
         throw new Error(data.error ?? "Load failed");
+      }
+      if (isCancelled()) {
+        return;
       }
       setPeriod(data.period);
       setLabel(data.period.label);
@@ -63,15 +66,24 @@ export default function PayrollPeriodDetailPage() {
       setNotes(data.period.notes ?? "");
       setError(null);
     } catch (e) {
+      if (isCancelled()) {
+        return;
+      }
       setError(e instanceof Error ? e.message : "Load failed");
       setPeriod(null);
     } finally {
-      setLoading(false);
+      if (!isCancelled()) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
   useEffect(() => {
-    void loadPeriod();
+    let cancelled = false;
+    void loadPeriod(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [loadPeriod]);
 
   async function onSave(e: React.FormEvent) {

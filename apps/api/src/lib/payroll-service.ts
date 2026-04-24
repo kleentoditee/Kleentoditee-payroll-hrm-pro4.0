@@ -104,7 +104,7 @@ function summarizeRunItems(
     overtimeHours: number;
   }>
 ) {
-  return items.reduce<{
+  const totals = items.reduce<{
     count: number;
     gross: number;
     totalDeductions: number;
@@ -115,15 +115,24 @@ function summarizeRunItems(
   }>(
     (acc, item) => ({
       count: acc.count + 1,
-      gross: roundMoney(acc.gross + item.gross),
-      totalDeductions: roundMoney(acc.totalDeductions + item.totalDeductions),
-      net: roundMoney(acc.net + item.net),
-      daysWorked: roundMoney(acc.daysWorked + item.daysWorked),
-      hoursWorked: roundMoney(acc.hoursWorked + item.hoursWorked),
-      overtimeHours: roundMoney(acc.overtimeHours + item.overtimeHours)
+      gross: acc.gross + item.gross,
+      totalDeductions: acc.totalDeductions + item.totalDeductions,
+      net: acc.net + item.net,
+      daysWorked: acc.daysWorked + item.daysWorked,
+      hoursWorked: acc.hoursWorked + item.hoursWorked,
+      overtimeHours: acc.overtimeHours + item.overtimeHours
     }),
     { count: 0, gross: 0, totalDeductions: 0, net: 0, daysWorked: 0, hoursWorked: 0, overtimeHours: 0 }
   );
+  return {
+    count: totals.count,
+    gross: roundMoney(totals.gross),
+    totalDeductions: roundMoney(totals.totalDeductions),
+    net: roundMoney(totals.net),
+    daysWorked: roundMoney(totals.daysWorked),
+    hoursWorked: roundMoney(totals.hoursWorked),
+    overtimeHours: roundMoney(totals.overtimeHours)
+  };
 }
 
 async function buildRunItemPayloads(period: {
@@ -369,10 +378,17 @@ export async function createDraftRun(periodId: string, notes = "") {
     throw new Error("A pay run already exists for this period.");
   }
   const items = await buildRunItemPayloads(period);
-  const run = await prisma.payRun.create({
-    data: { periodId, notes },
-    include: RUN_DETAIL_INCLUDE
-  });
+  const run = await prisma.payRun
+    .create({
+      data: { periodId, notes },
+      include: RUN_DETAIL_INCLUDE
+    })
+    .catch((e) => {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        throw new Error("A pay run already exists for this period.");
+      }
+      throw e;
+    });
   await replaceDraftRunItems(run.id, items);
   return loadRun(run.id);
 }
@@ -413,17 +429,18 @@ export async function finalizeRun(runId: string) {
         finalizedAt: new Date()
       }
     });
+    const issuedAt = new Date();
     for (const item of run.items) {
       await tx.paystub.upsert({
         where: { payRunItemId: item.id },
         update: {
-          issuedAt: new Date(),
+          issuedAt,
           payload: buildPaystubPayload(run.period, item)
         },
         create: {
           payRunItemId: item.id,
           stubNumber: createPaystubNumber(run.id, item.id),
-          issuedAt: new Date(),
+          issuedAt,
           payload: buildPaystubPayload(run.period, item)
         }
       });

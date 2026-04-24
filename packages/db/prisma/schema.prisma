@@ -184,7 +184,7 @@ model PayRun {
   id         String        @id @default(cuid())
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
-  periodId   String
+  periodId   String        @unique
   period     PayPeriod     @relation(fields: [periodId], references: [id], onDelete: Cascade)
   status     PayRunStatus  @default(draft)
   notes      String        @default("")
@@ -194,7 +194,6 @@ model PayRun {
   items      PayRunItem[]
   exports    PayrollExport[]
 
-  @@index([periodId])
   @@index([status])
 }
 
