@@ -43,11 +43,24 @@
   - verify before claiming success
   - then make one clean commit and push
 
+## Parallel agent workflow
+
+- Use `AGENTS.md`, `TASKS.md`, and `docs/AI-PARALLEL-WORKFLOW.md` for Codex/Claude/Cursor coordination.
+- Each agent should work in its own git worktree and branch.
+- Create worktrees from the canonical repo with:
+  - `.\scripts\new-agent-worktree.ps1 -Agent claude -Lane finance-core`
+  - `.\scripts\new-agent-worktree.ps1 -Agent cursor -Lane employee-tracker`
+  - `.\scripts\new-agent-worktree.ps1 -Agent codex -Lane integration-qa`
+- Check for overlapping edits with:
+  - `.\scripts\check-agent-overlap.ps1`
+
 ## Code review status
 
 - Repo has `.coderabbit.yaml`
 - CodeRabbit PR auto-review is configured at repo level
-- Local `coderabbit` CLI was not installed in this session, so terminal review commands were not available yet
+- Local `coderabbit` CLI works through WSL as user `kleentoditee`.
+- Local command:
+  - `wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"`
 
 ## Expected next-step verification after pulling
 
