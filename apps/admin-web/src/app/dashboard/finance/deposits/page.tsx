@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -37,11 +37,7 @@ export default function DepositsListPage() {
         const res = await fetch(`${apiBase()}/finance/deposits`, {
           headers: { ...authHeaders() }
         });
-        if (!res.ok) {
-          const j = (await res.json()) as { error?: string };
-          throw new Error(j.error ?? res.statusText);
-        }
-        const data = (await res.json()) as { items: DepositRow[] };
+        const data = await readApiData<{ items: DepositRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);
           setError(null);

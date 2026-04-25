@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -35,11 +35,7 @@ export default function BillPaymentsListPage() {
         const res = await fetch(`${apiBase()}/finance/bill-payments`, {
           headers: { ...authHeaders() }
         });
-        if (!res.ok) {
-          const j = (await res.json()) as { error?: string };
-          throw new Error(j.error ?? res.statusText);
-        }
-        const data = (await res.json()) as { items: BillPaymentRow[] };
+        const data = await readApiData<{ items: BillPaymentRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);
           setError(null);

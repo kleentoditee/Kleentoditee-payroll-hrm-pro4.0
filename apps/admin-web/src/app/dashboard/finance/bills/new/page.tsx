@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -60,6 +60,7 @@ export default function NewBillPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [sRes, pRes, aRes] = await Promise.all([
@@ -67,16 +68,23 @@ export default function NewBillPage() {
           fetch(`${apiBase()}/finance/products`, { headers: { ...authHeaders() } }),
           fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
         ]);
-        const sJson = (await sRes.json()) as { items: SupplierLite[] };
-        const pJson = (await pRes.json()) as { items: ProductLite[] };
-        const aJson = (await aRes.json()) as { items: AccountLite[] };
-        setSuppliers(sJson.items ?? []);
-        setProducts(pJson.items ?? []);
-        setAccounts(aJson.items ?? []);
+        const [sJson, pJson, aJson] = await Promise.all([
+          readApiData<{ items: SupplierLite[] }>(sRes),
+          readApiData<{ items: ProductLite[] }>(pRes),
+          readApiData<{ items: AccountLite[] }>(aRes)
+        ]);
+        if (!cancelled) {
+          setSuppliers(sJson.items ?? []);
+          setProducts(pJson.items ?? []);
+          setAccounts(aJson.items ?? []);
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load lookups");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load lookups");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const expenseAccounts = useMemo(
@@ -142,11 +150,7 @@ export default function NewBillPage() {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { bill: { id: string } };
+      const data = await readApiData<{ bill: { id: string } }>(res);
       router.push(`/dashboard/finance/bills/${data.bill.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create bill");

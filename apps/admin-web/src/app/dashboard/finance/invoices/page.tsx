@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -48,11 +48,7 @@ export default function InvoicesListPage() {
         const res = await fetch(`${apiBase()}/finance/invoices${qs}`, {
           headers: { ...authHeaders() }
         });
-        if (!res.ok) {
-          const j = (await res.json()) as { error?: string };
-          throw new Error(j.error ?? res.statusText);
-        }
-        const data = (await res.json()) as { items: InvoiceRow[] };
+        const data = await readApiData<{ items: InvoiceRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);
           setError(null);

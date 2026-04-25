@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -59,11 +59,7 @@ export default function DepositDetailPage() {
       const res = await fetch(`${apiBase()}/finance/deposits/${id}`, {
         headers: { ...authHeaders() }
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { deposit: DepositDetail };
+      const data = await readApiData<{ deposit: DepositDetail }>(res);
       setDeposit(data.deposit);
       setError(null);
     } catch (e) {
@@ -85,8 +81,7 @@ export default function DepositDetailPage() {
         headers: { ...authHeaders() }
       });
       if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
+        await readApiData<{ error?: string }>(res);
       }
       if (onDone) onDone();
       else await load();

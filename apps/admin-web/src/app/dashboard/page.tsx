@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -12,15 +12,12 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     const [timeRes, runRes] = await Promise.all([
-      fetch(`${apiBase()}/time/entries?queue=all&status=submitted`, { headers: { ...authHeaders() } }),
+      fetch(`${apiBase()}/time/entries/count?queue=all&status=submitted`, { headers: { ...authHeaders() } }),
       fetch(`${apiBase()}/payroll/runs?status=draft`, { headers: { ...authHeaders() } })
     ]);
-    if (!timeRes.ok || !runRes.ok) {
-      throw new Error("Could not load dashboard metrics.");
-    }
-    const timeJson = (await timeRes.json()) as { items: unknown[] };
-    const runJson = (await runRes.json()) as { items: unknown[] };
-    return { submitted: timeJson.items.length, drafts: runJson.items.length };
+    const timeJson = await readApiData<{ count: number }>(timeRes, "Could not load time approval count.");
+    const runJson = await readApiData<{ items: unknown[] }>(runRes, "Could not load draft pay runs.");
+    return { submitted: timeJson.count, drafts: runJson.items.length };
   }, []);
 
   useEffect(() => {

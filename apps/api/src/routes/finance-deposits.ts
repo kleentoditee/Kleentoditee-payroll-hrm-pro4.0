@@ -1,7 +1,8 @@
 import { AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
-import { nextDepositNumber, round2 } from "../lib/finance-transactions.js";
+import { MONEY_TOLERANCE, nextDepositNumber, round2 } from "../lib/finance-transactions.js";
+import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -14,6 +15,8 @@ const CAN_VIEW = [
 ] as const;
 
 const CAN_EDIT = [Role.platform_owner, Role.finance_admin] as const;
+
+class DepositConflictError extends Error {}
 
 function parseDate(value: unknown): Date | null {
   const text = String(value ?? "").trim();
@@ -135,7 +138,7 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
           if (p.depositedAt) {
             throw new Error(`Line ${index + 1}: payment ${p.number} has already been deposited.`);
           }
-          if (Math.abs(amount - p.amount) > 0.005) {
+          if (Math.abs(amount - p.amount) > MONEY_TOLERANCE) {
             throw new Error(
               `Line ${index + 1}: deposit amount must equal payment amount ${p.amount.toFixed(2)}.`
             );
@@ -151,10 +154,6 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
 
       const total = round2(resolvedLines.reduce((s, l) => s + l.amount, 0));
       const number = String(body.number ?? "").trim() || (await nextDepositNumber());
-      const existing = await prisma.deposit.findUnique({ where: { number } });
-      if (existing) {
-        return c.json({ error: `Deposit number "${number}" already exists.` }, 409);
-      }
 
       const row = await prisma.deposit.create({
         data: {
@@ -184,6 +183,9 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ deposit: row }, 201);
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Deposit number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not create deposit." }, 400);
     }
   })
@@ -200,44 +202,57 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "Only draft deposits can be posted." }, 409);
     }
 
-    const paymentIds = before.lines
-      .map((l) => l.paymentId)
-      .filter((v): v is string => typeof v === "string" && v.length > 0);
-    if (paymentIds.length > 0) {
-      const conflicts = await prisma.payment.findMany({
-        where: { id: { in: paymentIds }, depositedAt: { not: null } }
-      });
-      if (conflicts.length > 0) {
-        return c.json(
-          { error: `One or more linked payments are already deposited: ${conflicts.map((p) => p.number).join(", ")}` },
-          409
-        );
-      }
-    }
+    const paymentIds = Array.from(
+      new Set(
+        before.lines
+          .map((l) => l.paymentId)
+          .filter((v): v is string => typeof v === "string" && v.length > 0)
+      )
+    );
 
     const now = new Date();
-    const row = await prisma.$transaction(async (tx) => {
-      if (paymentIds.length > 0) {
-        await tx.payment.updateMany({
-          where: { id: { in: paymentIds } },
-          data: { depositedAt: now }
-        });
-      }
-      await tx.deposit.update({
-        where: { id },
-        data: { status: TransactionStatus.open, postedAt: now }
-      });
-      return tx.deposit.findUnique({
-        where: { id },
-        include: {
-          bankAccount: true,
-          lines: {
-            include: { payment: { select: { id: true, number: true, depositedAt: true } } },
-            orderBy: { position: "asc" }
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        if (paymentIds.length > 0) {
+          const conflicts = await tx.payment.findMany({
+            where: { id: { in: paymentIds }, depositedAt: { not: null } },
+            select: { number: true }
+          });
+          if (conflicts.length > 0) {
+            throw new DepositConflictError(
+              `One or more linked payments are already deposited: ${conflicts.map((p) => p.number).join(", ")}`
+            );
+          }
+          const updated = await tx.payment.updateMany({
+            where: { id: { in: paymentIds }, depositedAt: null },
+            data: { depositedAt: now }
+          });
+          if (updated.count !== paymentIds.length) {
+            throw new DepositConflictError("One or more linked payments could not be deposited.");
           }
         }
+        await tx.deposit.update({
+          where: { id },
+          data: { status: TransactionStatus.open, postedAt: now }
+        });
+        return tx.deposit.findUnique({
+          where: { id },
+          include: {
+            bankAccount: true,
+            lines: {
+              include: { payment: { select: { id: true, number: true, depositedAt: true } } },
+              orderBy: { position: "asc" }
+            }
+          }
+        });
       });
-    });
+    } catch (e) {
+      if (e instanceof DepositConflictError) {
+        return c.json({ error: e.message }, 409);
+      }
+      return c.json({ error: e instanceof Error ? e.message : "Could not post deposit." }, 400);
+    }
 
     await writeAudit({
       actorUserId: c.get("userId"),

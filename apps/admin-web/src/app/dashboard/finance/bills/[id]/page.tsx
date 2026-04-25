@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -69,11 +69,7 @@ export default function BillDetailPage() {
       const res = await fetch(`${apiBase()}/finance/bills/${id}`, {
         headers: { ...authHeaders() }
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { bill: BillDetail };
+      const data = await readApiData<{ bill: BillDetail }>(res);
       setBill(data.bill);
       setError(null);
     } catch (e) {
@@ -95,8 +91,7 @@ export default function BillDetailPage() {
         headers: { ...authHeaders() }
       });
       if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
+        await readApiData<{ error?: string }>(res);
       }
       if (onDone) onDone();
       else await load();

@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -52,11 +52,7 @@ export default function PaymentDetailPage() {
       const res = await fetch(`${apiBase()}/finance/payments/${id}`, {
         headers: { ...authHeaders() }
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { payment: PaymentDetail };
+      const data = await readApiData<{ payment: PaymentDetail }>(res);
       setPayment(data.payment);
       setError(null);
     } catch (e) {
@@ -78,8 +74,7 @@ export default function PaymentDetailPage() {
         { method: "POST", headers: { ...authHeaders() } }
       );
       if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
+        await readApiData<{ error?: string }>(res);
       }
       await load();
     } catch (e) {
@@ -98,8 +93,7 @@ export default function PaymentDetailPage() {
         headers: { ...authHeaders() }
       });
       if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
+        await readApiData<{ error?: string }>(res);
       }
       router.push("/dashboard/finance/payments");
     } catch (e) {

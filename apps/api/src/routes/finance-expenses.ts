@@ -6,6 +6,7 @@ import {
   rollupTotals,
   round2
 } from "../lib/finance-transactions.js";
+import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -147,10 +148,6 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
       const lines = await resolveLines((body.lines ?? []) as IncomingLine[]);
       const totals = rollupTotals(lines, 0);
       const number = String(body.number ?? "").trim() || (await nextExpenseNumber());
-      const existing = await prisma.expense.findUnique({ where: { number } });
-      if (existing) {
-        return c.json({ error: `Expense number "${number}" already exists.` }, 409);
-      }
 
       const row = await prisma.expense.create({
         data: {
@@ -184,6 +181,9 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ expense: row }, 201);
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Expense number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not create expense." }, 400);
     }
   })
@@ -276,6 +276,9 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ expense: row });
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Expense number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not update expense." }, 400);
     }
   })

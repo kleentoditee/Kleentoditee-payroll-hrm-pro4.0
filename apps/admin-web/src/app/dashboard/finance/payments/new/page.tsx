@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -44,20 +44,28 @@ export default function RecordPaymentPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [cRes, aRes] = await Promise.all([
           fetch(`${apiBase()}/finance/customers`, { headers: { ...authHeaders() } }),
           fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
         ]);
-        const cJson = (await cRes.json()) as { items: CustomerLite[] };
-        const aJson = (await aRes.json()) as { items: AccountLite[] };
-        setCustomers(cJson.items ?? []);
-        setAccounts(aJson.items ?? []);
+        const [cJson, aJson] = await Promise.all([
+          readApiData<{ items: CustomerLite[] }>(cRes),
+          readApiData<{ items: AccountLite[] }>(aRes)
+        ]);
+        if (!cancelled) {
+          setCustomers(cJson.items ?? []);
+          setAccounts(aJson.items ?? []);
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load lookups");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load lookups");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -66,22 +74,28 @@ export default function RecordPaymentPage() {
       setApply({});
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
           `${apiBase()}/finance/invoices?customerId=${encodeURIComponent(customerId)}`,
           { headers: { ...authHeaders() } }
         );
-        const data = (await res.json()) as { items: OpenInvoice[] };
+        const data = await readApiData<{ items: OpenInvoice[] }>(res);
         const open = (data.items ?? []).filter(
           (i) => i.status === "open" || i.status === "partial"
         );
-        setOpenInvoices(open);
-        setApply({});
+        if (!cancelled) {
+          setOpenInvoices(open);
+          setApply({});
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load open invoices");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load open invoices");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [customerId]);
 
   const assetAccounts = useMemo(() => accounts.filter((a) => a.type === "asset"), [accounts]);
@@ -136,11 +150,7 @@ export default function RecordPaymentPage() {
           applications
         })
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { payment: { id: string } };
+      const data = await readApiData<{ payment: { id: string } }>(res);
       router.push(`/dashboard/finance/payments/${data.payment.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record payment");

@@ -99,7 +99,7 @@ export default function TrackerHome() {
     try {
       const res = await fetch(`${apiBase()}/time/self/entries`, {
         method: "POST",
-        headers: { ...authHeaders() },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           month,
           site: site.trim(),

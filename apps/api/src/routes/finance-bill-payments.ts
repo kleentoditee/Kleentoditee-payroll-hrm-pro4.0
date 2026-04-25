@@ -7,7 +7,8 @@ import {
 } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
-import { nextBillPaymentNumber, round2 } from "../lib/finance-transactions.js";
+import { MONEY_TOLERANCE, nextBillPaymentNumber, round2 } from "../lib/finance-transactions.js";
+import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -46,8 +47,8 @@ function deriveBillStatus(
   if (current === TransactionStatus.draft || current === TransactionStatus.void) {
     return current;
   }
-  if (amountPaid <= 0.005) return TransactionStatus.open;
-  if (amountPaid + 0.005 < total) return TransactionStatus.partial;
+  if (amountPaid <= MONEY_TOLERANCE) return TransactionStatus.open;
+  if (amountPaid + MONEY_TOLERANCE < total) return TransactionStatus.partial;
   return TransactionStatus.paid;
 }
 
@@ -133,7 +134,7 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
         .filter((a) => a.billId && a.amount > 0);
 
       const appliedTotal = round2(applications.reduce((s, a) => s + a.amount, 0));
-      if (appliedTotal - 0.005 > amount) {
+      if (appliedTotal - MONEY_TOLERANCE > amount) {
         return c.json({ error: "Applied amount exceeds payment amount." }, 400);
       }
 
@@ -155,7 +156,7 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
               400
             );
           }
-          if (app.amount - 0.005 > bill.balance) {
+          if (app.amount - MONEY_TOLERANCE > bill.balance) {
             return c.json(
               { error: `Applied amount on ${bill.number} exceeds the open balance of ${bill.balance.toFixed(2)}.` },
               400
@@ -166,10 +167,6 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
 
       const unapplied = round2(amount - appliedTotal);
       const number = String(body.number ?? "").trim() || (await nextBillPaymentNumber());
-      const existing = await prisma.billPayment.findUnique({ where: { number } });
-      if (existing) {
-        return c.json({ error: `Bill payment number "${number}" already exists.` }, 409);
-      }
 
       const billPayment = await prisma.$transaction(async (tx) => {
         const created = await tx.billPayment.create({
@@ -222,6 +219,9 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
       });
       return c.json({ billPayment }, 201);
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Bill payment number or application already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not record bill payment." }, 400);
     }
   })

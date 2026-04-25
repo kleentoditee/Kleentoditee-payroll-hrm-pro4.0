@@ -6,6 +6,7 @@ import {
   nextBillNumber,
   rollupTotals
 } from "../lib/finance-transactions.js";
+import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -159,10 +160,6 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
       const resolvedLines = await resolveLines((body.lines ?? []) as IncomingLine[]);
       const totals = rollupTotals(resolvedLines, 0);
       const number = String(body.number ?? "").trim() || (await nextBillNumber());
-      const existing = await prisma.bill.findUnique({ where: { number } });
-      if (existing) {
-        return c.json({ error: `Bill number "${number}" already exists.` }, 409);
-      }
 
       const row = await prisma.bill.create({
         data: {
@@ -197,6 +194,9 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ bill: row }, 201);
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Bill number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not create bill." }, 400);
     }
   })
@@ -245,12 +245,6 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
         const number = String(body.number ?? "").trim();
         if (!number) {
           return c.json({ error: "number cannot be empty." }, 400);
-        }
-        if (number !== before.number) {
-          const clash = await prisma.bill.findUnique({ where: { number } });
-          if (clash) {
-            return c.json({ error: `Bill number "${number}" already exists.` }, 409);
-          }
         }
         data.number = number;
       }
@@ -301,6 +295,9 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ bill: row });
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Bill number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not update bill." }, 400);
     }
   })

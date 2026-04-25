@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -62,11 +62,7 @@ export default function ExpenseDetailPage() {
       const res = await fetch(`${apiBase()}/finance/expenses/${id}`, {
         headers: { ...authHeaders() }
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { expense: ExpenseDetail };
+      const data = await readApiData<{ expense: ExpenseDetail }>(res);
       setExpense(data.expense);
       setError(null);
     } catch (e) {
@@ -88,8 +84,7 @@ export default function ExpenseDetailPage() {
         headers: { ...authHeaders() }
       });
       if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
+        await readApiData<{ error?: string }>(res);
       }
       if (onDone) onDone();
       else await load();

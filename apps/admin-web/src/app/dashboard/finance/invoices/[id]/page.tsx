@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -64,11 +64,7 @@ export default function InvoiceDetailPage() {
       const res = await fetch(`${apiBase()}/finance/invoices/${id}`, {
         headers: { ...authHeaders() }
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { invoice: InvoiceDetail };
+      const data = await readApiData<{ invoice: InvoiceDetail }>(res);
       setInvoice(data.invoice);
       setError(null);
     } catch (e) {
@@ -90,8 +86,7 @@ export default function InvoiceDetailPage() {
         headers: { ...authHeaders() }
       });
       if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
+        await readApiData<{ error?: string }>(res);
       }
       if (onDone) onDone();
       else await load();

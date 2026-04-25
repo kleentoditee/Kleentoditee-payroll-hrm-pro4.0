@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useEffect, useState } from "react";
 
@@ -40,11 +40,7 @@ export default function SuppliersListPage() {
           const res = await fetch(`${apiBase()}/finance/suppliers${qs}`, {
             headers: { ...authHeaders() }
           });
-          if (!res.ok) {
-            const j = (await res.json()) as { error?: string };
-            throw new Error(j.error ?? res.statusText);
-          }
-          const data = (await res.json()) as { items: SupplierRow[] };
+          const data = await readApiData<{ items: SupplierRow[] }>(res);
           if (!cancelled) {
             setItems(data.items);
             setError(null);
@@ -73,10 +69,7 @@ export default function SuppliersListPage() {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(form)
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
+      await readApiData<{ error?: string }>(res);
       setForm(EMPTY_FORM);
       setNonce((n) => n + 1);
     } catch (err) {

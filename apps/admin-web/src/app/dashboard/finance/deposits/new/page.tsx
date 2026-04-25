@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -37,17 +37,21 @@ export default function NewDepositPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch(`${apiBase()}/finance/accounts`, {
           headers: { ...authHeaders() }
         });
-        const data = (await res.json()) as { items: AccountLite[] };
-        setAccounts(data.items ?? []);
+        const data = await readApiData<{ items: AccountLite[] }>(res);
+        if (!cancelled) setAccounts(data.items ?? []);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load accounts");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load accounts");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function NewDepositPage() {
       setPicked(new Set());
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
@@ -64,13 +69,18 @@ export default function NewDepositPage() {
           )}`,
           { headers: { ...authHeaders() } }
         );
-        const data = (await res.json()) as { items: AvailablePayment[] };
-        setAvailable(data.items ?? []);
-        setPicked(new Set());
+        const data = await readApiData<{ items: AvailablePayment[] }>(res);
+        if (!cancelled) {
+          setAvailable(data.items ?? []);
+          setPicked(new Set());
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load available payments");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load available payments");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [bankAccountId]);
 
   const assetAccounts = useMemo(() => accounts.filter((a) => a.type === "asset"), [accounts]);
@@ -119,11 +129,7 @@ export default function NewDepositPage() {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ bankAccountId, depositDate, memo, lines })
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { deposit: { id: string } };
+      const data = await readApiData<{ deposit: { id: string } }>(res);
       router.push(`/dashboard/finance/deposits/${data.deposit.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create deposit");

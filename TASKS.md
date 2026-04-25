@@ -12,8 +12,8 @@ Use this file as the live coordination board for Codex, Claude, Cursor, and the 
 
 | Lane | Agent | Branch Pattern | Worktree Path | Owned Areas | Status |
 | --- | --- | --- | --- | --- | --- |
-| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Merging finance Tasks 9 + 10; tracker already merged |
-| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Tasks 9 + 10 reviewed for integration; ready for Task 11 after merge |
+| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Finance Tasks 9 + 10 and tracker merged; CodeRabbit fixes in progress |
+| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Tasks 9 + 10 merged; pull `codex/consolidate-live-build` before next slice |
 | Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | On `codex/consolidate-live-build`; pull to refresh worktree |
 
 ## Shared File Locks
@@ -59,7 +59,6 @@ wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-pay
 
 | Slice | Best Agent | Why |
 | --- | --- | --- |
-| Finance Task 11 - banking and accounting controls | Claude | Builds on the finance domain just shipped |
-| Admin or tracker follow-ups (a11y, paywall, prod API URL) | Cursor | UI polish on consolidated build |
+| Paystubs and export polish (no banking) | Claude | User priority is payroll output and exports, not banking workflows |
+| Admin/tracker readability fixes | Cursor | Left rail widgets and top action buttons need larger, clearer UI |
 | Cross-app QA, CodeRabbit pass, and merge cleanup | Codex | Integration and verification lane |
-

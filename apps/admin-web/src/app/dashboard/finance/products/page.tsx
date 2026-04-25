@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useEffect, useMemo, useState } from "react";
 
@@ -51,8 +51,7 @@ export default function ProductsListPage() {
         const res = await fetch(`${apiBase()}/finance/accounts`, {
           headers: { ...authHeaders() }
         });
-        if (!res.ok) return;
-        const data = (await res.json()) as { items: AccountLite[] };
+        const data = await readApiData<{ items: AccountLite[] }>(res);
         if (!cancelled) {
           setAccounts(data.items);
         }
@@ -74,11 +73,7 @@ export default function ProductsListPage() {
           const res = await fetch(`${apiBase()}/finance/products${qs}`, {
             headers: { ...authHeaders() }
           });
-          if (!res.ok) {
-            const j = (await res.json()) as { error?: string };
-            throw new Error(j.error ?? res.statusText);
-          }
-          const data = (await res.json()) as { items: ProductRow[] };
+          const data = await readApiData<{ items: ProductRow[] }>(res);
           if (!cancelled) {
             setItems(data.items);
             setError(null);
@@ -120,10 +115,7 @@ export default function ProductsListPage() {
           expenseAccountId: form.expenseAccountId || null
         })
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
+      await readApiData<{ error?: string }>(res);
       setForm(EMPTY_FORM);
       setNonce((n) => n + 1);
     } catch (err) {

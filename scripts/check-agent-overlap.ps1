@@ -8,6 +8,7 @@ $repoRoot = (& git rev-parse --show-toplevel).Trim()
 if (-not $repoRoot) {
   throw "Run this script inside the KleenToDiTee git repo."
 }
+$resolvedWorktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot).TrimEnd('\', '/')
 
 $worktrees = @()
 $current = @{}
@@ -28,6 +29,10 @@ if ($current.Path) {
 $changes = @()
 foreach ($tree in $worktrees) {
   if (-not (Test-Path $tree.Path)) {
+    continue
+  }
+  $treePath = [System.IO.Path]::GetFullPath($tree.Path).TrimEnd('\', '/')
+  if (-not $treePath.StartsWith($resolvedWorktreeRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
     continue
   }
   $status = & git -C $tree.Path status --porcelain

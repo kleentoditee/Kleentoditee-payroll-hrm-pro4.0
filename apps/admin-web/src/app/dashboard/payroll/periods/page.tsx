@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -57,11 +57,7 @@ export default function PayrollPeriodsPage() {
       const res = await fetch(`${apiBase()}/payroll/periods${qs}`, {
         headers: { ...authHeaders() }
       });
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
-        throw new Error(data.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { items: Period[] };
+      const data = await readApiData<{ items: Period[] }>(res);
       setItems(data.items);
       setError(null);
     } catch (e) {
@@ -91,10 +87,7 @@ export default function PayrollPeriodsPage() {
           notes
         })
       });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? "Create failed");
-      }
+      await readApiData<{ error?: string }>(res, "Create failed");
       setLabel("");
       setNotes("");
       await loadPeriods();

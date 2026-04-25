@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -44,20 +44,28 @@ export default function PayBillsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [sRes, aRes] = await Promise.all([
           fetch(`${apiBase()}/finance/suppliers`, { headers: { ...authHeaders() } }),
           fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
         ]);
-        const sJson = (await sRes.json()) as { items: SupplierLite[] };
-        const aJson = (await aRes.json()) as { items: AccountLite[] };
-        setSuppliers(sJson.items ?? []);
-        setAccounts(aJson.items ?? []);
+        const [sJson, aJson] = await Promise.all([
+          readApiData<{ items: SupplierLite[] }>(sRes),
+          readApiData<{ items: AccountLite[] }>(aRes)
+        ]);
+        if (!cancelled) {
+          setSuppliers(sJson.items ?? []);
+          setAccounts(aJson.items ?? []);
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load lookups");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load lookups");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -66,22 +74,28 @@ export default function PayBillsPage() {
       setApply({});
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
           `${apiBase()}/finance/bills?supplierId=${encodeURIComponent(supplierId)}`,
           { headers: { ...authHeaders() } }
         );
-        const data = (await res.json()) as { items: OpenBill[] };
+        const data = await readApiData<{ items: OpenBill[] }>(res);
         const open = (data.items ?? []).filter(
           (b) => b.status === "open" || b.status === "partial"
         );
-        setOpenBills(open);
-        setApply({});
+        if (!cancelled) {
+          setOpenBills(open);
+          setApply({});
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load open bills");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load open bills");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [supplierId]);
 
   const assetAccounts = useMemo(() => accounts.filter((a) => a.type === "asset"), [accounts]);
@@ -136,11 +150,7 @@ export default function PayBillsPage() {
           applications
         })
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { billPayment: { id: string } };
+      const data = await readApiData<{ billPayment: { id: string } }>(res);
       router.push(`/dashboard/finance/bill-payments/${data.billPayment.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record bill payment");

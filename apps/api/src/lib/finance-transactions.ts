@@ -37,6 +37,7 @@ export type ComputedBillLine = {
   amount: number;
 };
 
+export const MONEY_TOLERANCE = 0.005;
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 export function computeInvoiceLine(line: LineInput, index: number): ComputedLine {
@@ -100,10 +101,10 @@ export function deriveStatus(
   if (currentStatus === TransactionStatus.draft || currentStatus === TransactionStatus.void) {
     return currentStatus;
   }
-  if (amountPaid <= 0) {
+  if (amountPaid <= MONEY_TOLERANCE) {
     return TransactionStatus.open;
   }
-  if (amountPaid + 0.005 < total) {
+  if (amountPaid + MONEY_TOLERANCE < total) {
     return TransactionStatus.partial;
   }
   return TransactionStatus.paid;

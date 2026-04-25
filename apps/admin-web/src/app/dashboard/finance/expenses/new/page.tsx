@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
+import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -51,20 +51,28 @@ export default function NewExpensePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const [sRes, aRes] = await Promise.all([
           fetch(`${apiBase()}/finance/suppliers`, { headers: { ...authHeaders() } }),
           fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
         ]);
-        const sJson = (await sRes.json()) as { items: SupplierLite[] };
-        const aJson = (await aRes.json()) as { items: AccountLite[] };
-        setSuppliers(sJson.items ?? []);
-        setAccounts(aJson.items ?? []);
+        const [sJson, aJson] = await Promise.all([
+          readApiData<{ items: SupplierLite[] }>(sRes),
+          readApiData<{ items: AccountLite[] }>(aRes)
+        ]);
+        if (!cancelled) {
+          setSuppliers(sJson.items ?? []);
+          setAccounts(aJson.items ?? []);
+        }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load lookups");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load lookups");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const assetAccounts = useMemo(() => accounts.filter((a) => a.type === "asset"), [accounts]);
@@ -112,11 +120,7 @@ export default function NewExpensePage() {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      const data = (await res.json()) as { expense: { id: string } };
+      const data = await readApiData<{ expense: { id: string } }>(res);
       router.push(`/dashboard/finance/expenses/${data.expense.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create expense");

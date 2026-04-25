@@ -150,6 +150,29 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     });
     return c.json({ month: queueAll ? null : month, queueAll, items });
   })
+  .get("/entries/count", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const queueAll = c.req.query("queue") === "all";
+    const month = c.req.query("month")?.trim() || monthKey(new Date());
+    const q = (c.req.query("q") ?? "").trim().toLowerCase();
+    const statusFilter = c.req.query("status")?.trim();
+
+    const count = await prisma.timeEntry.count({
+      where: {
+        ...(queueAll ? {} : { month }),
+        ...(statusFilter && parseStatus(statusFilter) ? { status: parseStatus(statusFilter)! } : {}),
+        ...(q
+          ? {
+              OR: [
+                { site: { contains: q } },
+                { notes: { contains: q } },
+                { employee: { fullName: { contains: q } } }
+              ]
+            }
+          : {})
+      }
+    });
+    return c.json({ month: queueAll ? null : month, queueAll, count });
+  })
   .post("/entries/bulk-approve", authRequired, requireRole(...CAN_APPROVE_ENTRIES), async (c) => {
     const body = await c.req.json<{ ids?: unknown }>();
     const raw = Array.isArray(body.ids) ? body.ids : [];

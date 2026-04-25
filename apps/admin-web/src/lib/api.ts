@@ -35,6 +35,24 @@ export async function readApiJson<T>(res: Response): Promise<{ data: T | null; r
   }
 }
 
+export async function readApiData<T>(
+  res: Response,
+  fallback = res.statusText
+): Promise<T> {
+  const { data, rawText } = await readApiJson<T>(res);
+  if (!res.ok) {
+    const error =
+      data && typeof data === "object" && "error" in data
+        ? String((data as { error?: unknown }).error ?? "")
+        : "";
+    throw new Error(error || rawText || fallback || `HTTP ${res.status}`);
+  }
+  if (!data) {
+    throw new Error(rawText || fallback || "Empty API response");
+  }
+  return data;
+}
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${apiBase()}${path}`, {
     ...init,

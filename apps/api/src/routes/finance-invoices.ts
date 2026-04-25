@@ -6,6 +6,7 @@ import {
   nextInvoiceNumber,
   rollupTotals
 } from "../lib/finance-transactions.js";
+import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -159,10 +160,6 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
       const resolvedLines = await resolveLines((body.lines ?? []) as IncomingLine[]);
       const totals = rollupTotals(resolvedLines, 0);
       const number = String(body.number ?? "").trim() || (await nextInvoiceNumber());
-      const existing = await prisma.invoice.findUnique({ where: { number } });
-      if (existing) {
-        return c.json({ error: `Invoice number "${number}" already exists.` }, 409);
-      }
 
       const row = await prisma.invoice.create({
         data: {
@@ -194,6 +191,9 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ invoice: row }, 201);
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Invoice number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not create invoice." }, 400);
     }
   })
@@ -243,12 +243,6 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
         if (!number) {
           return c.json({ error: "number cannot be empty." }, 400);
         }
-        if (number !== before.number) {
-          const clash = await prisma.invoice.findUnique({ where: { number } });
-          if (clash) {
-            return c.json({ error: `Invoice number "${number}" already exists.` }, 409);
-          }
-        }
         data.number = number;
       }
 
@@ -295,6 +289,9 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
       });
       return c.json({ invoice: row });
     } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        return c.json({ error: "Invoice number already exists." }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not update invoice." }, 400);
     }
   })
