@@ -298,6 +298,8 @@ model Account {
 
   invoiceLines      InvoiceLine[] @relation("InvoiceLineIncomeAccount")
   billLines         BillLine[]    @relation("BillLineExpenseAccount")
+  paymentDeposits    Payment[]     @relation("PaymentDepositAccount")
+  billPaymentSources BillPayment[] @relation("BillPaymentSourceAccount")
 
   @@index([type, active])
   @@index([parentId])
@@ -319,6 +321,7 @@ model Customer {
   active         Boolean  @default(true)
 
   invoices Invoice[]
+  payments Payment[]
 
   @@index([active])
   @@index([displayName])
@@ -338,7 +341,8 @@ model Supplier {
   notes          String   @default("")
   active         Boolean  @default(true)
 
-  bills Bill[]
+  bills        Bill[]
+  billPayments BillPayment[]
 
   @@index([active])
   @@index([displayName])
@@ -386,24 +390,25 @@ enum TransactionStatus {
 }
 
 model Invoice {
-  id          String            @id @default(cuid())
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  number      String            @unique
-  customerId  String
-  customer    Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  issueDate   DateTime
-  dueDate     DateTime?
-  memo        String            @default("")
-  status      TransactionStatus @default(draft)
-  subtotal    Float             @default(0)
-  taxTotal    Float             @default(0)
-  total       Float             @default(0)
-  amountPaid  Float             @default(0)
-  balance     Float             @default(0)
-  sentAt      DateTime?
-  voidedAt    DateTime?
-  lines       InvoiceLine[]
+  id           String               @id @default(cuid())
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  number       String               @unique
+  customerId   String
+  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  issueDate    DateTime
+  dueDate      DateTime?
+  memo         String               @default("")
+  status       TransactionStatus    @default(draft)
+  subtotal     Float                @default(0)
+  taxTotal     Float                @default(0)
+  total        Float                @default(0)
+  amountPaid   Float                @default(0)
+  balance      Float                @default(0)
+  sentAt       DateTime?
+  voidedAt     DateTime?
+  lines        InvoiceLine[]
+  applications PaymentApplication[]
 
   @@index([customerId])
   @@index([status])
@@ -434,24 +439,25 @@ model InvoiceLine {
 }
 
 model Bill {
-  id          String            @id @default(cuid())
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  number      String            @unique
-  supplierId  String
-  supplier    Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  billDate    DateTime
-  dueDate     DateTime?
-  memo        String            @default("")
-  status      TransactionStatus @default(draft)
-  subtotal    Float             @default(0)
-  taxTotal    Float             @default(0)
-  total       Float             @default(0)
-  amountPaid  Float             @default(0)
-  balance     Float             @default(0)
-  receivedAt  DateTime?
-  voidedAt    DateTime?
-  lines       BillLine[]
+  id           String                   @id @default(cuid())
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  number       String                   @unique
+  supplierId   String
+  supplier     Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  billDate     DateTime
+  dueDate      DateTime?
+  memo         String                   @default("")
+  status       TransactionStatus        @default(draft)
+  subtotal     Float                    @default(0)
+  taxTotal     Float                    @default(0)
+  total        Float                    @default(0)
+  amountPaid   Float                    @default(0)
+  balance      Float                    @default(0)
+  receivedAt   DateTime?
+  voidedAt     DateTime?
+  lines        BillLine[]
+  applications BillPaymentApplication[]
 
   @@index([supplierId])
   @@index([status])
@@ -479,4 +485,88 @@ model BillLine {
   @@index([billId, position])
   @@index([productId])
   @@index([expenseAccountId])
+}
+
+/// Payment methods for customer payments and bill payments.
+enum PaymentMethod {
+  cash
+  check
+  card
+  ach
+  other
+}
+
+model Payment {
+  id               String               @id @default(cuid())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  number           String               @unique
+  customerId       String
+  customer         Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  paymentDate      DateTime
+  method           PaymentMethod        @default(cash)
+  reference        String               @default("")
+  memo             String               @default("")
+  amount           Float
+  applied          Float                @default(0)
+  unapplied        Float                @default(0)
+  depositAccountId String
+  depositAccount   Account              @relation("PaymentDepositAccount", fields: [depositAccountId], references: [id], onDelete: Restrict)
+  depositedAt      DateTime?
+  applications     PaymentApplication[]
+
+  @@index([customerId])
+  @@index([paymentDate])
+  @@index([depositAccountId])
+}
+
+model PaymentApplication {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  paymentId String
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amount    Float
+
+  @@unique([paymentId, invoiceId])
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+model BillPayment {
+  id              String                   @id @default(cuid())
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  number          String                   @unique
+  supplierId      String
+  supplier        Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  paymentDate     DateTime
+  method          PaymentMethod            @default(check)
+  reference       String                   @default("")
+  memo            String                   @default("")
+  amount          Float
+  applied         Float                    @default(0)
+  unapplied       Float                    @default(0)
+  sourceAccountId String
+  sourceAccount   Account                  @relation("BillPaymentSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
+  applications    BillPaymentApplication[]
+
+  @@index([supplierId])
+  @@index([paymentDate])
+  @@index([sourceAccountId])
+}
+
+model BillPaymentApplication {
+  id            String      @id @default(cuid())
+  createdAt     DateTime    @default(now())
+  billPaymentId String
+  billPayment   BillPayment @relation(fields: [billPaymentId], references: [id], onDelete: Cascade)
+  billId        String
+  bill          Bill        @relation(fields: [billId], references: [id], onDelete: Restrict)
+  amount        Float
+
+  @@unique([billPaymentId, billId])
+  @@index([billPaymentId])
+  @@index([billId])
 }

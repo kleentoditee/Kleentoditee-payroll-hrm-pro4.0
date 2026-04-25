@@ -37,7 +37,7 @@ export type ComputedBillLine = {
   amount: number;
 };
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 export function computeInvoiceLine(line: LineInput, index: number): ComputedLine {
   const quantity = Number(line.quantity ?? 0);
@@ -135,3 +135,26 @@ export async function nextBillNumber(): Promise<string> {
   });
   return nextNumber(prefix, latest?.number ?? null);
 }
+
+export async function nextPaymentNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `PMT-${year}-`;
+  const latest = await prisma.payment.findFirst({
+    where: { number: { startsWith: prefix } },
+    orderBy: { number: "desc" },
+    select: { number: true }
+  });
+  return nextNumber(prefix, latest?.number ?? null);
+}
+
+export async function nextBillPaymentNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `BPT-${year}-`;
+  const latest = await prisma.billPayment.findFirst({
+    where: { number: { startsWith: prefix } },
+    orderBy: { number: "desc" },
+    select: { number: true }
+  });
+  return nextNumber(prefix, latest?.number ?? null);
+}
+
