@@ -18,6 +18,17 @@ async function main() {
   await prisma.timeEntry.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.deductionTemplate.deleteMany();
+  // Finance transactions must come down before their parents because the
+  // join tables (PaymentApplication, BillPaymentApplication, DepositLine)
+  // hold Restrict references to invoices, bills, and payments.
+  await prisma.depositLine.deleteMany();
+  await prisma.deposit.deleteMany();
+  await prisma.paymentApplication.deleteMany();
+  await prisma.payment.deleteMany();
+  await prisma.billPaymentApplication.deleteMany();
+  await prisma.billPayment.deleteMany();
+  await prisma.expenseLine.deleteMany();
+  await prisma.expense.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.billLine.deleteMany();

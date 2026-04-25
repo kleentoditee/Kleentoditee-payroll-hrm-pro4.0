@@ -158,3 +158,25 @@ export async function nextBillPaymentNumber(): Promise<string> {
   return nextNumber(prefix, latest?.number ?? null);
 }
 
+export async function nextExpenseNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `EXP-${year}-`;
+  const latest = await prisma.expense.findFirst({
+    where: { number: { startsWith: prefix } },
+    orderBy: { number: "desc" },
+    select: { number: true }
+  });
+  return nextNumber(prefix, latest?.number ?? null);
+}
+
+export async function nextDepositNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `DEP-${year}-`;
+  const latest = await prisma.deposit.findFirst({
+    where: { number: { startsWith: prefix } },
+    orderBy: { number: "desc" },
+    select: { number: true }
+  });
+  return nextNumber(prefix, latest?.number ?? null);
+}
+

@@ -300,6 +300,9 @@ model Account {
   billLines         BillLine[]    @relation("BillLineExpenseAccount")
   paymentDeposits    Payment[]     @relation("PaymentDepositAccount")
   billPaymentSources BillPayment[] @relation("BillPaymentSourceAccount")
+  expensesAsPayment  Expense[]     @relation("ExpensePaymentAccount")
+  expenseLines       ExpenseLine[] @relation("ExpenseLineExpenseAccount")
+  depositsAsBank     Deposit[]     @relation("DepositBankAccount")
 
   @@index([type, active])
   @@index([parentId])
@@ -343,6 +346,7 @@ model Supplier {
 
   bills        Bill[]
   billPayments BillPayment[]
+  expenses     Expense[]
 
   @@index([active])
   @@index([displayName])
@@ -514,6 +518,7 @@ model Payment {
   depositAccount   Account              @relation("PaymentDepositAccount", fields: [depositAccountId], references: [id], onDelete: Restrict)
   depositedAt      DateTime?
   applications     PaymentApplication[]
+  depositLines     DepositLine[]        @relation("DepositLinePayment")
 
   @@index([customerId])
   @@index([paymentDate])
@@ -569,4 +574,96 @@ model BillPaymentApplication {
   @@unique([billPaymentId, billId])
   @@index([billPaymentId])
   @@index([billId])
+}
+
+/// Direct expenses (Phase 3 Task 10C).
+/// Unlike bills, expenses are paid at the moment they're posted —
+/// they don't create an AP liability. Used for card/cash purchases
+/// where there's no supplier invoice cycle.
+model Expense {
+  id               String            @id @default(cuid())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  number           String            @unique
+  expenseDate      DateTime
+  method           PaymentMethod     @default(card)
+  reference        String            @default("")
+  memo             String            @default("")
+  supplierId       String?
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  payeeName        String            @default("")
+  paymentAccountId String
+  paymentAccount   Account           @relation("ExpensePaymentAccount", fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  subtotal         Float             @default(0)
+  taxTotal         Float             @default(0)
+  total            Float             @default(0)
+  status           TransactionStatus @default(draft)
+  postedAt         DateTime?
+  voidedAt         DateTime?
+  lines            ExpenseLine[]
+
+  @@index([expenseDate])
+  @@index([supplierId])
+  @@index([paymentAccountId])
+  @@index([status])
+}
+
+model ExpenseLine {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  expenseId        String
+  expense          Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  position         Int
+  description      String   @default("")
+  quantity         Float    @default(1)
+  unitCost         Float    @default(0)
+  expenseAccountId String
+  expenseAccount   Account  @relation("ExpenseLineExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  taxable          Boolean  @default(false)
+  taxAmount        Float    @default(0)
+  amount           Float    @default(0)
+
+  @@index([expenseId, position])
+  @@index([expenseAccountId])
+}
+
+/// Bank deposits (Phase 3 Task 10C).
+/// Groups one or more undeposited customer payments into a single
+/// bank transaction. When posted, each linked payment's
+/// `depositedAt` is set so it can't be modified or re-deposited.
+model Deposit {
+  id            String            @id @default(cuid())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  number        String            @unique
+  depositDate   DateTime
+  memo          String            @default("")
+  bankAccountId String
+  bankAccount   Account           @relation("DepositBankAccount", fields: [bankAccountId], references: [id], onDelete: Restrict)
+  total         Float             @default(0)
+  status        TransactionStatus @default(draft)
+  postedAt      DateTime?
+  voidedAt      DateTime?
+  lines         DepositLine[]
+
+  @@index([depositDate])
+  @@index([bankAccountId])
+  @@index([status])
+}
+
+model DepositLine {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  depositId   String
+  deposit     Deposit  @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  position    Int
+  paymentId   String?
+  payment     Payment? @relation("DepositLinePayment", fields: [paymentId], references: [id], onDelete: Restrict)
+  description String   @default("")
+  amount      Float
+
+  @@index([depositId, position])
+  @@index([paymentId])
 }

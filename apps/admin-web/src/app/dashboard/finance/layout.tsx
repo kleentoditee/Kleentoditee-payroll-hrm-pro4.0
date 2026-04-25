@@ -11,7 +11,9 @@ const links = [
   { href: "/dashboard/finance/invoices", label: "Invoices" },
   { href: "/dashboard/finance/payments", label: "Payments" },
   { href: "/dashboard/finance/bills", label: "Bills" },
-  { href: "/dashboard/finance/bill-payments", label: "Bill payments" }
+  { href: "/dashboard/finance/bill-payments", label: "Bill payments" },
+  { href: "/dashboard/finance/expenses", label: "Expenses" },
+  { href: "/dashboard/finance/deposits", label: "Deposits" }
 ] as const;
 
 export default function FinanceLayout({ children }: { children: React.ReactNode }) {
