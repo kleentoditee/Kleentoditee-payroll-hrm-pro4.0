@@ -296,6 +296,9 @@ model Account {
   productsAsIncome  Product[] @relation("ProductIncome")
   productsAsExpense Product[] @relation("ProductExpense")
 
+  invoiceLines      InvoiceLine[] @relation("InvoiceLineIncomeAccount")
+  billLines         BillLine[]    @relation("BillLineExpenseAccount")
+
   @@index([type, active])
   @@index([parentId])
   @@index([name])
@@ -315,6 +318,8 @@ model Customer {
   notes          String   @default("")
   active         Boolean  @default(true)
 
+  invoices Invoice[]
+
   @@index([active])
   @@index([displayName])
 }
@@ -332,6 +337,8 @@ model Supplier {
   taxId          String   @default("")
   notes          String   @default("")
   active         Boolean  @default(true)
+
+  bills Bill[]
 
   @@index([active])
   @@index([displayName])
@@ -354,8 +361,122 @@ model Product {
   expenseAccountId  String?
   expenseAccount    Account?    @relation("ProductExpense", fields: [expenseAccountId], references: [id], onDelete: SetNull)
 
+  invoiceLines InvoiceLine[] @relation("InvoiceLineProduct")
+  billLines    BillLine[]    @relation("BillLineProduct")
+
   @@index([kind, active])
   @@index([incomeAccountId])
   @@index([expenseAccountId])
   @@index([name])
+}
+
+/// Finance transactions (Phase 3 Task 10).
+/// Document status drives invoice/bill lifecycle:
+///   draft  -> editable, not yet issued
+///   open   -> sent/received, awaiting payment
+///   partial-> some payment applied
+///   paid   -> balance zero
+///   void   -> cancelled; excluded from AR/AP totals
+enum TransactionStatus {
+  draft
+  open
+  partial
+  paid
+  void
+}
+
+model Invoice {
+  id          String            @id @default(cuid())
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  number      String            @unique
+  customerId  String
+  customer    Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  issueDate   DateTime
+  dueDate     DateTime?
+  memo        String            @default("")
+  status      TransactionStatus @default(draft)
+  subtotal    Float             @default(0)
+  taxTotal    Float             @default(0)
+  total       Float             @default(0)
+  amountPaid  Float             @default(0)
+  balance     Float             @default(0)
+  sentAt      DateTime?
+  voidedAt    DateTime?
+  lines       InvoiceLine[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([issueDate])
+}
+
+model InvoiceLine {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position        Int
+  productId       String?
+  product         Product? @relation("InvoiceLineProduct", fields: [productId], references: [id], onDelete: SetNull)
+  description     String   @default("")
+  quantity        Float    @default(1)
+  unitPrice       Float    @default(0)
+  incomeAccountId String
+  incomeAccount   Account  @relation("InvoiceLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: Restrict)
+  taxable         Boolean  @default(false)
+  taxAmount       Float    @default(0)
+  amount          Float    @default(0)
+
+  @@index([invoiceId, position])
+  @@index([productId])
+  @@index([incomeAccountId])
+}
+
+model Bill {
+  id          String            @id @default(cuid())
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  number      String            @unique
+  supplierId  String
+  supplier    Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  billDate    DateTime
+  dueDate     DateTime?
+  memo        String            @default("")
+  status      TransactionStatus @default(draft)
+  subtotal    Float             @default(0)
+  taxTotal    Float             @default(0)
+  total       Float             @default(0)
+  amountPaid  Float             @default(0)
+  balance     Float             @default(0)
+  receivedAt  DateTime?
+  voidedAt    DateTime?
+  lines       BillLine[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([billDate])
+}
+
+model BillLine {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  billId           String
+  bill             Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  position         Int
+  productId        String?
+  product          Product? @relation("BillLineProduct", fields: [productId], references: [id], onDelete: SetNull)
+  description      String   @default("")
+  quantity         Float    @default(1)
+  unitCost         Float    @default(0)
+  expenseAccountId String
+  expenseAccount   Account  @relation("BillLineExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  taxable          Boolean  @default(false)
+  taxAmount        Float    @default(0)
+  amount           Float    @default(0)
+
+  @@index([billId, position])
+  @@index([productId])
+  @@index([expenseAccountId])
 }

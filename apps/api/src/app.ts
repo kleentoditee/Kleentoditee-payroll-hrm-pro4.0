@@ -4,6 +4,8 @@ import { cors } from "hono/cors";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
 import { financeRoutes } from "./routes/finance.js";
+import { financeBillsRoutes } from "./routes/finance-bills.js";
+import { financeInvoicesRoutes } from "./routes/finance-invoices.js";
 import { peopleRoutes } from "./routes/people.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { timeRoutes } from "./routes/time.js";
@@ -87,6 +89,8 @@ if (process.env.NODE_ENV !== "production") {
 app.route("/auth", authRoutes);
 app.route("/audit", auditRoutes);
 app.route("/finance", financeRoutes);
+app.route("/finance", financeInvoicesRoutes);
+app.route("/finance", financeBillsRoutes);
 app.route("/people", peopleRoutes);
 app.route("/payroll", payrollRoutes);
 app.route("/time", timeRoutes);

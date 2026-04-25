@@ -7,7 +7,9 @@ const links = [
   { href: "/dashboard/finance/accounts", label: "Chart of accounts" },
   { href: "/dashboard/finance/customers", label: "Customers" },
   { href: "/dashboard/finance/suppliers", label: "Suppliers" },
-  { href: "/dashboard/finance/products", label: "Products & services" }
+  { href: "/dashboard/finance/products", label: "Products & services" },
+  { href: "/dashboard/finance/invoices", label: "Invoices" },
+  { href: "/dashboard/finance/bills", label: "Bills" }
 ] as const;
 
 export default function FinanceLayout({ children }: { children: React.ReactNode }) {

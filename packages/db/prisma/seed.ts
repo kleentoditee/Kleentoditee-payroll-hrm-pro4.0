@@ -18,6 +18,10 @@ async function main() {
   await prisma.timeEntry.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.deductionTemplate.deleteMany();
+  await prisma.invoiceLine.deleteMany();
+  await prisma.invoice.deleteMany();
+  await prisma.billLine.deleteMany();
+  await prisma.bill.deleteMany();
   await prisma.product.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.supplier.deleteMany();
@@ -262,7 +266,7 @@ async function main() {
   void ap;
   void cogs;
 
-  await prisma.customer.create({
+  const sampleCustomer = await prisma.customer.create({
     data: {
       displayName: "Belize Bay Resort",
       companyName: "Belize Bay Resort Ltd.",
@@ -274,7 +278,7 @@ async function main() {
     }
   });
 
-  await prisma.supplier.create({
+  const sampleSupplier = await prisma.supplier.create({
     data: {
       displayName: "Caribbean Cleaning Supply",
       companyName: "Caribbean Cleaning Supply Co.",
@@ -286,7 +290,7 @@ async function main() {
     }
   });
 
-  await prisma.product.create({
+  const sampleProduct = await prisma.product.create({
     data: {
       sku: "SVC-CLEAN-STD",
       name: "Standard cleaning service",
@@ -300,7 +304,74 @@ async function main() {
     }
   });
 
-  console.log(`Seeded templates, admin user, payroll-ready data, and finance master data: ${email} / ${password}`);
+  // Draft invoice + bill so Task 10 UI has something visible after seed.
+  const year = new Date().getFullYear();
+  await prisma.invoice.create({
+    data: {
+      number: `INV-${year}-0001`,
+      customerId: sampleCustomer.id,
+      issueDate: new Date(`${year}-04-15T00:00:00.000Z`),
+      dueDate: new Date(`${year}-05-15T00:00:00.000Z`),
+      memo: "Seeded draft invoice — weekly housekeeping",
+      subtotal: 300,
+      taxTotal: 0,
+      total: 300,
+      amountPaid: 0,
+      balance: 300,
+      lines: {
+        create: [
+          {
+            position: 1,
+            productId: sampleProduct.id,
+            description: "Weekly housekeeping — 2 visits",
+            quantity: 2,
+            unitPrice: 150,
+            amount: 300,
+            incomeAccountId: salesRevenue.id
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.bill.create({
+    data: {
+      number: `BILL-${year}-0001`,
+      supplierId: sampleSupplier.id,
+      billDate: new Date(`${year}-04-18T00:00:00.000Z`),
+      dueDate: new Date(`${year}-05-18T00:00:00.000Z`),
+      memo: "Seeded draft bill — monthly consumables",
+      subtotal: 145,
+      taxTotal: 0,
+      total: 145,
+      amountPaid: 0,
+      balance: 145,
+      lines: {
+        create: [
+          {
+            position: 1,
+            description: "Consumables box",
+            quantity: 1,
+            unitCost: 95,
+            amount: 95,
+            expenseAccountId: officeExpense.id
+          },
+          {
+            position: 2,
+            description: "Mop heads",
+            quantity: 4,
+            unitCost: 12.5,
+            amount: 50,
+            expenseAccountId: officeExpense.id
+          }
+        ]
+      }
+    }
+  });
+
+  console.log(
+    `Seeded templates, admin user, payroll-ready data, finance master data, and one draft invoice + bill: ${email} / ${password}`
+  );
 }
 
 main()
