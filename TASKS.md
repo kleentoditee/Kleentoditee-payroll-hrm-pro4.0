@@ -12,9 +12,9 @@ Use this file as the live coordination board for Codex, Claude, Cursor, and the 
 
 | Lane | Agent | Branch Pattern | Worktree Path | Owned Areas | Status |
 | --- | --- | --- | --- | --- | --- |
-| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Ready (tracker merged 2026-04-24; re-run CodeRabbit when rate limit clears) |
-| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Ready |
-| Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | On `codex/consolidate-live-build` — pull to refresh worktree |
+| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Merging finance Tasks 9 + 10; tracker already merged |
+| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Tasks 9 + 10 reviewed for integration; ready for Task 11 after merge |
+| Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | On `codex/consolidate-live-build`; pull to refresh worktree |
 
 ## Shared File Locks
 
@@ -59,7 +59,7 @@ wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-pay
 
 | Slice | Best Agent | Why |
 | --- | --- | --- |
-| Finance core models and API | Claude | Backend-heavy and needs careful domain modeling |
+| Finance Task 11 - banking and accounting controls | Claude | Builds on the finance domain just shipped |
 | Admin or tracker follow-ups (a11y, paywall, prod API URL) | Cursor | UI polish on consolidated build |
-| Cross-app QA, merge cleanup, CodeRabbit follow-up | Codex | Next integration pass after feature branches |
+| Cross-app QA, CodeRabbit pass, and merge cleanup | Codex | Integration and verification lane |
 

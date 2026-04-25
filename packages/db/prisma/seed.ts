@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { PayBasis, PaySchedule, Role, TimeEntryStatus } from "@prisma/client";
+import { AccountType, PayBasis, PaySchedule, ProductKind, Role, TimeEntryStatus } from "@prisma/client";
 import { prisma } from "../src/index";
 
 const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@kleentoditee.local").trim().toLowerCase();
@@ -18,6 +18,24 @@ async function main() {
   await prisma.timeEntry.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.deductionTemplate.deleteMany();
+  // Finance transactions must come down before their parents because the
+  // join tables hold Restrict references to invoices, bills, and payments.
+  await prisma.depositLine.deleteMany();
+  await prisma.deposit.deleteMany();
+  await prisma.paymentApplication.deleteMany();
+  await prisma.payment.deleteMany();
+  await prisma.billPaymentApplication.deleteMany();
+  await prisma.billPayment.deleteMany();
+  await prisma.expenseLine.deleteMany();
+  await prisma.expense.deleteMany();
+  await prisma.invoiceLine.deleteMany();
+  await prisma.invoice.deleteMany();
+  await prisma.billLine.deleteMany();
+  await prisma.bill.deleteMany();
+  await prisma.product.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.supplier.deleteMany();
+  await prisma.account.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.user.deleteMany();
 
@@ -203,8 +221,172 @@ async function main() {
     ]
   });
 
+  const [cash, ar, ap, salesRevenue, cogs, officeExpense] = await Promise.all([
+    prisma.account.create({
+      data: {
+        code: "1000",
+        name: "Cash",
+        type: AccountType.asset,
+        subtype: "Bank",
+        description: "Primary operating cash account"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "1100",
+        name: "Accounts Receivable",
+        type: AccountType.asset,
+        subtype: "Accounts Receivable",
+        description: "Amounts owed by customers"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "2000",
+        name: "Accounts Payable",
+        type: AccountType.liability,
+        subtype: "Accounts Payable",
+        description: "Amounts owed to suppliers"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "4000",
+        name: "Sales Revenue",
+        type: AccountType.revenue,
+        subtype: "Sales",
+        description: "Revenue from services rendered"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "5000",
+        name: "Cost of Goods Sold",
+        type: AccountType.expense,
+        subtype: "Direct Costs",
+        description: "Direct costs of delivering services"
+      }
+    }),
+    prisma.account.create({
+      data: {
+        code: "6000",
+        name: "Office Expenses",
+        type: AccountType.expense,
+        subtype: "Operating Expenses",
+        description: "General office and administrative"
+      }
+    })
+  ]);
+
+  void cash;
+  void ar;
+  void ap;
+  void cogs;
+
+  const sampleCustomer = await prisma.customer.create({
+    data: {
+      displayName: "Belize Bay Resort",
+      companyName: "Belize Bay Resort Ltd.",
+      primaryContact: "Sandra Torres",
+      email: "ap@belizebay.example",
+      phone: "501-500-7001",
+      billingAddress: "Marine Parade, Belize City",
+      notes: "Weekly housekeeping contract"
+    }
+  });
+
+  const sampleSupplier = await prisma.supplier.create({
+    data: {
+      displayName: "Caribbean Cleaning Supply",
+      companyName: "Caribbean Cleaning Supply Co.",
+      primaryContact: "Miguel Ramos",
+      email: "orders@ccsupply.example",
+      phone: "501-500-7201",
+      mailingAddress: "Industrial Park, Ladyville",
+      notes: "Primary consumables vendor"
+    }
+  });
+
+  const sampleProduct = await prisma.product.create({
+    data: {
+      sku: "SVC-CLEAN-STD",
+      name: "Standard cleaning service",
+      kind: ProductKind.service,
+      description: "Per-visit standard site cleaning",
+      salesPrice: 150,
+      purchaseCost: 0,
+      taxable: false,
+      incomeAccountId: salesRevenue.id,
+      expenseAccountId: officeExpense.id
+    }
+  });
+
+  const year = new Date().getFullYear();
+  await prisma.invoice.create({
+    data: {
+      number: `INV-${year}-0001`,
+      customerId: sampleCustomer.id,
+      issueDate: new Date(`${year}-04-15T00:00:00.000Z`),
+      dueDate: new Date(`${year}-05-15T00:00:00.000Z`),
+      memo: "Seeded draft invoice - weekly housekeeping",
+      subtotal: 300,
+      taxTotal: 0,
+      total: 300,
+      amountPaid: 0,
+      balance: 300,
+      lines: {
+        create: [
+          {
+            position: 1,
+            productId: sampleProduct.id,
+            description: "Weekly housekeeping - 2 visits",
+            quantity: 2,
+            unitPrice: 150,
+            amount: 300,
+            incomeAccountId: salesRevenue.id
+          }
+        ]
+      }
+    }
+  });
+
+  await prisma.bill.create({
+    data: {
+      number: `BILL-${year}-0001`,
+      supplierId: sampleSupplier.id,
+      billDate: new Date(`${year}-04-18T00:00:00.000Z`),
+      dueDate: new Date(`${year}-05-18T00:00:00.000Z`),
+      memo: "Seeded draft bill - monthly consumables",
+      subtotal: 145,
+      taxTotal: 0,
+      total: 145,
+      amountPaid: 0,
+      balance: 145,
+      lines: {
+        create: [
+          {
+            position: 1,
+            description: "Consumables box",
+            quantity: 1,
+            unitCost: 95,
+            amount: 95,
+            expenseAccountId: officeExpense.id
+          },
+          {
+            position: 2,
+            description: "Mop heads",
+            quantity: 4,
+            unitCost: 12.5,
+            amount: 50,
+            expenseAccountId: officeExpense.id
+          }
+        ]
+      }
+    }
+  });
+
   console.log(
-    `Seeded templates, admin, employee tracker login, and payroll-ready sample data. Admin: ${email} / ${password} · Tracker: maria.tracker@kleentoditee.local / ${password}`
+    `Seeded templates, admin, employee tracker login, payroll-ready data, finance master data, and one draft invoice + bill. Admin: ${email} / ${password} - Tracker: maria.tracker@kleentoditee.local / ${password}`
   );
 }
 
