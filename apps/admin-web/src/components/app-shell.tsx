@@ -10,14 +10,18 @@ const RAIL = [
   { id: "customize", label: "Customize" }
 ] as const;
 
-const PINNED: { label: string; href?: string }[] = [
-  { label: "People", href: "/dashboard/people/employees" },
-  { label: "Payroll", href: "/dashboard/payroll/periods" },
-  { label: "Time", href: "/dashboard/time/entries" },
-  { label: "Finance", href: "/dashboard/finance/accounts" },
-  { label: "Hiring" },
-  { label: "Reports" }
-];
+function pinnedForRoles(userRoles?: string[]): { label: string; href?: string }[] {
+  const isOwner = userRoles?.includes("platform_owner");
+  return [
+    { label: "People", href: "/dashboard/people/employees" },
+    ...(isOwner ? [{ label: "Users", href: "/dashboard/users" as const }] : []),
+    { label: "Payroll", href: "/dashboard/payroll/periods" },
+    { label: "Time", href: "/dashboard/time/entries" },
+    { label: "Finance", href: "/dashboard/finance/accounts" },
+    { label: "Hiring" },
+    { label: "Reports" }
+  ];
+}
 
 export function AppShell({
   children,
@@ -32,6 +36,7 @@ export function AppShell({
   userRoles?: string[];
   onLogout?: () => void;
 }) {
+  const PINNED = pinnedForRoles(userRoles);
   return (
     <div className="flex min-h-screen">
       <aside

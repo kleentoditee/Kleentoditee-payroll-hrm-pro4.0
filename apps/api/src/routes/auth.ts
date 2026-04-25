@@ -67,6 +67,9 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return c.json({ error: "Invalid email or password" }, 401);
     }
+    if (!user.active) {
+      return c.json({ error: "This account is disabled" }, 401);
+    }
 
     const roles = user.roles.map((r) => r.role);
     const token = await signSessionToken(user.id, roles);
@@ -105,11 +108,15 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
       );
     }
     const first = await prisma.user.findFirst({
+      where: { active: true },
       orderBy: { createdAt: "asc" },
       include: { roles: true }
     });
     if (!first) {
-      return c.json({ error: "No users in database — run db:seed with API stopped" }, 400);
+      return c.json(
+        { error: "No active users in database — run db:seed with API stopped, or reactivate a user" },
+        400
+      );
     }
     const roles = first.roles.map((r) => r.role);
     const token = await signSessionToken(first.id, roles);
@@ -133,17 +140,22 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
         id: true,
         email: true,
         name: true,
+        active: true,
         roles: { select: { role: true } }
       }
     });
     if (!user) {
       return c.json({ error: "User not found" }, 404);
     }
+    if (!user.active) {
+      return c.json({ error: "This account is disabled" }, 401);
+    }
     return c.json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
+        active: user.active,
         roles: user.roles.map((r) => r.role)
       }
     });

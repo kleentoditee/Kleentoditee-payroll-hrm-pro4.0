@@ -23,6 +23,8 @@ model User {
   email        String     @unique
   passwordHash String
   name         String
+  /// Inactive users cannot sign in. Managed by platform_owner via admin API.
+  active       Boolean    @default(true)
   /// When set, this login is the employee-tracker (mobile) account for that employee.
   employeeId   String?    @unique
   employee     Employee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
@@ -30,6 +32,8 @@ model User {
   updatedAt    DateTime   @updatedAt
   roles        UserRole[]
   auditLogs    AuditLog[] @relation("AuditActor")
+
+  @@index([active])
 }
 
 model UserRole {

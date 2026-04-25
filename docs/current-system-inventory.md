@@ -49,7 +49,20 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 | POST | `/auth/register` | Bootstrap first user only; then disabled. |
 | POST | `/auth/login` | Email/password → JWT + user profile. |
 | POST | `/auth/dev-emergency` | Dev-only passwordless login when env opt-in; **403 in production**. |
-| GET | `/auth/me` | Current user (Bearer JWT). |
+| GET | `/auth/me` | Current user (Bearer JWT); `active` flag; **401** if account disabled. |
+
+### `/admin` (`routes/admin-users.ts`)
+
+**platform_owner only** — user and role administration.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/admin/users` | List users (`?active=true|false` optional). |
+| POST | `/admin/users` | Create user (email, name, password, `roles[]`, optional `employeeId`). |
+| GET | `/admin/users/:id` | User detail (no `passwordHash`). |
+| PATCH | `/admin/users/:id` | Update user, optional password, roles, `employeeId`, `active`. |
+| POST | `/admin/users/:id/deactivate` | Set **User.active** false. |
+| POST | `/admin/users/:id/reactivate` | Set **User.active** true. |
 
 ### `/audit` (`routes/audit.ts`)
 
@@ -130,7 +143,7 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 
 | Model | Purpose |
 |-------|---------|
-| **User** | Login identity; password hash; optional `employeeId` for tracker link. |
+| **User** | Login identity; password hash; **active** (inactive users cannot sign in); optional `employeeId` for tracker link. |
 | **UserRole** | Join table: many roles per user (`Role` enum: platform_owner, hr_admin, payroll_admin, finance_admin, operations_manager, site_supervisor, employee_tracker_user). |
 | **AuditLog** | Append-only event log (actor, action, entity type/id, before/after JSON). |
 | **DeductionTemplate** | Reusable NHI/SSB/income tax rates and flags; assigned to **Employee** and **TimeEntry**. |
@@ -154,7 +167,7 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 
 **Enums (high level):** `Role`, `PayBasis`, `PaySchedule`, `TimeEntryStatus`, `PayRunStatus`, `AccountType`, `ProductKind`, `TransactionStatus`, `PaymentMethod`.
 
-**Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants, user-invite beyond first registration.
+**Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants, self-service registration after bootstrap (use admin user APIs instead).
 
 ---
 
@@ -168,6 +181,9 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 | `/login` | Admin sign-in (JWT to localStorage; API calls use `authHeaders()`). |
 | `/dashboard` | Home: metrics (submitted time count, draft pay runs), links to main areas. |
 | `/dashboard/people` | Redirect → `/dashboard/people/employees`. |
+| `/dashboard/users` | User admin list (platform_owner; shell **Users** link). |
+| `/dashboard/users/new` | Create user, roles, optional employee link. |
+| `/dashboard/users/[id]` | Edit user; deactivate / reactivate. |
 | `/dashboard/people/employees` | Employee list, search, link to new/detail. |
 | `/dashboard/people/employees/new` | Create employee. |
 | `/dashboard/people/employees/[id]` | View/edit employee. |
@@ -228,6 +244,7 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 - **Finance:** AR/AP-style documents, payments, bill payments, expenses, deposits; master data; heavy coverage in `apps/api` + matching admin pages.  
 - **Audit:** list recent events in admin.  
 - **Seeding:** `packages/db/prisma/seed.ts` creates admin user, sample employees (including a linked **employee_tracker_user** for Maria), template(s), time entries, and sample finance data (per seed file).  
+- **User & role administration (implemented):** `GET/POST /admin/users`, `GET/PATCH /admin/users/:id`, `POST` deactivate/reactivate; admin UI at `/dashboard/users/*` (platform_owner). Audit actions include `user.admin.create`, `user.admin.update`, `user.admin.roles_set`, `user.admin.deactivate`, `user.admin.reactivate`. Last active **platform_owner** cannot be removed or deactivated. Inactive users cannot sign in; `/auth/me` returns **401** when disabled.  
 
 ### Stubs, placeholders, or “phase later” in UI
 
@@ -237,7 +254,6 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ### Missing or not exposed in admin
 
-- **User and role management:** no API routes to add users, assign roles, or link `employeeId` after bootstrap (operational changes require DB/seed or manual Prisma).  
 - **Register** after the first user exists is blocked by design.  
 - **Full general ledger** with balanced journal posts and **account running balances** (schema is document- and line-centric; `Account` has no period balance field).  
 - **Invoices/employee payroll** integration: payroll and finance are separate domains in the current schema.  
@@ -250,11 +266,10 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ## 6. Recommended next implementation order
 
-1. **User & role administration (API + admin UI)** — Unblocks real teams: invite users, assign `hr_admin` / `finance_admin` / `employee_tracker_user`, link `User.employeeId` without DB surgery. This is the largest operational gap relative to a working org.  
-2. **Clarify or implement shell affordances** — Either wire Create/Reports/Hiring to real routes or remove/label as future to avoid a “broken” console feel.  
-3. **Global search (optional but high impact)** — If product priority is findability, replace the disabled field with server-backed search over employees, invoices, etc.; if not, hide it until a spec exists.  
-4. **employee-tracker hardening** — Edit policy for non-draft lines, error states, and parity with any new approval rules.  
-5. **Financial reporting** — If required beyond document lists: define whether to add **journal entries** and balance reporting or stay invoice-centric and export to external tools.  
-6. **@kleentoditee/ui** — Promote only when multiple apps need the same components; until then, keep admin patterns local to avoid abstracting too early.  
+1. **Clarify or implement shell affordances** — Either wire Create/Reports/Hiring to real routes or remove/label as future to avoid a “broken” console feel.  
+2. **Global search (optional but high impact)** — If product priority is findability, replace the disabled field with server-backed search over employees, invoices, etc.; if not, hide it until a spec exists.  
+3. **employee-tracker hardening** — Edit policy for non-draft lines, error states, and parity with any new approval rules.  
+4. **Financial reporting** — If required beyond document lists: define whether to add **journal entries** and balance reporting or stay invoice-centric and export to external tools.  
+5. **@kleentoditee/ui** — Promote only when multiple apps need the same components; until then, keep admin patterns local to avoid abstracting too early.  
 
-This order keeps **payroll and finance flows** (already deep) maintainable while closing **identity/authorization operations** and **UI honesty** (real links vs placeholders) first.
+**Done:** user & role administration (API + admin UI for `platform_owner`).
