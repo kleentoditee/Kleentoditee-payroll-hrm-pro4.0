@@ -3,6 +3,7 @@
 import { apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { ROLE_OPTIONS } from "@/lib/role-options";
+import { userStatusBadgeClass, userStatusLabel } from "@/lib/user-status";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -11,7 +12,7 @@ type UserDetail = {
   id: string;
   email: string;
   name: string;
-  active: boolean;
+  status: string;
   employeeId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -19,13 +20,20 @@ type UserDetail = {
   employee: { id: string; fullName: string } | null;
 };
 
+type PendingInv = { id: string; expiresAt: string; createdAt: string } | null;
+
 type Emp = { id: string; fullName: string };
+
+function canEditProfile(status: string): boolean {
+  return status === "active" || status === "invited";
+}
 
 export default function UserDetailPage() {
   const params = useParams();
   const id = String(params.id ?? "");
   const router = useRouter();
   const [user, setUser] = useState<UserDetail | null>(null);
+  const [pendingInvitation, setPendingInvitation] = useState<PendingInv | undefined>(undefined);
   const [employees, setEmployees] = useState<Emp[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -41,7 +49,7 @@ export default function UserDetailPage() {
       fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}`, { headers: { ...authHeaders() } }),
       fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } })
     ]);
-    const j = (await res.json()) as { error?: string; user?: UserDetail };
+    const j = (await res.json()) as { error?: string; user?: UserDetail; pendingInvitation?: PendingInv };
     if (res.status === 403) {
       throw new Error("Only a platform owner can manage users.");
     }
@@ -57,24 +65,25 @@ export default function UserDetailPage() {
     } else {
       setEmployees([]);
     }
-    return j.user;
+    return { user: j.user, pending: j.pendingInvitation ?? null };
   }, [id]);
 
   useEffect(() => {
     let c = false;
     (async () => {
       try {
-        const u = await load();
+        const data = await load();
         if (c) {
           return;
         }
-        setUser(u);
-        setEmail(u.email);
-        setName(u.name);
-        setEmployeeId(u.employeeId ?? "");
+        setUser(data.user);
+        setPendingInvitation(data.pending);
+        setEmail(data.user.email);
+        setName(data.user.name);
+        setEmployeeId(data.user.employeeId ?? "");
         const o: Record<string, boolean> = {};
         for (const r of ROLE_OPTIONS) {
-          o[r.value] = u.roles.includes(r.value);
+          o[r.value] = data.user.roles.includes(r.value);
         }
         setSelectedRoles(o);
         setError(null);
@@ -99,6 +108,9 @@ export default function UserDetailPage() {
     if (!user) {
       return;
     }
+    if (!canEditProfile(user.status)) {
+      return;
+    }
     setError(null);
     const roles = ROLE_OPTIONS.map((r) => r.value).filter((k) => selectedRoles[k]);
     if (roles.length === 0) {
@@ -113,7 +125,7 @@ export default function UserDetailPage() {
         roles,
         employeeId: employeeId.trim() || null
       };
-      if (newPassword.trim().length > 0) {
+      if (user.status === "active" && newPassword.trim().length > 0) {
         if (newPassword.length < 8) {
           setError("New password must be at least 8 characters.");
           setSaving(false);
@@ -126,7 +138,7 @@ export default function UserDetailPage() {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(body)
       });
-      const j = (await res.json()) as { error?: string; user?: UserDetail };
+      const j = (await res.json()) as { error?: string; user?: UserDetail; pendingInvitation?: PendingInv };
       if (res.status === 403) {
         throw new Error("Only a platform owner can update users.");
       }
@@ -135,6 +147,7 @@ export default function UserDetailPage() {
       }
       if (j.user) {
         setUser(j.user);
+        setPendingInvitation(j.pendingInvitation ?? null);
         setNewPassword("");
       }
     } catch (err) {
@@ -144,14 +157,14 @@ export default function UserDetailPage() {
     }
   }
 
-  async function onDeactivate() {
-    if (!user?.active || !window.confirm("Deactivate this user? They will not be able to sign in.")) {
+  async function onSuspend() {
+    if (!user || user.status !== "active" || !window.confirm("Suspend this user? They will not be able to sign in.")) {
       return;
     }
     setActBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}/deactivate`, {
+      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}/suspend`, {
         method: "POST",
         headers: { ...authHeaders() }
       });
@@ -169,11 +182,42 @@ export default function UserDetailPage() {
     }
   }
 
-  async function onReactivate() {
-    if (!user || user.active) {
+  async function onDeactivate() {
+    if (!user) {
       return;
     }
-    if (!window.confirm("Reactivate this user?")) {
+    if (
+      !window.confirm("Deactivate this user? They will not be able to sign in. Pending invites will be revoked.")
+    ) {
+      return;
+    }
+    setActBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}/deactivate`, {
+        method: "POST",
+        headers: { ...authHeaders() }
+      });
+      const j = (await res.json()) as { error?: string; user?: UserDetail };
+      if (!res.ok) {
+        throw new Error(j.error ?? res.statusText);
+      }
+      if (j.user) {
+        setUser(j.user);
+        setPendingInvitation(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setActBusy(false);
+    }
+  }
+
+  async function onReactivate() {
+    if (!user || user.status === "active" || user.status === "invited") {
+      return;
+    }
+    if (!window.confirm("Reactivate this user? They will need to sign in again on other devices.")) {
       return;
     }
     setActBusy(true);
@@ -220,6 +264,9 @@ export default function UserDetailPage() {
     return null;
   }
 
+  const edit = canEditProfile(user.status);
+  const showPassword = user.status === "active";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -231,16 +278,47 @@ export default function UserDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {user.active ? (
-            <button
-              type="button"
-              onClick={() => void onDeactivate()}
-              disabled={actBusy}
-              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 disabled:opacity-50"
-            >
-              Deactivate
-            </button>
-          ) : (
+          {user.status === "active" ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void onSuspend()}
+                disabled={actBusy}
+                className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-900 disabled:opacity-50"
+              >
+                Suspend
+              </button>
+              <button
+                type="button"
+                onClick={() => void onDeactivate()}
+                disabled={actBusy}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 disabled:opacity-50"
+              >
+                Deactivate
+              </button>
+            </>
+          ) : null}
+          {user.status === "suspended" ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void onReactivate()}
+                disabled={actBusy}
+                className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900 disabled:opacity-50"
+              >
+                Reactivate
+              </button>
+              <button
+                type="button"
+                onClick={() => void onDeactivate()}
+                disabled={actBusy}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 disabled:opacity-50"
+              >
+                Deactivate
+              </button>
+            </>
+          ) : null}
+          {user.status === "deactivated" ? (
             <button
               type="button"
               onClick={() => void onReactivate()}
@@ -249,19 +327,36 @@ export default function UserDetailPage() {
             >
               Reactivate
             </button>
-          )}
+          ) : null}
+          {user.status === "invited" ? (
+            <button
+              type="button"
+              onClick={() => void onDeactivate()}
+              disabled={actBusy}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 disabled:opacity-50"
+            >
+              Cancel invitation
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {user.active ? (
-        <p>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-sm text-emerald-900">Active</span>
+      <p>
+        <span className={`rounded-full px-2 py-0.5 text-sm ${userStatusBadgeClass(user.status)}`}>
+          {userStatusLabel(user.status)}
+        </span>
+        {user.status === "invited" ? (
+          <span className="ml-2 text-sm text-amber-800">
+            Awaiting accept-invite. Share the link from the invite response (dev) or the pending list.
+          </span>
+        ) : null}
+      </p>
+
+      {pendingInvitation ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Pending invitation expires {new Date(pendingInvitation.expiresAt).toLocaleString()}.
         </p>
-      ) : (
-        <p>
-          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-sm text-slate-800">Inactive</span>
-        </p>
-      )}
+      ) : null}
 
       {error ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
@@ -276,7 +371,7 @@ export default function UserDetailPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-            disabled={!user.active}
+            disabled={!edit}
           />
         </label>
         <label className="block text-sm">
@@ -287,22 +382,23 @@ export default function UserDetailPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-            disabled={!user.active}
+            disabled={!edit}
           />
         </label>
-        <label className="block text-sm">
-          <span className="text-slate-700">New password (leave blank to keep current)</span>
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-            autoComplete="new-password"
-            disabled={!user.active}
-            minLength={8}
-          />
-        </label>
-        <fieldset className="text-sm" disabled={!user.active}>
+        {showPassword ? (
+          <label className="block text-sm">
+            <span className="text-slate-700">New password (leave blank to keep current)</span>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </label>
+        ) : null}
+        <fieldset className="text-sm" disabled={!edit}>
           <legend className="text-slate-700">Roles</legend>
           <ul className="mt-2 space-y-2">
             {ROLE_OPTIONS.map((r) => (
@@ -321,7 +417,7 @@ export default function UserDetailPage() {
             value={employeeId}
             onChange={(e) => setEmployeeId(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 outline-none ring-brand focus:ring-2"
-            disabled={!user.active}
+            disabled={!edit}
           >
             <option value="">— None —</option>
             {employees?.map((e) => (
@@ -334,7 +430,7 @@ export default function UserDetailPage() {
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
-            disabled={saving || !user.active}
+            disabled={saving || !edit}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}

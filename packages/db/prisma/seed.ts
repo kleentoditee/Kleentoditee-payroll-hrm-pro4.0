@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { AccountType, PayBasis, PaySchedule, ProductKind, Role, TimeEntryStatus } from "@prisma/client";
+import { AccountType, PayBasis, PaySchedule, ProductKind, Role, TimeEntryStatus, UserStatus } from "@prisma/client";
 import { prisma } from "../src/index";
 
 const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@kleentoditee.local").trim().toLowerCase();
@@ -36,6 +36,7 @@ async function main() {
   await prisma.customer.deleteMany();
   await prisma.supplier.deleteMany();
   await prisma.account.deleteMany();
+  await prisma.userInvitation.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.user.deleteMany();
 
@@ -78,8 +79,10 @@ async function main() {
   await prisma.user.create({
     data: {
       email,
+      emailCanonical: email,
       passwordHash: hash,
       name,
+      status: UserStatus.active,
       roles: {
         create: [
           { role: Role.platform_owner },
@@ -110,12 +113,15 @@ async function main() {
     }
   });
 
+  const mariaEmail = "maria.tracker@kleentoditee.local";
   await prisma.user.create({
     data: {
-      email: "maria.tracker@kleentoditee.local",
+      email: mariaEmail,
+      emailCanonical: mariaEmail,
       passwordHash: hash,
       name: "Maria Monthly",
       employeeId: monthlyEmployee.id,
+      status: UserStatus.active,
       roles: { create: [{ role: Role.employee_tracker_user }] }
     }
   });

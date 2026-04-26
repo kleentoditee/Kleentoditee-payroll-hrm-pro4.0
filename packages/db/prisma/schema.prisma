@@ -18,22 +18,50 @@ enum Role {
   employee_tracker_user
 }
 
-model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  passwordHash String
-  name         String
-  /// Inactive users cannot sign in. Managed by platform_owner via admin API.
-  active       Boolean    @default(true)
-  /// When set, this login is the employee-tracker (mobile) account for that employee.
-  employeeId   String?    @unique
-  employee     Employee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  roles        UserRole[]
-  auditLogs    AuditLog[] @relation("AuditActor")
+/// User lifecycle; only `active` can obtain a valid session.
+enum UserStatus {
+  invited
+  active
+  suspended
+  deactivated
+}
 
-  @@index([active])
+model User {
+  id             String     @id @default(cuid())
+  email          String     @unique
+  /// Lowercased, trimmed; used for uniqueness and invite matching (nullable only before backfill).
+  emailCanonical String?    @unique
+  passwordHash   String
+  name           String
+  /// Only `active` can sign in. Managed by platform_owner via admin API.
+  status         UserStatus @default(active)
+  /// Bumped to invalidate all JWTs (password / privilege / deactivation, etc.).
+  tokenVersion   Int        @default(0)
+  /// When set, this login is the employee-tracker (mobile) account for that employee.
+  employeeId     String?    @unique
+  employee       Employee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  roles          UserRole[]
+  auditLogs      AuditLog[] @relation("AuditActor")
+  invitations    UserInvitation[]
+
+  @@index([status])
+}
+
+/// One-time expiring invite; `tokenHash` is bcrypt of the full raw token (id:secret) shown once in dev.
+model UserInvitation {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model UserRole {

@@ -13,6 +13,9 @@ npm-debug.log*
 coverage/
 .vercel/
 
+# Claude local (machine paths / dev credentials; keep out of git)
+.claude/settings.local.json
+
 # SQLite local dev database
 packages/db/prisma/dev.db
 packages/db/prisma/dev.db-journal

@@ -9,14 +9,13 @@ import { useEffect, useState } from "react";
 
 type Emp = { id: string; fullName: string };
 
-export default function NewUserPage() {
+export default function InviteUserPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [employees, setEmployees] = useState<Emp[] | null>(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
   const [selectedRoles, setSelectedRoles] = useState<Record<string, boolean>>(() => {
     const o: Record<string, boolean> = {};
     for (const r of ROLE_OPTIONS) {
@@ -25,6 +24,7 @@ export default function NewUserPage() {
     return o;
   });
   const [employeeId, setEmployeeId] = useState("");
+  const [devNote, setDevNote] = useState<string | null>(null);
 
   useEffect(() => {
     let c = false;
@@ -32,7 +32,7 @@ export default function NewUserPage() {
       try {
         const res = await fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } });
         if (res.status === 403) {
-          throw new Error("Only a platform owner can create users.");
+          throw new Error("Only a platform owner can invite users.");
         }
         if (!res.ok) {
           const j = (await res.json()) as { error?: string };
@@ -61,6 +61,7 @@ export default function NewUserPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setDevNote(null);
     const roles = ROLE_OPTIONS.map((r) => r.value).filter((k) => selectedRoles[k]);
     if (roles.length === 0) {
       setError("Select at least one role.");
@@ -68,23 +69,37 @@ export default function NewUserPage() {
     }
     setSaving(true);
     try {
-      const res = await fetch(`${apiBase()}/admin/users`, {
+      const res = await fetch(`${apiBase()}/admin/users/invite`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           email: email.trim(),
-          name: name.trim(),
-          password,
+          name: name.trim() || undefined,
           roles,
           employeeId: employeeId.trim() || null
         })
       });
-      const j = (await res.json()) as { error?: string; user?: { id: string } };
+      const j = (await res.json()) as {
+        error?: string;
+        user?: { id: string };
+        devInvitePath?: string;
+        devMessage?: string;
+      };
       if (res.status === 403) {
-        throw new Error("Only a platform owner can create users.");
+        throw new Error("Only a platform owner can invite users.");
       }
       if (!res.ok) {
         throw new Error(j.error ?? res.statusText);
+      }
+      if (j.devInvitePath) {
+        setDevNote(
+          `Non-production: open the admin app at ${j.devInvitePath} (appended to the site base URL) so the user can set a password.`
+        );
+        return;
+      }
+      if (j.devMessage) {
+        setDevNote(j.devMessage);
+        return;
       }
       if (j.user?.id) {
         router.push(`/dashboard/users/${j.user.id}`);
@@ -102,10 +117,17 @@ export default function NewUserPage() {
     <div className="space-y-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Access</p>
-        <h2 className="mt-1 font-serif text-2xl text-slate-900">New user</h2>
+        <h2 className="mt-1 font-serif text-2xl text-slate-900">Invite user</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Sends a one-time invitation (email delivery is not wired yet). The invited person sets their password on the
+          accept-invite page.
+        </p>
       </div>
       {error ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      ) : null}
+      {devNote ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">{devNote}</p>
       ) : null}
       <form onSubmit={onSubmit} className="max-w-xl space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <label className="block text-sm">
@@ -120,26 +142,14 @@ export default function NewUserPage() {
           />
         </label>
         <label className="block text-sm">
-          <span className="text-slate-700">Name</span>
+          <span className="text-slate-700">Display name (optional)</span>
           <input
             type="text"
-            required
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
             autoComplete="off"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="text-slate-700">Initial password (min. 8 characters)</span>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-            autoComplete="new-password"
+            placeholder="Defaults from the email if empty"
           />
         </label>
         <fieldset className="text-sm">
@@ -176,7 +186,7 @@ export default function NewUserPage() {
             disabled={saving}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Create user"}
+            {saving ? "Sending…" : "Create invitation"}
           </button>
           <Link href="/dashboard/users" className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700">
             Cancel

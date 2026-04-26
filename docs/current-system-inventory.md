@@ -47,22 +47,26 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/auth/register` | Bootstrap first user only; then disabled. |
-| POST | `/auth/login` | Email/password → JWT + user profile. |
+| POST | `/auth/login` | Email/password → JWT + user profile. Invited (not yet accepted) users get an error. |
 | POST | `/auth/dev-emergency` | Dev-only passwordless login when env opt-in; **403 in production**. |
-| GET | `/auth/me` | Current user (Bearer JWT); `active` flag; **401** if account disabled. |
+| POST | `/auth/invite/accept` | Public. One-time body `{ token, password, name? }` → session JWT; token format `invitationId:secret` (not logged by API in responses). |
+| GET | `/auth/me` | Current user (Bearer JWT); `status` field; **401** if not `active`. |
 
 ### `/admin` (`routes/admin-users.ts`)
 
-**platform_owner only** — user and role administration.
+**platform_owner only** — user and role administration. JWTs are checked against the database (`User.status`, `User.tokenVersion`) on every protected request. Responses never include `passwordHash` or raw invite tokens (production non-dev invite payloads omit the dev path).
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/admin/users` | List users (`?active=true|false` optional). |
-| POST | `/admin/users` | Create user (email, name, password, `roles[]`, optional `employeeId`). |
-| GET | `/admin/users/:id` | User detail (no `passwordHash`). |
-| PATCH | `/admin/users/:id` | Update user, optional password, roles, `employeeId`, `active`. |
-| POST | `/admin/users/:id/deactivate` | Set **User.active** false. |
-| POST | `/admin/users/:id/reactivate` | Set **User.active** true. |
+| GET | `/admin/users` | List users. Optional `?status=` (comma list: `invited,active,suspended,deactivated`) or legacy `?active=true\|false`. |
+| GET | `/admin/users/invitations/pending` | Pending invitations (not accepted, not revoked, not expired). |
+| POST | `/admin/users/invite` | **Preferred:** invite (creates `invited` user + one-time `UserInvitation`; dev-only response may include a path to `/accept-invite?token=…`). |
+| POST | `/admin/users` | Optional: create an **active** user with a known password (break-glass / scripts; same as before). |
+| GET | `/admin/users/:id` | User detail + `pendingInvitation` summary (no `passwordHash`). |
+| PATCH | `/admin/users/:id` | Update display fields, optional password (active users), roles, employee link. |
+| POST | `/admin/users/:id/suspend` | `active` → `suspended`; invalidates sessions. |
+| POST | `/admin/users/:id/deactivate` | → `deactivated`; revokes pending invites; cannot remove last **active** `platform_owner`. |
+| POST | `/admin/users/:id/reactivate` | `suspended` or `deactivated` → `active` (not for `invited`). |
 
 ### `/audit` (`routes/audit.ts`)
 
@@ -143,8 +147,9 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 
 | Model | Purpose |
 |-------|---------|
-| **User** | Login identity; password hash; **active** (inactive users cannot sign in); optional `employeeId` for tracker link. |
+| **User** | Login identity; password hash; **status** (`UserStatus`: invited, active, suspended, deactivated); **emailCanonical** (optional until backfilled); **tokenVersion** (JWT invalidation); optional `employeeId` for tracker link. |
 | **UserRole** | Join table: many roles per user (`Role` enum: platform_owner, hr_admin, payroll_admin, finance_admin, operations_manager, site_supervisor, employee_tracker_user). |
+| **UserInvitation** | One-time invite: bcrypt **tokenHash**, `expiresAt`, `acceptedAt`, `revokedAt`. |
 | **AuditLog** | Append-only event log (actor, action, entity type/id, before/after JSON). |
 | **DeductionTemplate** | Reusable NHI/SSB/income tax rates and flags; assigned to **Employee** and **TimeEntry**. |
 | **Employee** | Master HR/payroll record: name, pay basis/rates, schedule, site string, `templateId`, active flag. |
@@ -165,7 +170,7 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 | **Expense** + **ExpenseLine** | Direct (non-AP) spend; optional **Supplier**; **PaymentMethod**. |
 | **Deposit** + **DepositLine** | Bank deposits grouping **Payment**s into a bank **Account**. |
 
-**Enums (high level):** `Role`, `PayBasis`, `PaySchedule`, `TimeEntryStatus`, `PayRunStatus`, `AccountType`, `ProductKind`, `TransactionStatus`, `PaymentMethod`.
+**Enums (high level):** `Role`, `UserStatus`, `PayBasis`, `PaySchedule`, `TimeEntryStatus`, `PayRunStatus`, `AccountType`, `ProductKind`, `TransactionStatus`, `PaymentMethod`.
 
 **Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants, self-service registration after bootstrap (use admin user APIs instead).
 
@@ -181,9 +186,10 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 | `/login` | Admin sign-in (JWT to localStorage; API calls use `authHeaders()`). |
 | `/dashboard` | Home: metrics (submitted time count, draft pay runs), links to main areas. |
 | `/dashboard/people` | Redirect → `/dashboard/people/employees`. |
-| `/dashboard/users` | User admin list (platform_owner; shell **Users** link). |
-| `/dashboard/users/new` | Create user, roles, optional employee link. |
-| `/dashboard/users/[id]` | Edit user; deactivate / reactivate. |
+| `/dashboard/users` | User admin list, status filters, pending invitation banner (platform_owner; **Users** in shell). |
+| `/dashboard/users/new` | **Invite** user (roles, optional employee); no initial password. |
+| `/dashboard/users/[id]` | View/edit, suspend, deactivate, reactivate; no delete. |
+| `/accept-invite` | Public. Paste token or `?token=`; set password; issues JWT. |
 | `/dashboard/people/employees` | Employee list, search, link to new/detail. |
 | `/dashboard/people/employees/new` | Create employee. |
 | `/dashboard/people/employees/[id]` | View/edit employee. |
@@ -244,7 +250,7 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 - **Finance:** AR/AP-style documents, payments, bill payments, expenses, deposits; master data; heavy coverage in `apps/api` + matching admin pages.  
 - **Audit:** list recent events in admin.  
 - **Seeding:** `packages/db/prisma/seed.ts` creates admin user, sample employees (including a linked **employee_tracker_user** for Maria), template(s), time entries, and sample finance data (per seed file).  
-- **User & role administration (implemented):** `GET/POST /admin/users`, `GET/PATCH /admin/users/:id`, `POST` deactivate/reactivate; admin UI at `/dashboard/users/*` (platform_owner). Audit actions include `user.admin.create`, `user.admin.update`, `user.admin.roles_set`, `user.admin.deactivate`, `user.admin.reactivate`. Last active **platform_owner** cannot be removed or deactivated. Inactive users cannot sign in; `/auth/me` returns **401** when disabled.  
+- **User & role administration (implemented):** Invitation-first `POST /admin/users/invite`, token-hashed `UserInvitation`, `POST /auth/invite/accept`, `UserStatus` lifecycle, `GET /admin/users/invitations/pending`, suspend/reactivate/deactivate, optional `POST /admin/users` with password, admin UI with status badges and `/accept-invite` (platform_owner). Audit: `user.admin.invite`, `user.admin.suspend`, plus prior create/update/roles_set/deactivate/reactivate. Last **active** `platform_owner` is protected. Sessions enforce DB **tokenVersion** + `status === active` on every request.  
 
 ### Stubs, placeholders, or “phase later” in UI
 
@@ -257,7 +263,7 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 - **Register** after the first user exists is blocked by design.  
 - **Full general ledger** with balanced journal posts and **account running balances** (schema is document- and line-centric; `Account` has no period balance field).  
 - **Invoices/employee payroll** integration: payroll and finance are separate domains in the current schema.  
-- **Email / notifications, file uploads, multi-tenancy, SSO** — not present in the reviewed code paths.  
+- **Transaction email delivery for invitations** — not implemented; non-production may log or return a dev-only accept path. Wider **email / notifications, file uploads, multi-tenancy, SSO** — not present.  
 - **Production hardening** left as environment concerns (CORS allowlist, `NODE_ENV`, emergency login off, etc., documented in code).  
 
 *Stub vs “thin but complete” is judgmental: feature screens that call real APIs are treated as **complete**; empty navigation affordances and missing admin domains are **stub** or **missing**.*
@@ -272,4 +278,4 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 4. **Financial reporting** — If required beyond document lists: define whether to add **journal entries** and balance reporting or stay invoice-centric and export to external tools.  
 5. **@kleentoditee/ui** — Promote only when multiple apps need the same components; until then, keep admin patterns local to avoid abstracting too early.  
 
-**Done:** user & role administration (API + admin UI for `platform_owner`).
+**Done:** user & role administration (invitation flow, status model, session checks, API + admin UI for `platform_owner`). See [user-role-administration.md](user-role-administration.md) for details.

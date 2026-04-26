@@ -9,6 +9,7 @@
   "scripts": {
     "db:generate": "npm run generate --workspace @kleentoditee/db",
     "db:push": "npm run push --workspace @kleentoditee/db",
+    "db:push:loss": "npm run push:loss --workspace @kleentoditee/db",
     "db:seed": "npm run seed --workspace @kleentoditee/db",
     "db:studio": "npm run studio --workspace @kleentoditee/db",
     "db:sync": "npm run db:generate && npm run db:push",

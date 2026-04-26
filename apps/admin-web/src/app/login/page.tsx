@@ -199,6 +199,12 @@ export default function LoginPage() {
           </button>
         </form>
 
+        <p className="mt-3 text-center text-sm text-slate-600">
+          <Link href="/accept-invite" className="font-medium text-brand hover:underline">
+            Accept an invitation (set password)
+          </Link>
+        </p>
+
         {process.env.NODE_ENV === "development" ? (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50/90 p-3 text-xs text-rose-950">
             <p className="font-semibold">Emergency: sign in without password (local dev only)</p>
