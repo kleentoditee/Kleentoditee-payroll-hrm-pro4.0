@@ -15,7 +15,7 @@ Scope: `platform_owner` only for admin user APIs. Same JWT (localStorage) and Ho
 | POST | `/admin/users/:id/suspend` | |
 | POST | `/admin/users/:id/deactivate` | Revokes open invitations; last **active** `platform_owner` is protected |
 | POST | `/admin/users/:id/reactivate` | From `suspended` or `deactivated` (not from `invited`) |
-| POST | `/auth/invite/accept` | **Public** — body `{ token, password, name? }`; `token` is `invitationId:secret` |
+| POST | `/auth/invite/accept` | **Public** — body `{ token, password, name? }` (`password` min **15** chars); `token` is `invitationId:secret`. Returns `{ ok, email }` — **no** session JWT; user signs in at `/login`. |
 
 ## Lifecycle (`UserStatus`)
 
@@ -32,8 +32,8 @@ Users are not **deleted** for admin offboarding; use `deactivated` (or cancel an
 
 1. `POST /admin/users/invite` with email, roles, optional employee link. Server creates a user with `status = invited` and a random unusable password hash, plus a `UserInvitation` row with **bcrypt** of the full raw token `invitationId:secret`.
 2. In **non-production**, the response may include `devInvitePath` (e.g. `/accept-invite?token=…`) and the API logs a one-line **dev** URL to the server console. **Production** does not return token material in JSON.
-3. The invitee opens the admin app `/accept-invite?token=…` (or pastes the token), sets a password, and calls `POST /auth/invite/accept`, which issues a normal session JWT.
-4. Passwords and raw tokens are not written to `AuditLog` metadata.
+3. The invitee opens the admin app `/accept-invite?token=…` (or pastes the token), sets a password (min 15 characters), and calls `POST /auth/invite/accept`. The account becomes `active`; the app redirects to `/login?invited=1` (optional `email=` for the form). The user signs in with `/auth/login` to obtain a JWT.
+4. Passwords and raw tokens are not written to `AuditLog` metadata. Production API responses and logs do not include raw invite tokens (dev-only `devInvitePath` / console line when `NODE_ENV !== production`).
 
 ## Session rules
 

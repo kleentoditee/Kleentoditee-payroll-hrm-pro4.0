@@ -1,10 +1,11 @@
 "use client";
 
 import { apiBase } from "@/lib/api";
-import { setToken } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, Suspense } from "react";
+
+const INVITE_PASSWORD_MIN = 15;
 
 function AcceptInviteForm() {
   const router = useRouter();
@@ -29,8 +30,8 @@ function AcceptInviteForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    if (password.length < INVITE_PASSWORD_MIN) {
+      setError(`Password must be at least ${INVITE_PASSWORD_MIN} characters.`);
       return;
     }
     setLoading(true);
@@ -44,13 +45,13 @@ function AcceptInviteForm() {
           name: name.trim() || undefined
         })
       });
-      const j = (await res.json()) as { error?: string; token?: string };
+      const j = (await res.json()) as { error?: string; ok?: boolean; email?: string };
       if (!res.ok) {
         throw new Error(j.error ?? "Could not complete invitation");
       }
-      if (j.token) {
-        setToken(j.token);
-        router.replace("/dashboard");
+      if (j.ok) {
+        const emailQs = j.email ? `&email=${encodeURIComponent(j.email)}` : "";
+        router.replace(`/login?invited=1${emailQs}`);
         return;
       }
       setError("Unexpected response from server");
@@ -65,7 +66,7 @@ function AcceptInviteForm() {
     <div className="mx-auto min-h-screen max-w-md bg-slate-100 px-4 py-16">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h1 className="font-serif text-xl font-semibold text-slate-900">Accept invitation</h1>
-        <p className="mt-1 text-sm text-slate-600">Set your password to activate your account.</p>
+        <p className="mt-1 text-sm text-slate-600">Set your password to activate your account, then you will sign in on the next screen.</p>
         {error ? (
           <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
         ) : null}
@@ -92,11 +93,11 @@ function AcceptInviteForm() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-slate-700">Password (min. 8 characters)</span>
+            <span className="text-slate-700">Password (min. {INVITE_PASSWORD_MIN} characters)</span>
             <input
               type="password"
               required
-              minLength={8}
+              minLength={INVITE_PASSWORD_MIN}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"

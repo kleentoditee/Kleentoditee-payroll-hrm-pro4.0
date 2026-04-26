@@ -18,6 +18,18 @@
   - employee pay schedules (`monthly`, `weekly`, `biweekly`)
   - date-ranged time entries for non-monthly payroll
 
+## Local dev quick links
+
+| What | URL |
+|------|-----|
+| API health | http://127.0.0.1:8787/health |
+| Admin login | http://127.0.0.1:3000/login |
+| Users admin | http://127.0.0.1:3000/dashboard/users |
+| Payroll periods | http://127.0.0.1:3000/dashboard/payroll/periods |
+| Employee tracker | http://127.0.0.1:3001 |
+
+(`dev:all` starts API + admin only; run `npm run dev:tracker` in another terminal for port **3001**.)
+
 ## Key local commands
 
 - Start admin: `npm.cmd run dev:admin`
