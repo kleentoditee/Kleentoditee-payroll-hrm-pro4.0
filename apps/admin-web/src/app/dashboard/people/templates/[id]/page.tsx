@@ -36,15 +36,12 @@ export default function EditTemplatePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } });
+        const res = await fetch(`${apiBase()}/people/templates/${id}`, { headers: { ...authHeaders() } });
         if (!res.ok) {
           throw new Error("load");
         }
-        const data = (await res.json()) as { items: Template[] };
-        const row = data.items.find((t) => t.id === id);
-        if (!row) {
-          throw new Error("missing");
-        }
+        const data = (await res.json()) as { template: Template };
+        const row = data.template;
         if (!cancelled) {
           setName(row.name);
           setNhiRate(String(row.nhiRate));

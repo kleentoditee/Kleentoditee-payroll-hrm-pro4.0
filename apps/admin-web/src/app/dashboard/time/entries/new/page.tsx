@@ -6,24 +6,38 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-type Emp = { id: string; fullName: string };
-type Tpl = { id: string; name: string };
+type Employee = { id: string; fullName: string; paySchedule: string };
+type Template = { id: string; name: string };
 
 function ymNow(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function firstOfMonth(month: string): string {
+  return `${month}-01`;
+}
+
+function lastOfMonth(month: string): string {
+  const [yearText, monthText] = month.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return `${month}-${String(lastDay).padStart(2, "0")}`;
+}
+
 export default function NewTimeEntryPage() {
   const router = useRouter();
-  const [employees, setEmployees] = useState<Emp[]>([]);
-  const [templates, setTemplates] = useState<Tpl[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<{ gross: number; net: number; totalDeductions: number } | null>(null);
 
   const [employeeId, setEmployeeId] = useState("");
   const [month, setMonth] = useState(ymNow);
+  const [periodStart, setPeriodStart] = useState(firstOfMonth(ymNow()));
+  const [periodEnd, setPeriodEnd] = useState(lastOfMonth(ymNow()));
   const [site, setSite] = useState("");
   const [status, setStatus] = useState("draft");
   const [daysWorked, setDaysWorked] = useState("0");
@@ -46,25 +60,25 @@ export default function NewTimeEntryPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [er, tr] = await Promise.all([
+        const [employeeRes, templateRes] = await Promise.all([
           fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } }),
           fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } })
         ]);
-        if (!er.ok || !tr.ok) {
+        if (!employeeRes.ok || !templateRes.ok) {
           throw new Error("load");
         }
-        const ej = (await er.json()) as { items: Emp[] };
-        const tj = (await tr.json()) as { items: Tpl[] };
+        const employeeJson = (await employeeRes.json()) as { items: Employee[] };
+        const templateJson = (await templateRes.json()) as { items: Template[] };
         if (cancelled) {
           return;
         }
-        setEmployees(ej.items);
-        setTemplates(tj.items);
-        if (ej.items[0]) {
-          setEmployeeId(ej.items[0].id);
+        setEmployees(employeeJson.items);
+        setTemplates(templateJson.items);
+        if (employeeJson.items[0]) {
+          setEmployeeId(employeeJson.items[0].id);
         }
-        if (tj.items[0]) {
-          setTemplateId(tj.items[0].id);
+        if (templateJson.items[0]) {
+          setTemplateId(templateJson.items[0].id);
         }
       } catch {
         if (!cancelled) {
@@ -76,6 +90,11 @@ export default function NewTimeEntryPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setPeriodStart(firstOfMonth(month));
+    setPeriodEnd(lastOfMonth(month));
+  }, [month]);
 
   const runPreview = useCallback(async () => {
     if (!employeeId || !templateId) {
@@ -145,6 +164,8 @@ export default function NewTimeEntryPage() {
         body: JSON.stringify({
           employeeId,
           month,
+          periodStart,
+          periodEnd,
           site,
           status,
           daysWorked: Number(daysWorked),
@@ -184,9 +205,10 @@ export default function NewTimeEntryPage() {
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl text-slate-900">New timesheet</h2>
         <Link href="/dashboard/time/entries" className="text-sm font-semibold text-brand hover:underline">
-          ← Back
+          {"<-"} Back
         </Link>
       </div>
+
       {error ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
       ) : null}
@@ -202,9 +224,9 @@ export default function NewTimeEntryPage() {
                 onChange={(e) => setEmployeeId(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
               >
-                {employees.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.fullName}
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.fullName} ({employee.paySchedule})
                   </option>
                 ))}
               </select>
@@ -222,12 +244,40 @@ export default function NewTimeEntryPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
+              <span className="text-slate-700">Period start</span>
+              <input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-700">Period end</span>
+              <input
+                type="date"
+                value={periodEnd}
+                onChange={(e) => setPeriodEnd(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
+            </label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm">
               <span className="text-slate-700">Site</span>
-              <input value={site} onChange={(e) => setSite(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                value={site}
+                onChange={(e) => setSite(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
               <span className="text-slate-700">Status</span>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2">
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              >
                 <option value="draft">Draft</option>
                 <option value="submitted">Submitted</option>
                 <option value="approved">Approved</option>
@@ -238,55 +288,120 @@ export default function NewTimeEntryPage() {
           <div className="grid gap-4 sm:grid-cols-4">
             <label className="block text-sm">
               <span className="text-slate-700">Days</span>
-              <input type="number" step="0.5" value={daysWorked} onChange={(e) => setDaysWorked(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                type="number"
+                step="0.5"
+                value={daysWorked}
+                onChange={(e) => setDaysWorked(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
               <span className="text-slate-700">Hours</span>
-              <input type="number" step="0.5" value={hoursWorked} onChange={(e) => setHoursWorked(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                type="number"
+                step="0.5"
+                value={hoursWorked}
+                onChange={(e) => setHoursWorked(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
               <span className="text-slate-700">OT hours</span>
-              <input type="number" step="0.5" value={overtimeHours} onChange={(e) => setOvertimeHours(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                type="number"
+                step="0.5"
+                value={overtimeHours}
+                onChange={(e) => setOvertimeHours(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
               <span className="text-slate-700">Flat gross</span>
-              <input type="number" step="0.01" value={flatGross} onChange={(e) => setFlatGross(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                type="number"
+                step="0.01"
+                value={flatGross}
+                onChange={(e) => setFlatGross(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
               <span className="text-slate-700">Bonus</span>
-              <input type="number" step="0.01" value={bonus} onChange={(e) => setBonus(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                type="number"
+                step="0.01"
+                value={bonus}
+                onChange={(e) => setBonus(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
               <span className="text-slate-700">Allowance</span>
-              <input type="number" step="0.01" value={allowance} onChange={(e) => setAllowance(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <input
+                type="number"
+                step="0.01"
+                value={allowance}
+                onChange={(e) => setAllowance(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="text-slate-700">Advance ded.</span>
-              <input type="number" step="0.01" value={advanceDeduction} onChange={(e) => setAdvanceDeduction(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <span className="text-slate-700">Advance deduction</span>
+              <input
+                type="number"
+                step="0.01"
+                value={advanceDeduction}
+                onChange={(e) => setAdvanceDeduction(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
-              <span className="text-slate-700">Withdrawal ded.</span>
-              <input type="number" step="0.01" value={withdrawalDeduction} onChange={(e) => setWithdrawalDeduction(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <span className="text-slate-700">Withdrawal deduction</span>
+              <input
+                type="number"
+                step="0.01"
+                value={withdrawalDeduction}
+                onChange={(e) => setWithdrawalDeduction(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
-              <span className="text-slate-700">Loan ded.</span>
-              <input type="number" step="0.01" value={loanDeduction} onChange={(e) => setLoanDeduction(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <span className="text-slate-700">Loan deduction</span>
+              <input
+                type="number"
+                step="0.01"
+                value={loanDeduction}
+                onChange={(e) => setLoanDeduction(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
             <label className="block text-sm">
-              <span className="text-slate-700">Other ded.</span>
-              <input type="number" step="0.01" value={otherDeduction} onChange={(e) => setOtherDeduction(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+              <span className="text-slate-700">Other deduction</span>
+              <input
+                type="number"
+                step="0.01"
+                value={otherDeduction}
+                onChange={(e) => setOtherDeduction(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
             </label>
           </div>
           <label className="block text-sm">
             <span className="text-slate-700">Deduction template</span>
-            <select required value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2">
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+            <select
+              required
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+            >
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
                 </option>
               ))}
             </select>
@@ -301,23 +416,36 @@ export default function NewTimeEntryPage() {
               SSB
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={applyIncomeTax} onChange={(e) => setApplyIncomeTax(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={applyIncomeTax}
+                onChange={(e) => setApplyIncomeTax(e.target.checked)}
+              />
               Income tax
             </label>
           </div>
           <label className="block text-sm">
             <span className="text-slate-700">Notes</span>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+            />
           </label>
-          <button type="submit" disabled={saving || !employeeId || !templateId} className="rounded-lg bg-brand px-4 py-2 font-semibold text-white disabled:opacity-50">
-            {saving ? "Saving…" : "Create"}
+          <button
+            type="submit"
+            disabled={saving || !employeeId || !templateId}
+            className="rounded-lg bg-brand px-4 py-2 font-semibold text-white disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Create"}
           </button>
         </form>
 
         <aside className="h-fit rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm">
           <p className="font-semibold text-slate-800">Live preview</p>
           {!preview ? (
-            <p className="mt-2 text-slate-600">Select employee and template…</p>
+            <p className="mt-2 text-slate-600">Select employee and template...</p>
           ) : (
             <ul className="mt-3 space-y-1 text-slate-700">
               <li>Gross: {preview.gross.toFixed(2)}</li>

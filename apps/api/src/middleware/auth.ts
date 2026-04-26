@@ -1,4 +1,4 @@
-import type { Role } from "@kleentoditee/db";
+import { prisma, UserStatus, type Role } from "@kleentoditee/db";
 import { createMiddleware } from "hono/factory";
 import { verifySessionToken } from "../lib/token.js";
 
@@ -15,8 +15,20 @@ export const authRequired = createMiddleware<{ Variables: AuthVariables }>(async
   }
   try {
     const payload = await verifySessionToken(token);
-    c.set("userId", payload.sub);
-    c.set("roles", payload.roles);
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        status: true,
+        tokenVersion: true,
+        roles: { select: { role: true } }
+      }
+    });
+    if (!user || user.status !== UserStatus.active || user.tokenVersion !== payload.tv) {
+      return c.json({ error: "Invalid or expired token" }, 401);
+    }
+    c.set("userId", user.id);
+    c.set("roles", user.roles.map((r) => r.role));
     await next();
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "KleenToDiTee — Tracker",
-  description: "Employee time tracking (Phase 1 stub)",
+  description: "Employee time entry and submit for approval",
   themeColor: "#0f3a46"
 };
 

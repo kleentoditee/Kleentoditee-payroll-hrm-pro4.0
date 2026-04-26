@@ -18,15 +18,50 @@ enum Role {
   employee_tracker_user
 }
 
+/// User lifecycle; only `active` can obtain a valid session.
+enum UserStatus {
+  invited
+  active
+  suspended
+  deactivated
+}
+
 model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  roles        UserRole[]
-  auditLogs    AuditLog[] @relation("AuditActor")
+  id             String     @id @default(cuid())
+  email          String     @unique
+  /// Lowercased, trimmed; used for uniqueness and invite matching (nullable only before backfill).
+  emailCanonical String?    @unique
+  passwordHash   String
+  name           String
+  /// Only `active` can sign in. Managed by platform_owner via admin API.
+  status         UserStatus @default(active)
+  /// Bumped to invalidate all JWTs (password / privilege / deactivation, etc.).
+  tokenVersion   Int        @default(0)
+  /// When set, this login is the employee-tracker (mobile) account for that employee.
+  employeeId     String?    @unique
+  employee       Employee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  roles          UserRole[]
+  auditLogs      AuditLog[] @relation("AuditActor")
+  invitations    UserInvitation[]
+
+  @@index([status])
+}
+
+/// One-time expiring invite; `tokenHash` is bcrypt of the full raw token (id:secret) shown once in dev.
+model UserInvitation {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model UserRole {
@@ -63,10 +98,23 @@ enum PayBasis {
   fixed
 }
 
+enum PaySchedule {
+  weekly
+  biweekly
+  monthly
+}
+
 enum TimeEntryStatus {
   draft
   submitted
   approved
+  paid
+}
+
+enum PayRunStatus {
+  draft
+  finalized
+  exported
   paid
 }
 
@@ -100,16 +148,20 @@ model Employee {
   fixedPay      Float             @default(0)
   standardDays  Float             @default(0)
   standardHours Float             @default(0)
+  paySchedule   PaySchedule       @default(monthly)
   active        Boolean           @default(true)
   notes         String            @default("")
   templateId    String
   template      DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
 
-  timeEntries TimeEntry[]
+  timeEntries  TimeEntry[]
+  payRunItems  PayRunItem[]
+  linkedUser   User?
 
   @@index([templateId])
   @@index([active])
   @@index([fullName])
+  @@index([paySchedule, active])
 }
 
 /// Monthly timesheet line (legacy payroll app shape; multiple rows per employee/month allowed for different sites).
@@ -120,6 +172,8 @@ model TimeEntry {
   employeeId            String
   employee              Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   month                 String
+  periodStart           DateTime?
+  periodEnd             DateTime?
   site                  String          @default("")
   status                TimeEntryStatus @default(draft)
   daysWorked            Float           @default(0)
@@ -142,4 +196,510 @@ model TimeEntry {
   @@index([employeeId, month])
   @@index([month])
   @@index([status])
+  @@index([periodStart, periodEnd])
+}
+
+model PayPeriod {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  label     String
+  schedule  PaySchedule
+  startDate DateTime
+  endDate   DateTime
+  payDate   DateTime?
+  notes     String      @default("")
+  runs      PayRun[]
+
+  @@unique([schedule, startDate, endDate])
+  @@index([schedule, startDate])
+  @@index([endDate])
+}
+
+model PayRun {
+  id         String        @id @default(cuid())
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  periodId   String        @unique
+  period     PayPeriod     @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  status     PayRunStatus  @default(draft)
+  notes      String        @default("")
+  finalizedAt DateTime?
+  exportedAt DateTime?
+  paidAt     DateTime?
+  items      PayRunItem[]
+  exports    PayrollExport[]
+
+  @@index([status])
+}
+
+model PayRunItem {
+  id                  String      @id @default(cuid())
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  runId               String
+  run                 PayRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId          String
+  employee            Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  employeeName        String
+  employeeRole        String      @default("")
+  defaultSite         String      @default("")
+  paySchedule         PaySchedule
+  payBasis            PayBasis
+  templateName        String      @default("")
+  sourceEntryIds      Json?
+  sourceSummary       Json?
+  gross               Float       @default(0)
+  nhi                 Float       @default(0)
+  ssb                 Float       @default(0)
+  incomeTax           Float       @default(0)
+  manualDeductions    Float       @default(0)
+  totalDeductions     Float       @default(0)
+  net                 Float       @default(0)
+  daysWorked          Float       @default(0)
+  hoursWorked         Float       @default(0)
+  overtimeHours       Float       @default(0)
+  bonus               Float       @default(0)
+  allowance           Float       @default(0)
+  flatGross           Float       @default(0)
+  advanceDeduction    Float       @default(0)
+  withdrawalDeduction Float       @default(0)
+  loanDeduction       Float       @default(0)
+  otherDeduction      Float       @default(0)
+  paystub             Paystub?
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+}
+
+model Paystub {
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  payRunItemId String     @unique
+  payRunItem   PayRunItem @relation(fields: [payRunItemId], references: [id], onDelete: Cascade)
+  stubNumber   String     @unique
+  issuedAt     DateTime   @default(now())
+  payload      Json?
+}
+
+model PayrollExport {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  runId     String
+  run       PayRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  format    String
+  fileName  String
+  contents  String
+
+  @@index([runId])
+}
+
+/// Finance master data (Phase 3 Task 9).
+/// QuickBooks-style chart of accounts. `code` is the numeric account number
+/// (e.g. "1000" Cash, "4000" Sales Revenue). `type` drives reporting
+/// classification and which side increases the balance.
+enum AccountType {
+  asset
+  liability
+  equity
+  revenue
+  expense
+}
+
+/// Item kind for sellable / purchasable records.
+enum ProductKind {
+  service
+  product
+  bundle
+}
+
+model Account {
+  id          String      @id @default(cuid())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  code        String      @unique
+  name        String
+  type        AccountType
+  subtype     String      @default("")
+  description String      @default("")
+  active      Boolean     @default(true)
+  parentId    String?
+  parent      Account?    @relation("AccountTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Account[]   @relation("AccountTree")
+
+  productsAsIncome  Product[] @relation("ProductIncome")
+  productsAsExpense Product[] @relation("ProductExpense")
+
+  invoiceLines      InvoiceLine[] @relation("InvoiceLineIncomeAccount")
+  billLines         BillLine[]    @relation("BillLineExpenseAccount")
+  paymentDeposits    Payment[]     @relation("PaymentDepositAccount")
+  billPaymentSources BillPayment[] @relation("BillPaymentSourceAccount")
+  expensesAsPayment  Expense[]     @relation("ExpensePaymentAccount")
+  expenseLines       ExpenseLine[] @relation("ExpenseLineExpenseAccount")
+  depositsAsBank     Deposit[]     @relation("DepositBankAccount")
+
+  @@index([type, active])
+  @@index([parentId])
+  @@index([name])
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  displayName    String   @unique
+  companyName    String   @default("")
+  primaryContact String   @default("")
+  email          String   @default("")
+  phone          String   @default("")
+  billingAddress String   @default("")
+  taxId          String   @default("")
+  notes          String   @default("")
+  active         Boolean  @default(true)
+
+  invoices Invoice[]
+  payments Payment[]
+
+  @@index([active])
+  @@index([displayName])
+}
+
+model Supplier {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  displayName    String   @unique
+  companyName    String   @default("")
+  primaryContact String   @default("")
+  email          String   @default("")
+  phone          String   @default("")
+  mailingAddress String   @default("")
+  taxId          String   @default("")
+  notes          String   @default("")
+  active         Boolean  @default(true)
+
+  bills        Bill[]
+  billPayments BillPayment[]
+  expenses     Expense[]
+
+  @@index([active])
+  @@index([displayName])
+}
+
+model Product {
+  id                String      @id @default(cuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  sku               String      @unique
+  name              String
+  kind              ProductKind @default(service)
+  description       String      @default("")
+  salesPrice        Float       @default(0)
+  purchaseCost      Float       @default(0)
+  taxable           Boolean     @default(false)
+  active            Boolean     @default(true)
+  incomeAccountId   String
+  incomeAccount     Account     @relation("ProductIncome", fields: [incomeAccountId], references: [id], onDelete: Restrict)
+  expenseAccountId  String?
+  expenseAccount    Account?    @relation("ProductExpense", fields: [expenseAccountId], references: [id], onDelete: SetNull)
+
+  invoiceLines InvoiceLine[] @relation("InvoiceLineProduct")
+  billLines    BillLine[]    @relation("BillLineProduct")
+
+  @@index([kind, active])
+  @@index([incomeAccountId])
+  @@index([expenseAccountId])
+  @@index([name])
+}
+
+/// Finance transactions (Phase 3 Task 10).
+/// Document status drives invoice/bill lifecycle:
+///   draft  -> editable, not yet issued
+///   open   -> sent/received, awaiting payment
+///   partial-> some payment applied
+///   paid   -> balance zero
+///   void   -> cancelled; excluded from AR/AP totals
+enum TransactionStatus {
+  draft
+  open
+  partial
+  paid
+  void
+}
+
+model Invoice {
+  id           String               @id @default(cuid())
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  number       String               @unique
+  customerId   String
+  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  issueDate    DateTime
+  dueDate      DateTime?
+  memo         String               @default("")
+  status       TransactionStatus    @default(draft)
+  subtotal     Float                @default(0)
+  taxTotal     Float                @default(0)
+  total        Float                @default(0)
+  amountPaid   Float                @default(0)
+  balance      Float                @default(0)
+  sentAt       DateTime?
+  voidedAt     DateTime?
+  lines        InvoiceLine[]
+  applications PaymentApplication[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([issueDate])
+}
+
+model InvoiceLine {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position        Int
+  productId       String?
+  product         Product? @relation("InvoiceLineProduct", fields: [productId], references: [id], onDelete: SetNull)
+  description     String   @default("")
+  quantity        Float    @default(1)
+  unitPrice       Float    @default(0)
+  incomeAccountId String
+  incomeAccount   Account  @relation("InvoiceLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: Restrict)
+  taxable         Boolean  @default(false)
+  taxAmount       Float    @default(0)
+  amount          Float    @default(0)
+
+  @@index([invoiceId, position])
+  @@index([productId])
+  @@index([incomeAccountId])
+}
+
+model Bill {
+  id           String                   @id @default(cuid())
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  number       String                   @unique
+  supplierId   String
+  supplier     Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  billDate     DateTime
+  dueDate      DateTime?
+  memo         String                   @default("")
+  status       TransactionStatus        @default(draft)
+  subtotal     Float                    @default(0)
+  taxTotal     Float                    @default(0)
+  total        Float                    @default(0)
+  amountPaid   Float                    @default(0)
+  balance      Float                    @default(0)
+  receivedAt   DateTime?
+  voidedAt     DateTime?
+  lines        BillLine[]
+  applications BillPaymentApplication[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([billDate])
+}
+
+model BillLine {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  billId           String
+  bill             Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  position         Int
+  productId        String?
+  product          Product? @relation("BillLineProduct", fields: [productId], references: [id], onDelete: SetNull)
+  description      String   @default("")
+  quantity         Float    @default(1)
+  unitCost         Float    @default(0)
+  expenseAccountId String
+  expenseAccount   Account  @relation("BillLineExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  taxable          Boolean  @default(false)
+  taxAmount        Float    @default(0)
+  amount           Float    @default(0)
+
+  @@index([billId, position])
+  @@index([productId])
+  @@index([expenseAccountId])
+}
+
+/// Payment methods for customer payments and bill payments.
+enum PaymentMethod {
+  cash
+  check
+  card
+  ach
+  other
+}
+
+model Payment {
+  id               String               @id @default(cuid())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  number           String               @unique
+  customerId       String
+  customer         Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  paymentDate      DateTime
+  method           PaymentMethod        @default(cash)
+  reference        String               @default("")
+  memo             String               @default("")
+  amount           Float
+  applied          Float                @default(0)
+  unapplied        Float                @default(0)
+  depositAccountId String
+  depositAccount   Account              @relation("PaymentDepositAccount", fields: [depositAccountId], references: [id], onDelete: Restrict)
+  depositedAt      DateTime?
+  applications     PaymentApplication[]
+  depositLines     DepositLine[]        @relation("DepositLinePayment")
+
+  @@index([customerId])
+  @@index([paymentDate])
+  @@index([depositAccountId])
+}
+
+model PaymentApplication {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  paymentId String
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amount    Float
+
+  @@unique([paymentId, invoiceId])
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+model BillPayment {
+  id              String                   @id @default(cuid())
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  number          String                   @unique
+  supplierId      String
+  supplier        Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  paymentDate     DateTime
+  method          PaymentMethod            @default(check)
+  reference       String                   @default("")
+  memo            String                   @default("")
+  amount          Float
+  applied         Float                    @default(0)
+  unapplied       Float                    @default(0)
+  sourceAccountId String
+  sourceAccount   Account                  @relation("BillPaymentSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
+  applications    BillPaymentApplication[]
+
+  @@index([supplierId])
+  @@index([paymentDate])
+  @@index([sourceAccountId])
+}
+
+model BillPaymentApplication {
+  id            String      @id @default(cuid())
+  createdAt     DateTime    @default(now())
+  billPaymentId String
+  billPayment   BillPayment @relation(fields: [billPaymentId], references: [id], onDelete: Cascade)
+  billId        String
+  bill          Bill        @relation(fields: [billId], references: [id], onDelete: Restrict)
+  amount        Float
+
+  @@unique([billPaymentId, billId])
+  @@index([billPaymentId])
+  @@index([billId])
+}
+
+/// Direct expenses (Phase 3 Task 10C).
+/// Unlike bills, expenses are paid at the moment they're posted —
+/// they don't create an AP liability. Used for card/cash purchases
+/// where there's no supplier invoice cycle.
+model Expense {
+  id               String            @id @default(cuid())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  number           String            @unique
+  expenseDate      DateTime
+  method           PaymentMethod     @default(card)
+  reference        String            @default("")
+  memo             String            @default("")
+  supplierId       String?
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  payeeName        String            @default("")
+  paymentAccountId String
+  paymentAccount   Account           @relation("ExpensePaymentAccount", fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  subtotal         Float             @default(0)
+  taxTotal         Float             @default(0)
+  total            Float             @default(0)
+  status           TransactionStatus @default(draft)
+  postedAt         DateTime?
+  voidedAt         DateTime?
+  lines            ExpenseLine[]
+
+  @@index([expenseDate])
+  @@index([supplierId])
+  @@index([paymentAccountId])
+  @@index([status])
+}
+
+model ExpenseLine {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  expenseId        String
+  expense          Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  position         Int
+  description      String   @default("")
+  quantity         Float    @default(1)
+  unitCost         Float    @default(0)
+  expenseAccountId String
+  expenseAccount   Account  @relation("ExpenseLineExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  taxable          Boolean  @default(false)
+  taxAmount        Float    @default(0)
+  amount           Float    @default(0)
+
+  @@index([expenseId, position])
+  @@index([expenseAccountId])
+}
+
+/// Bank deposits (Phase 3 Task 10C).
+/// Groups one or more undeposited customer payments into a single
+/// bank transaction. When posted, each linked payment's
+/// `depositedAt` is set so it can't be modified or re-deposited.
+model Deposit {
+  id            String            @id @default(cuid())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  number        String            @unique
+  depositDate   DateTime
+  memo          String            @default("")
+  bankAccountId String
+  bankAccount   Account           @relation("DepositBankAccount", fields: [bankAccountId], references: [id], onDelete: Restrict)
+  total         Float             @default(0)
+  status        TransactionStatus @default(draft)
+  postedAt      DateTime?
+  voidedAt      DateTime?
+  lines         DepositLine[]
+
+  @@index([depositDate])
+  @@index([bankAccountId])
+  @@index([status])
+}
+
+model DepositLine {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  depositId   String
+  deposit     Deposit  @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  position    Int
+  paymentId   String?
+  payment     Payment? @relation("DepositLinePayment", fields: [paymentId], references: [id], onDelete: Restrict)
+  description String   @default("")
+  amount      Float
+
+  @@index([depositId, position])
+  @@index([paymentId])
 }

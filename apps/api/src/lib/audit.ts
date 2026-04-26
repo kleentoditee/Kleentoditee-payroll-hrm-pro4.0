@@ -10,7 +10,7 @@ export async function writeAudit(params: {
   after?: unknown;
   metadata?: unknown;
 }): Promise<void> {
-  const data: Prisma.AuditLogCreateInput = {
+  const data: Prisma.AuditLogUncheckedCreateInput = {
     action: params.action,
     entityType: params.entityType,
     entityId: params.entityId ?? null,

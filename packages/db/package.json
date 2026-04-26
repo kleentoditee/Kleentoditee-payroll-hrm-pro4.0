@@ -10,6 +10,7 @@
     "postinstall": "prisma generate",
     "generate": "prisma generate",
     "push": "dotenv -e ../../.env -- prisma db push",
+    "push:loss": "dotenv -e ../../.env -- prisma db push --accept-data-loss",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
     "studio": "dotenv -e ../../.env -- prisma studio"
