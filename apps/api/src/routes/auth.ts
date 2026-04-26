@@ -162,8 +162,8 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!rawToken || !password) {
       return c.json({ error: "token and password are required" }, 400);
     }
-    if (password.length < 8) {
-      return c.json({ error: "password must be at least 8 characters" }, 400);
+    if (password.length < 15) {
+      return c.json({ error: "password must be at least 15 characters" }, 400);
     }
     if (name !== undefined && !name) {
       return c.json({ error: "name cannot be empty" }, 400);
@@ -214,9 +214,6 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
       return u;
     });
 
-    const roles = updated.roles.map((r) => r.role);
-    const token = await signSessionToken(updated.id, roles, updated.tokenVersion);
-
     await writeAudit({
       actorUserId: updated.id,
       action: "auth.invite.accept",
@@ -225,9 +222,10 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
       after: { email: updated.email, name: updated.name }
     });
 
+    // No JWT here — user signs in on /login (separate step). Response never includes raw invite token.
     return c.json({
-      token,
-      user: { id: updated.id, email: updated.email, name: updated.name, roles, status: updated.status }
+      ok: true,
+      email: updated.email
     });
   })
   .get("/me", authRequired, async (c) => {

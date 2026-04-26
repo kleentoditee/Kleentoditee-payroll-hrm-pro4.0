@@ -3,8 +3,32 @@
 import { apiBase, readApiJson } from "@/lib/api";
 import { setToken } from "@/lib/auth-storage";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+
+function InviteActivatedBanner({
+  onInviteReturn
+}: {
+  onInviteReturn: (p: { email: string | null; invited: boolean }) => void;
+}) {
+  const sp = useSearchParams();
+  useEffect(() => {
+    const invited = sp.get("invited") === "1";
+    const email = sp.get("email");
+    onInviteReturn({ email, invited });
+  }, [sp, onInviteReturn]);
+  if (sp.get("invited") !== "1") {
+    return null;
+  }
+  return (
+    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+      <p className="font-semibold">Account activated</p>
+      <p className="mt-1">
+        Your invitation is complete. Sign in with your email and the password you set on the accept-invite page.
+      </p>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,6 +50,15 @@ export default function LoginPage() {
       }
     | "missing"
   >("idle");
+
+  const onInviteReturn = useCallback((p: { email: string | null; invited: boolean }) => {
+    if (p.invited) {
+      if (p.email) {
+        setEmail(p.email);
+      }
+      setPassword("");
+    }
+  }, []);
 
   async function checkApi() {
     setApiCheck("idle");
@@ -142,6 +175,10 @@ export default function LoginPage() {
           Audit, and the rest. If you stay here, check the red error under the form or that you ran{" "}
           <code className="rounded bg-slate-100 px-1 text-xs">db:seed</code>.
         </p>
+
+        <Suspense fallback={null}>
+          <InviteActivatedBanner onInviteReturn={onInviteReturn} />
+        </Suspense>
 
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="font-semibold">Default dev login (after running seed once)</p>

@@ -57,6 +57,21 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 |--------|------|---------|
 | GET | `/audit/recent` | Paginated audit log (`take` query, cap 200); platform / payroll / hr / finance roles. |
 
+### `/admin` (`routes/admin-users.ts`)
+
+Mounted at `/admin`; **platform_owner** only for listed routes (see middleware in file).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/admin/users/invitations/pending` | Non-revoked, non-expired pending invitations. |
+| POST | `/admin/users/invite` | Create user + invitation (email flow). |
+| GET | `/admin/users` | List users (optional `status` / `active` filters). |
+| POST | `/admin/users` | Create user (non-invite path when used). |
+| GET, PATCH | `/admin/users/:id` | Read / update user (roles, name, `employeeId`, etc.). |
+| POST | `/admin/users/:id/suspend` | Suspend user. |
+| POST | `/admin/users/:id/deactivate` | Deactivate user. |
+| POST | `/admin/users/:id/reactivate` | Reactivate user. |
+
 ### `/people` (`routes/people.ts`)
 
 | Method | Path | Purpose |
@@ -154,7 +169,7 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 
 **Enums (high level):** `Role`, `PayBasis`, `PaySchedule`, `TimeEntryStatus`, `PayRunStatus`, `AccountType`, `ProductKind`, `TransactionStatus`, `PaymentMethod`.
 
-**Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants, user-invite beyond first registration.
+**Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants.
 
 ---
 
@@ -166,7 +181,7 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 |-------|---------|
 | `/` | Marketing/entry; routes toward login. |
 | `/login` | Admin sign-in (JWT to localStorage; API calls use `authHeaders()`). |
-| `/dashboard` | Home: metrics (submitted time count, draft pay runs), links to main areas. |
+| `/dashboard` | **Business at a glance:** cards for active employees, submitted time approvals queue, draft pay runs, finance shortcuts (when API allows), users/invitations (platform owner), recent audit; each metric uses real API data or an honest “no access / unavailable” message with a link to the real screen. |
 | `/dashboard/people` | Redirect → `/dashboard/people/employees`. |
 | `/dashboard/people/employees` | Employee list, search, link to new/detail. |
 | `/dashboard/people/employees/new` | Create employee. |
@@ -209,8 +224,16 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 | `/dashboard/finance/deposits/new` | New deposit. |
 | `/dashboard/finance/deposits/[id]` | Deposit detail / post. |
 | `/dashboard/audit` | Recent audit events (`/audit/recent`). |
+| `/dashboard/reports` | Reports **catalog** page: category cards (Payroll, Time, People, Finance, Audit) linking to existing list/detail areas (not a separate report engine). |
+| `/dashboard/schedule` | **Coming soon** placeholder route (scheduling UI not implemented). |
+| `/dashboard/settings` | **Coming soon** placeholder route (org-wide settings UI not implemented). |
+| `/dashboard/users` | Users & roles list (invitations + users); `platform_owner`-oriented admin. |
+| `/dashboard/users/new` | Invite / create user flow. |
+| `/dashboard/users/[id]` | User detail (roles, suspend, link employee, etc.). |
 
-**Layouts:** `dashboard/layout.tsx`, `people/layout.tsx`, `payroll/layout.tsx`, `time/layout.tsx`, `finance/layout.tsx` provide section navigation chrome.
+**App shell:** `components/app-shell.tsx` provides the signed-in chrome: **grouped sidebar** (Dashboard, People, Time, Payroll, Finance, Reports, Admin) with **active state** from the current path, optional “Soon” badges, payroll hints (paystubs/exports → pay runs), a **Create** actions menu (employee, time entry, approvals, pay period, pay runs, invoice, expense, invite user), and sign-out. Dead rail buttons and non-linking shell items from earlier iterations were removed.
+
+**Layouts:** `dashboard/layout.tsx`, `people/layout.tsx`, `payroll/layout.tsx`, `time/layout.tsx`, `finance/layout.tsx` provide section-level chrome where present; primary navigation is the shared app shell.
 
 **employee-tracker (separate app):** `/` home (self time), `/login` — not part of `admin-web` but part of the same platform API.
 
@@ -231,13 +254,13 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ### Stubs, placeholders, or “phase later” in UI
 
-- **App shell** (`app-shell.tsx`): left “rail” items (Create, Bookmarks, Feed, Reports, All apps, Customize) are mostly **non-navigating buttons**; only Home links to `/dashboard`. Pinned row includes **Hiring** and **Reports** **without** `href` (non-clickable).  
+- **Schedule** (`/dashboard/schedule`) and **Settings** (`/dashboard/settings`): real routes with a **Coming soon** page (no feature UI yet).  
 - **Global search** in header: **disabled** with tooltip *“Global search — wired in a later phase”*.  
 - **@kleentoditee/ui:** placeholder token export only.  
 
 ### Missing or not exposed in admin
 
-- **User and role management:** no API routes to add users, assign roles, or link `employeeId` after bootstrap (operational changes require DB/seed or manual Prisma).  
+- **User and role management:** admin UI and API exist for invites, roles, and user lifecycle for authorized roles; non–platform owners may see restricted subsets per API rules.  
 - **Register** after the first user exists is blocked by design.  
 - **Full general ledger** with balanced journal posts and **account running balances** (schema is document- and line-centric; `Account` has no period balance field).  
 - **Invoices/employee payroll** integration: payroll and finance are separate domains in the current schema.  
@@ -250,11 +273,11 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ## 6. Recommended next implementation order
 
-1. **User & role administration (API + admin UI)** — Unblocks real teams: invite users, assign `hr_admin` / `finance_admin` / `employee_tracker_user`, link `User.employeeId` without DB surgery. This is the largest operational gap relative to a working org.  
-2. **Clarify or implement shell affordances** — Either wire Create/Reports/Hiring to real routes or remove/label as future to avoid a “broken” console feel.  
+1. **Harden user & role administration** — Extend polish, edge cases, and non–platform-owner workflows now that invite/list/detail routes exist.  
+2. **Schedule & settings** — Replace Coming soon pages with real scheduling and org settings when specs are ready.  
 3. **Global search (optional but high impact)** — If product priority is findability, replace the disabled field with server-backed search over employees, invoices, etc.; if not, hide it until a spec exists.  
 4. **employee-tracker hardening** — Edit policy for non-draft lines, error states, and parity with any new approval rules.  
 5. **Financial reporting** — If required beyond document lists: define whether to add **journal entries** and balance reporting or stay invoice-centric and export to external tools.  
 6. **@kleentoditee/ui** — Promote only when multiple apps need the same components; until then, keep admin patterns local to avoid abstracting too early.  
 
-This order keeps **payroll and finance flows** (already deep) maintainable while closing **identity/authorization operations** and **UI honesty** (real links vs placeholders) first.
+This order keeps **payroll and finance flows** (already deep) maintainable while iterating on **operational admin** (users, schedule, settings) and **findability** (search, reporting depth).

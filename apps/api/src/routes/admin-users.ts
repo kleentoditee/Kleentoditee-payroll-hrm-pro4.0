@@ -262,6 +262,7 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         entityId: result.user.id,
         after: { email: result.user.email, name: result.user.name, status: result.user.status, roles }
       });
+      // Production: JSON must never include raw tokens or full accept URLs. Only non-prod may attach devInvitePath or log a URL.
       const resBody: {
         user: ReturnType<typeof mapUser>;
         devInvitePath?: string;
