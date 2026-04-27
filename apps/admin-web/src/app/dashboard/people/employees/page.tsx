@@ -1,5 +1,6 @@
 "use client";
 
+import { EmployeeAvatar } from "@/components/employee-avatar";
 import { apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -10,10 +11,13 @@ type EmployeeRow = {
   fullName: string;
   role: string;
   defaultSite: string;
+  phone: string;
   active: boolean;
   basePayType: string;
   paySchedule: string;
   template: { name: string };
+  hasProfilePhoto: boolean;
+  linkedUser: { email: string; status: string } | null;
 };
 
 export default function EmployeesListPage() {
@@ -99,13 +103,30 @@ export default function EmployeesListPage() {
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((employee) => (
             <li key={employee.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
-              <div>
-                <p className="font-medium text-slate-900">{employee.fullName}</p>
-                <p className="text-sm text-slate-600">
-                  {employee.role || "-"} | {employee.defaultSite || "No site"} | {employee.basePayType} |{" "}
-                  {employee.paySchedule}
-                </p>
-                <p className="text-xs text-slate-500">Template: {employee.template.name}</p>
+              <div className="flex min-w-0 items-start gap-3">
+                <EmployeeAvatar
+                  employeeId={employee.id}
+                  hasPhoto={employee.hasProfilePhoto}
+                  name={employee.fullName}
+                  sizeClassName="h-11 w-11 text-xs"
+                  profilePhotoViewUrl={`/people/employees/${employee.id}/profile-photo`}
+                />
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-900">{employee.fullName}</p>
+                  <p className="text-sm text-slate-600">
+                    {employee.linkedUser ? (
+                      <span className="text-slate-800">{employee.linkedUser.email}</span>
+                    ) : (
+                      <span className="italic text-slate-500">No linked user</span>
+                    )}
+                    <span className="text-slate-400"> · </span>
+                    {employee.phone || "— phone"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {employee.role || "-"} | {employee.defaultSite || "No site"} | {employee.basePayType} |{" "}
+                    {employee.paySchedule} · {employee.template.name}
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <span

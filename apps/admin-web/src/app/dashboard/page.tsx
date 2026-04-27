@@ -1,27 +1,60 @@
 "use client";
 
+import { BusinessOperatingDashboard, type AuditDay, type BusinessOverviewData } from "@/components/business-operating-dashboard";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type EmployeeRow = { active: boolean };
 
-type DashboardMetrics = {
-  activeEmployees: number | null;
-  employeesError: string | null;
-  submittedTime: number | null;
-  timeError: string | null;
-  draftRuns: number | null;
-  payrollError: string | null;
-  invoiceCount: number | null;
-  financeError: string | null;
-  pendingInvites: number | null;
-  invitedUsers: number | null;
-  usersAccess: "ok" | "forbidden" | "error";
-  auditPreview: { action: string; createdAt: string; actorLabel: string } | null;
-  auditError: string | null;
-};
+type MeResponse = { user: { roles: string[] } };
+
+type PayPeriodItem = { label: string; endDate: string; payDate: string | null };
+
+function startOfTodayMs(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function bucketAuditLast7Days(
+  items: { createdAt: string }[]
+): AuditDay[] {
+  const dayKeys: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    dayKeys.push(key);
+  }
+  const counts = new Map<string, number>();
+  for (const k of dayKeys) {
+    counts.set(k, 0);
+  }
+  for (const it of items) {
+    const k = it.createdAt.slice(0, 10);
+    if (counts.has(k)) {
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  }
+  return dayKeys.map((dayKey) => ({ dayKey, count: counts.get(dayKey) ?? 0 }));
+}
+
+function pickNextPayroll(periods: PayPeriodItem[]): { label: string; payDate: string } | null {
+  const start = startOfTodayMs();
+  const future = periods
+    .filter((p) => p.payDate)
+    .map((p) => {
+      const t = new Date(p.payDate as string).getTime();
+      return { label: p.label, payDate: p.payDate as string, t };
+    })
+    .filter((p) => !Number.isNaN(p.t) && p.t >= start)
+    .sort((a, b) => a.t - b.t);
+  if (future[0]) {
+    return { label: future[0].label, payDate: future[0].payDate };
+  }
+  return null;
+}
 
 async function safeJson<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
@@ -35,28 +68,38 @@ async function safeJson<T>(res: Response): Promise<T | null> {
 }
 
 export default function DashboardPage() {
-  const [m, setM] = useState<DashboardMetrics | null>(null);
+  const [m, setM] = useState<BusinessOverviewData | null>(null);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(async (): Promise<DashboardMetrics> => {
+  const load = useCallback(async (): Promise<{ data: BusinessOverviewData; roles: string[] }> => {
     const headers = { ...authHeaders() };
     const [
+      meRes,
       empRes,
       timeRes,
       runRes,
       invRes,
+      billsRes,
       pendRes,
       usersRes,
-      auditRes
+      auditRes,
+      periodsRes
     ] = await Promise.all([
+      fetch(`${apiBase()}/auth/me`, { headers }),
       fetch(`${apiBase()}/people/employees`, { headers }),
       fetch(`${apiBase()}/time/entries/count?queue=all&status=submitted`, { headers }),
       fetch(`${apiBase()}/payroll/runs?status=draft`, { headers }),
       fetch(`${apiBase()}/finance/invoices`, { headers }),
+      fetch(`${apiBase()}/finance/bills`, { headers }),
       fetch(`${apiBase()}/admin/users/invitations/pending`, { headers }),
       fetch(`${apiBase()}/admin/users`, { headers }),
-      fetch(`${apiBase()}/audit/recent?take=5`, { headers })
+      fetch(`${apiBase()}/audit/recent?take=120`, { headers }),
+      fetch(`${apiBase()}/payroll/periods`, { headers })
     ]);
+
+    const me = await safeJson<MeResponse>(meRes);
+    const roles = me?.user?.roles ?? [];
 
     let activeEmployees: number | null = null;
     let employeesError: string | null = null;
@@ -108,9 +151,20 @@ export default function DashboardPage() {
       financeError = "Could not load invoices.";
     }
 
+    let billsCount: number | null = null;
+    let billsError: string | null = null;
+    if (billsRes.ok) {
+      const data = await safeJson<{ items: unknown[] }>(billsRes);
+      billsCount = data?.items?.length ?? 0;
+    } else if (billsRes.status === 403) {
+      billsError = "No access to finance lists with current roles.";
+    } else {
+      billsError = "Could not load bills.";
+    }
+
     let pendingInvites: number | null = null;
     let invitedUsers: number | null = null;
-    let usersAccess: DashboardMetrics["usersAccess"] = "ok";
+    let usersAccess: BusinessOverviewData["usersAccess"] = "ok";
     if (pendRes.status === 403 || usersRes.status === 403) {
       usersAccess = "forbidden";
     } else if (pendRes.ok && usersRes.ok) {
@@ -122,8 +176,9 @@ export default function DashboardPage() {
       usersAccess = "error";
     }
 
-    let auditPreview: DashboardMetrics["auditPreview"] = null;
+    let auditPreview: BusinessOverviewData["auditPreview"] = null;
     let auditError: string | null = null;
+    let auditByDay: AuditDay[] = [];
     if (auditRes.ok) {
       const a = await safeJson<{
         items: { action: string; createdAt: string; actor: { name: string; email: string } | null }[];
@@ -136,13 +191,36 @@ export default function DashboardPage() {
           actorLabel: first.actor?.name || first.actor?.email || "System"
         };
       }
+      auditByDay = bucketAuditLast7Days(a?.items ?? []);
     } else if (auditRes.status === 403) {
       auditError = "Audit log requires appropriate role.";
     } else {
       auditError = "Could not load recent audit events.";
     }
 
-    return {
+    let periodCount: number | null = null;
+    let latestPeriod: BusinessOverviewData["latestPeriod"] = null;
+    let nextPayroll: BusinessOverviewData["nextPayroll"] = null;
+    let periodsError: string | null = null;
+    if (periodsRes.ok) {
+      const p = await safeJson<{ items: PayPeriodItem[] }>(periodsRes);
+      const items = p?.items ?? [];
+      periodCount = items.length;
+      if (items[0]) {
+        latestPeriod = {
+          label: items[0].label,
+          payDate: items[0].payDate,
+          endDate: items[0].endDate
+        };
+      }
+      nextPayroll = pickNextPayroll(items);
+    } else if (periodsRes.status === 403) {
+      periodsError = "Could not load pay periods with current role.";
+    } else {
+      periodsError = "Could not load pay periods.";
+    }
+
+    const data: BusinessOverviewData = {
       activeEmployees,
       employeesError,
       submittedTime,
@@ -151,21 +229,31 @@ export default function DashboardPage() {
       payrollError,
       invoiceCount,
       financeError,
+      billsCount,
+      billsError,
       pendingInvites,
       invitedUsers,
       usersAccess,
       auditPreview,
-      auditError
+      auditError,
+      auditByDay,
+      periodCount,
+      latestPeriod,
+      nextPayroll,
+      periodsError
     };
+
+    return { data, roles };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await load();
+        const { data, roles } = await load();
         if (!cancelled) {
           setM(data);
+          setUserRoles(roles);
           setLoadError(null);
         }
       } catch (e) {
@@ -182,164 +270,11 @@ export default function DashboardPage() {
 
   if (!m) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600 shadow-sm">
-        {loadError ? (
-          <p className="text-red-700">{loadError}</p>
-        ) : (
-          <p>Loading business overview…</p>
-        )}
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-10 text-sm text-slate-600 shadow-sm shadow-slate-200/50">
+        {loadError ? <p className="text-red-700">{loadError}</p> : <p>Loading your operating dashboard…</p>}
       </div>
     );
   }
 
-  return (
-    <div className="space-y-8">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Overview</p>
-        <h1 className="mt-1 font-serif text-2xl font-semibold text-slate-900">Business at a glance</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Figures load from live API data when your role allows. Where a metric is unavailable, we show what is missing
-          and link you to the underlying screen — no invented numbers.
-        </p>
-      </header>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active employees</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {m.activeEmployees === null ? "—" : m.activeEmployees}
-          </p>
-          {m.employeesError ? (
-            <p className="mt-2 text-sm text-amber-800">{m.employeesError}</p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">Employees marked active in People</p>
-          )}
-          <Link href="/dashboard/people/employees" className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">
-            Manage employees →
-          </Link>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Time approvals</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {m.submittedTime === null ? "—" : m.submittedTime}
-          </p>
-          {m.timeError ? (
-            <p className="mt-2 text-sm text-amber-800">{m.timeError}</p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">Submitted timesheets awaiting approval</p>
-          )}
-          <Link href="/dashboard/time/approvals" className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">
-            Approval queue →
-          </Link>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Draft pay runs</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">{m.draftRuns === null ? "—" : m.draftRuns}</p>
-          {m.payrollError ? (
-            <p className="mt-2 text-sm text-amber-800">{m.payrollError}</p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">Runs still in draft status</p>
-          )}
-          <Link href="/dashboard/payroll/runs" className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">
-            Pay runs →
-          </Link>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Finance shortcuts</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">
-            {m.invoiceCount === null ? "—" : m.invoiceCount}
-          </p>
-          {m.financeError ? (
-            <p className="mt-2 text-sm text-amber-800">{m.financeError}</p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">Invoice documents in the system (all statuses)</p>
-          )}
-          <div className="mt-3 flex flex-wrap gap-3">
-            <Link href="/dashboard/finance/invoices" className="text-sm font-semibold text-brand hover:underline">
-              Invoices →
-            </Link>
-            <Link href="/dashboard/finance/bills" className="text-sm font-semibold text-brand hover:underline">
-              Bills →
-            </Link>
-            <Link href="/dashboard/finance/expenses" className="text-sm font-semibold text-brand hover:underline">
-              Expenses →
-            </Link>
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Users & invitations</p>
-          {m.usersAccess === "forbidden" ? (
-            <>
-              <p className="mt-2 text-sm text-slate-600">
-                User administration and pending invitations are limited to <strong>platform owners</strong>.
-              </p>
-              <Link href="/dashboard/users" className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">
-                Users & roles →
-              </Link>
-            </>
-          ) : m.usersAccess === "error" ? (
-            <p className="mt-2 text-sm text-amber-800">Could not load user administration metrics.</p>
-          ) : (
-            <>
-              <p className="mt-2 text-3xl font-semibold text-slate-900">{m.pendingInvites ?? "—"}</p>
-              <p className="mt-1 text-sm text-slate-600">Pending invitations (not yet accepted)</p>
-              <p className="mt-2 text-sm text-slate-600">
-                Invited accounts (not yet active):{" "}
-                <span className="font-semibold text-slate-900">{m.invitedUsers ?? "—"}</span>
-              </p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <Link href="/dashboard/users" className="text-sm font-semibold text-brand hover:underline">
-                  Users →
-                </Link>
-                <Link href="/dashboard/users/new" className="text-sm font-semibold text-brand hover:underline">
-                  Invite user →
-                </Link>
-              </div>
-            </>
-          )}
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Audit activity</p>
-          {m.auditError ? (
-            <p className="mt-2 text-sm text-amber-800">{m.auditError}</p>
-          ) : m.auditPreview ? (
-            <>
-              <p className="mt-2 text-sm font-medium text-slate-900">Latest: {m.auditPreview.action}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                {new Date(m.auditPreview.createdAt).toLocaleString()} · {m.auditPreview.actorLabel}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">No recent events returned.</p>
-          )}
-          <Link href="/dashboard/audit" className="mt-3 inline-block text-sm font-semibold text-brand hover:underline">
-            Full audit log →
-          </Link>
-        </article>
-      </div>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-slate-900">Quick links</h2>
-        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <Link href="/dashboard/reports" className="font-semibold text-brand hover:underline">
-            Reports catalog
-          </Link>
-          <Link href="/dashboard/payroll/periods" className="font-semibold text-brand hover:underline">
-            Pay periods
-          </Link>
-          <Link href="/dashboard/time/entries" className="font-semibold text-brand hover:underline">
-            Time entries
-          </Link>
-          <Link href="/dashboard/finance/accounts" className="font-semibold text-brand hover:underline">
-            Chart of accounts
-          </Link>
-        </div>
-      </section>
-    </div>
-  );
+  return <BusinessOperatingDashboard data={m} userRoles={userRoles} />;
 }

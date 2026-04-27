@@ -2,6 +2,7 @@
 
 import { apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { canViewEmployeePii } from "@/lib/hr-roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -29,16 +30,37 @@ export default function NewEmployeePage() {
   const [templateId, setTemplateId] = useState("");
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
+  const [meRoles, setMeRoles] = useState<string[] | null>(null);
+  const [empStart, setEmpStart] = useState("");
+  const [empEnd, setEmpEnd] = useState("");
+  const [wpExp, setWpExp] = useState("");
+  const [ssn, setSsn] = useState("");
+  const [nhi, setNhi] = useState("");
+  const [ird, setIrd] = useState("");
+  const [workPermit, setWorkPermit] = useState("");
+
+  const canPii = canViewEmployeePii(meRoles ?? undefined) && meRoles != null;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } });
+        const [res, meRes] = await Promise.all([
+          fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } }),
+          fetch(`${apiBase()}/auth/me`, { headers: { ...authHeaders() } })
+        ]);
         if (!res.ok) {
           throw new Error("Could not load templates");
         }
         const data = (await res.json()) as { items: Template[] };
+        if (meRes.ok) {
+          const me = (await meRes.json()) as { user: { roles: string[] } };
+          if (!cancelled) {
+            setMeRoles(me.user.roles);
+          }
+        } else if (!cancelled) {
+          setMeRoles([]);
+        }
         if (!cancelled) {
           setTemplates(data.items);
           if (data.items[0]) {
@@ -61,26 +83,36 @@ export default function NewEmployeePage() {
     setError(null);
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        fullName,
+        role,
+        defaultSite,
+        phone,
+        basePayType,
+        paySchedule,
+        dailyRate: Number(dailyRate),
+        hourlyRate: Number(hourlyRate),
+        overtimeRate: Number(overtimeRate),
+        fixedPay: Number(fixedPay),
+        standardDays: Number(standardDays),
+        standardHours: Number(standardHours),
+        templateId,
+        notes,
+        active,
+        employmentStartDate: empStart || null,
+        employmentEndDate: empEnd || null,
+        workPermitExpiryDate: wpExp || null
+      };
+      if (canPii) {
+        body.socialSecurityNumber = ssn;
+        body.nationalHealthInsuranceNumber = nhi;
+        body.inlandRevenueDepartmentNumber = ird;
+        body.workPermitNumber = workPermit;
+      }
       const res = await fetch(`${apiBase()}/people/employees`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          fullName,
-          role,
-          defaultSite,
-          phone,
-          basePayType,
-          paySchedule,
-          dailyRate: Number(dailyRate),
-          hourlyRate: Number(hourlyRate),
-          overtimeRate: Number(overtimeRate),
-          fixedPay: Number(fixedPay),
-          standardDays: Number(standardDays),
-          standardHours: Number(standardHours),
-          templateId,
-          notes,
-          active
-        })
+        body: JSON.stringify(body)
       });
       const data = (await res.json()) as { error?: string; employee?: { id: string } };
       if (!res.ok) {
@@ -146,6 +178,47 @@ export default function NewEmployeePage() {
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
           />
         </label>
+        <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Employment (optional)</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="text-slate-700">Employment start</span>
+              <input type="date" value={empStart} onChange={(e) => setEmpStart(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-700">Employment end</span>
+              <input type="date" value={empEnd} onChange={(e) => setEmpEnd(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-slate-700">Work permit expiry</span>
+              <input type="date" value={wpExp} onChange={(e) => setWpExp(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+          </div>
+        </div>
+        {meRoles && canPii ? (
+          <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Government IDs (optional)</p>
+            <p className="text-xs text-slate-500">Only platform owner, hr_admin, and payroll_admin can set these on create.</p>
+            <label className="block text-sm">
+              <span className="text-slate-700">SSN</span>
+              <input value={ssn} onChange={(e) => setSsn(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-700">NHI</span>
+              <input value={nhi} onChange={(e) => setNhi(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-700">IRD</span>
+              <input value={ird} onChange={(e) => setIrd(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-700">Work permit #</span>
+              <input value={workPermit} onChange={(e) => setWorkPermit(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2" />
+            </label>
+          </div>
+        ) : meRoles && !canPii ? (
+          <p className="text-xs text-slate-500">SSN, NHI, and IRD can be added after creation by a platform owner or HR/payroll role.</p>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-slate-700">Pay basis</span>

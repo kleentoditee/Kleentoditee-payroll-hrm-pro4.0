@@ -45,6 +45,7 @@ model User {
   roles          UserRole[]
   auditLogs      AuditLog[] @relation("AuditActor")
   invitations    UserInvitation[]
+  documentsUploaded EmployeeDocument[] @relation("DocumentUploader")
 
   @@index([status])
 }
@@ -133,6 +134,16 @@ model DeductionTemplate {
   timeEntries    TimeEntry[]
 }
 
+/// HR / payroll document attachment (soft-delete only).
+enum EmployeeDocumentType {
+  PHOTO
+  WORK_PERMIT_CARD
+  NHI_CARD
+  ID_CARD
+  CONTRACT
+  OTHER
+}
+
 model Employee {
   id            String            @id @default(cuid())
   createdAt     DateTime          @default(now())
@@ -141,6 +152,16 @@ model Employee {
   role          String            @default("")
   defaultSite   String            @default("")
   phone         String            @default("")
+  /// Relative path under UPLOADS_DIR, e.g. `employees/{id}/profile-{cuid}.jpg`
+  profilePhotoPath String?
+  /// Sensitive — not exposed in list APIs or employee-tracker; audit logs must redact.
+  socialSecurityNumber        String  @default("")
+  nationalHealthInsuranceNumber String @default("")
+  inlandRevenueDepartmentNumber String @default("")
+  employmentStartDate  DateTime?
+  employmentEndDate    DateTime?
+  workPermitNumber     String  @default("")
+  workPermitExpiryDate DateTime?
   basePayType   PayBasis          @default(daily)
   dailyRate     Float             @default(0)
   hourlyRate    Float             @default(0)
@@ -157,11 +178,32 @@ model Employee {
   timeEntries  TimeEntry[]
   payRunItems  PayRunItem[]
   linkedUser   User?
+  documents    EmployeeDocument[]
 
   @@index([templateId])
   @@index([active])
   @@index([fullName])
   @@index([paySchedule, active])
+}
+
+model EmployeeDocument {
+  id               String   @id @default(cuid())
+  employeeId       String
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type             EmployeeDocumentType
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  /// Relative to UPLOADS_DIR (same convention as API).
+  storagePath      String
+  uploadedAt       DateTime @default(now())
+  /// Soft delete — never hard-delete in normal flow.
+  deletedAt        DateTime?
+  uploadedByUserId String?
+  uploadedBy       User?    @relation("DocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, deletedAt])
+  @@index([type])
 }
 
 /// Monthly timesheet line (legacy payroll app shape; multiple rows per employee/month allowed for different sites).

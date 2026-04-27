@@ -19,6 +19,13 @@ type EntryRow = {
 };
 
 type ProfileRes = { employee?: { fullName: string; defaultSite: string; paySchedule: string } };
+
+function payScheduleLabel(s: string): string {
+  if (s === "weekly" || s === "biweekly" || s === "monthly") {
+    return s;
+  }
+  return s;
+}
 type ListRes = { month: string; items: EntryRow[] };
 type OneEntryRes = { entry?: EntryRow };
 
@@ -32,6 +39,7 @@ export default function TrackerHome() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [name, setName] = useState<string>("");
+  const [paySchedule, setPaySchedule] = useState<string>("");
   const [month, setMonth] = useState(() => monthKeyFromDate(new Date()));
   const [items, setItems] = useState<EntryRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -53,6 +61,7 @@ export default function TrackerHome() {
     const { data: prof } = await readApiJson<ProfileRes>(resP);
     if (resP.ok && prof?.employee) {
       setName(prof.employee.fullName);
+      setPaySchedule(prof.employee.paySchedule);
       setSite((prev) => prev || (prof.employee?.defaultSite ?? ""));
     }
     const resL = await fetch(`${apiBase()}/time/self/entries?month=${encodeURIComponent(month)}`, {
@@ -167,15 +176,46 @@ export default function TrackerHome() {
 
   if (!getToken()) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-4 text-center">
-        <h1 className="text-2xl font-semibold text-slate-900">Employee tracker</h1>
-        <p className="text-sm text-slate-600">Sign in to log time and send it for approval.</p>
-        <Link
-          className="rounded-2xl bg-brand px-8 py-3.5 text-lg font-semibold text-white shadow-lg shadow-brand/25"
-          href="/login"
-        >
-          Sign in
-        </Link>
+      <div className="min-h-screen bg-gradient-to-b from-[#0f2f38] from-0% via-[#f6f8fa] via-20% to-[#eef2f5] to-100%">
+        <div className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-6 px-4 py-10 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand text-lg font-bold text-white shadow-lg shadow-black/25">
+            KT
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">KleenToDiTee</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Remote time entry</h1>
+          <p className="max-w-md text-sm leading-relaxed text-slate-600">
+            Use this app on your phone or browser to add time lines by month, keep drafts, and submit to your payroll
+            team for approval. Your pay basis (daily, hourly, or fixed) and pay schedule (weekly, biweekly, or monthly) are
+            stored on your employee profile in KleenToDiTee and used on the payroll run.
+          </p>
+          <ul className="w-full max-w-sm space-y-2 rounded-2xl border border-slate-200/80 bg-white/90 p-4 text-left text-sm text-slate-700 shadow-md shadow-slate-200/50">
+            <li className="flex gap-2">
+              <span className="text-emerald-600" aria-hidden>
+                ✓
+              </span>
+              <span>Secure sign-in (same company users as the admin app).</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-emerald-600" aria-hidden>
+                ✓
+              </span>
+              <span>Monthly time lines — pick the pay month and add days, hours, and overtime as needed.</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-emerald-600" aria-hidden>
+                ✓
+              </span>
+              <span>Submit when ready; payroll reviews and approves in the admin console.</span>
+            </li>
+          </ul>
+          <Link
+            className="rounded-2xl bg-brand px-10 py-3.5 text-lg font-semibold text-white shadow-md shadow-brand/30"
+            href="/login"
+          >
+            Sign in
+          </Link>
+          <p className="text-xs text-slate-500">If you do not have an account, ask your manager or HR to invite and link you.</p>
+        </div>
       </div>
     );
   }
@@ -186,6 +226,9 @@ export default function TrackerHome() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">KleenToDiTee</p>
           <h1 className="text-xl font-semibold text-slate-900">{name || "My time"}</h1>
+          {paySchedule ? (
+            <p className="mt-0.5 text-xs capitalize text-slate-500">Pay schedule: {payScheduleLabel(paySchedule)}</p>
+          ) : null}
         </div>
         <button
           type="button"

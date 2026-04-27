@@ -16,6 +16,10 @@ coverage/
 # Claude local (machine paths / dev credentials; keep out of git)
 .claude/settings.local.json
 
+# HR document uploads (local API dev; never store employee files in git)
+uploads/
+apps/api/uploads/
+
 # SQLite local dev database
 packages/db/prisma/dev.db
 packages/db/prisma/dev.db-journal

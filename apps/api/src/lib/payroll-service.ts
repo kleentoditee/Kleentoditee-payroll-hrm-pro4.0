@@ -1,4 +1,5 @@
 import { PayRunStatus, Prisma, TimeEntryStatus, prisma } from "@kleentoditee/db";
+import { employeeForNestedTimeContextSelect } from "./employee-privacy.js";
 import { computeEntryPreview, roundMoney } from "./payroll-calc.js";
 import {
   buildPayrollCsv,
@@ -151,7 +152,7 @@ async function buildRunItemPayloads(period: {
       }
     },
     include: {
-      employee: true,
+      employee: { select: employeeForNestedTimeContextSelect },
       template: true
     },
     orderBy: [{ employee: { fullName: "asc" } }, { site: "asc" }]

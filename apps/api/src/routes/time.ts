@@ -1,6 +1,7 @@
 import { prisma, Role, TimeEntryStatus } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
+import { employeeForNestedTimeContextSelect } from "../lib/employee-privacy.js";
 import { computeEntryPreview } from "../lib/payroll-calc.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -142,7 +143,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
             }
           : {})
       },
-      include: { employee: true, template: true },
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true },
       orderBy: queueAll
         ? [{ updatedAt: "desc" }]
         : [{ employee: { fullName: "asc" } }, { site: "asc" }],
@@ -219,7 +220,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const id = c.req.param("id");
     const row = await prisma.timeEntry.findUnique({
       where: { id },
-      include: { employee: true, template: true }
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
     });
     if (!row) {
       return c.json({ error: "Not found" }, 404);
@@ -274,7 +275,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
           body.applyIncomeTax !== undefined ? Boolean(body.applyIncomeTax) : tpl.applyIncomeTax,
         notes: String(body.notes ?? "")
       },
-      include: { employee: true, template: true }
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
     });
     await writeAudit({
       actorUserId: c.get("userId"),
@@ -386,7 +387,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const row = await prisma.timeEntry.update({
       where: { id },
       data: data as never,
-      include: { employee: true, template: true }
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
     });
     await writeAudit({
       actorUserId: c.get("userId"),
@@ -421,7 +422,23 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     const row = await prisma.employee.findUnique({
       where: { id: eid },
-      include: { template: true }
+      select: {
+        id: true,
+        fullName: true,
+        defaultSite: true,
+        paySchedule: true,
+        basePayType: true,
+        dailyRate: true,
+        hourlyRate: true,
+        overtimeRate: true,
+        fixedPay: true,
+        standardDays: true,
+        standardHours: true,
+        active: true,
+        phone: true,
+        role: true,
+        template: true
+      }
     });
     if (!row) {
       return c.json({ error: "Employee record missing" }, 404);
@@ -436,7 +453,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const month = c.req.query("month")?.trim() || monthKey(new Date());
     const items = await prisma.timeEntry.findMany({
       where: { employeeId: eid, month },
-      include: { employee: true, template: true },
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true },
       orderBy: [{ site: "asc" }, { updatedAt: "desc" }]
     });
     return c.json({ month, items });
@@ -491,7 +508,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
           body.applyIncomeTax !== undefined ? Boolean(body.applyIncomeTax) : tpl.applyIncomeTax,
         notes: String(body.notes ?? "")
       },
-      include: { employee: true, template: true }
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
     });
     await writeAudit({
       actorUserId: c.get("userId"),
@@ -561,7 +578,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const row = await prisma.timeEntry.update({
       where: { id },
       data: data as never,
-      include: { employee: true, template: true }
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
     });
     await writeAudit({
       actorUserId: c.get("userId"),
@@ -589,7 +606,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const row = await prisma.timeEntry.update({
       where: { id },
       data: { status: TimeEntryStatus.submitted },
-      include: { employee: true, template: true }
+      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
     });
     await writeAudit({
       actorUserId: c.get("userId"),

@@ -13,7 +13,7 @@ Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`app
 |-----|------|--------|
 | **admin-web** | Next.js App Router admin console | Primary UI for HR/payroll/finance operations; uses `NEXT_PUBLIC_API_URL` or dev rewrites to `http://127.0.0.1:8787` via `/__kleentoditee_api/*`. |
 | **api** | Hono on Node (`@hono/node-server`) | JSON API, JWT auth, CORS; default port **8787** (`PORT`). |
-| **employee-tracker** | Next.js “mobile-style” client | Thin UI for employees: login, month selector, draft lines, submit/delete; calls `/time/self/*`. |
+| **employee-tracker** | Next.js “mobile-style” client | Remote self-service time entry: login, landing copy, month selector, draft lines, submit/delete; calls `/time/self/*`. Admin shares the sign-in URL from the employee detail page; see `docs/employee-tracker-sharing.md`. |
 
 ### Packages (`packages/`)
 
@@ -78,8 +78,11 @@ Mounted at `/admin`; **platform_owner** only for listed routes (see middleware i
 |--------|------|---------|
 | GET, POST | `/people/templates` | List / create **DeductionTemplate** (NHI/SSB/tax rules). |
 | GET, PATCH, DELETE | `/people/templates/:id` | Read / update / delete template. |
-| GET, POST | `/people/employees` | List / create **Employee** records. |
-| GET, PATCH, DELETE | `/people/employees/:id` | Read / update / delete employee. |
+| GET, POST | `/people/employees` | List / create **Employee** records. List omits SSN, NHI, IRD, work permit; includes `hasProfilePhoto`, `linkedUser` email, template name. |
+| GET | `/people/employees/:id/tracker-share` | Share metadata: public tracker `loginUrl` / `appHomeUrl` (from `EMPLOYEE_TRACKER_PUBLIC_URL`); optional `linkedUser` { email, status }. No secrets in response. |
+| GET, POST, DELETE | `/people/employees/:id/documents`, `/people/employees/:id/documents/:docId`, `/people/employees/:id/documents/:docId/file` | **EmployeeDocument** uploads (multipart), list, file download, soft delete. PII document types (NHI, work permit, ID) download: platform_owner, hr_admin, payroll_admin only. |
+| GET | `/people/employees/:id/profile-photo` | **Binary** current profile image (any People viewer). |
+| GET, PATCH, DELETE | `/people/employees/:id` | Read / update / delete employee. Detail returns `sensitiveExposed` + masked or full SSN/NHI/IRD/work permit; audit redacts PII. |
 
 ### `/time` (`routes/time.ts`)
 
@@ -149,7 +152,8 @@ Mounted at `/admin`; **platform_owner** only for listed routes (see middleware i
 | **UserRole** | Join table: many roles per user (`Role` enum: platform_owner, hr_admin, payroll_admin, finance_admin, operations_manager, site_supervisor, employee_tracker_user). |
 | **AuditLog** | Append-only event log (actor, action, entity type/id, before/after JSON). |
 | **DeductionTemplate** | Reusable NHI/SSB/income tax rates and flags; assigned to **Employee** and **TimeEntry**. |
-| **Employee** | Master HR/payroll record: name, pay basis/rates, schedule, site string, `templateId`, active flag. |
+| **Employee** | Master HR/payroll record: name, contact, `profilePhotoPath`, pay basis/rates, schedule, site, **SSN, NHI, IRD, work permit** (sensitive; masked in list APIs and redacted in audit), **employment / work permit dates**, `templateId`, `active` flag, documents relation. |
+| **EmployeeDocument** | HR file metadata (`EmployeeDocumentType`: PHOTO, WORK_PERMIT_CARD, NHI_CARD, ID_CARD, CONTRACT, OTHER), `storagePath` under `UPLOADS_DIR`, `deletedAt` for soft delete. |
 | **TimeEntry** | Monthly (or per-period) working time line: site, days/hours/OT, earnings adjustments, per-line tax flags, **TimeEntryStatus** (draft → submitted → approved → paid). |
 | **PayPeriod** | Payroll window (label, schedule, start/end, optional pay date). |
 | **PayRun** | One run per period; **PayRunStatus**; links **PayRunItem** and **PayrollExport**. |
@@ -183,9 +187,9 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 | `/login` | Admin sign-in (JWT to localStorage; API calls use `authHeaders()`). |
 | `/dashboard` | **Business at a glance:** cards for active employees, submitted time approvals queue, draft pay runs, finance shortcuts (when API allows), users/invitations (platform owner), recent audit; each metric uses real API data or an honest “no access / unavailable” message with a link to the real screen. |
 | `/dashboard/people` | Redirect → `/dashboard/people/employees`. |
-| `/dashboard/people/employees` | Employee list, search, link to new/detail. |
-| `/dashboard/people/employees/new` | Create employee. |
-| `/dashboard/people/employees/[id]` | View/edit employee. |
+| `/dashboard/people/employees` | Employee list (avatar, name, work email, phone, status, search); **no** SSN in table. |
+| `/dashboard/people/employees/new` | Create employee; optional employment dates; government IDs on create for platform owner / hr_admin / payroll_admin. |
+| `/dashboard/people/employees/[id]` | **HR record:** profile photo, contact, employment dates, government IDs (mask + show), payroll, **documents** (upload per type, soft remove), internal notes, **Share tracker access**. See `docs/hr-employee-records.md`. |
 | `/dashboard/people/templates` | Deduction templates list. |
 | `/dashboard/people/templates/new` | Create template. |
 | `/dashboard/people/templates/[id]` | View/edit template. |
@@ -235,7 +239,7 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 **Layouts:** `dashboard/layout.tsx`, `people/layout.tsx`, `payroll/layout.tsx`, `time/layout.tsx`, `finance/layout.tsx` provide section-level chrome where present; primary navigation is the shared app shell.
 
-**employee-tracker (separate app):** `/` home (self time), `/login` — not part of `admin-web` but part of the same platform API.
+**employee-tracker (separate app):** `/` home (self time or marketing/landing when logged out), `/login` — not part of `admin-web` but part of the same platform API. Sharing workflow: `docs/employee-tracker-sharing.md`.
 
 ---
 
