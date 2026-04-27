@@ -5,10 +5,13 @@ import {
   PaySchedule,
   ProductKind,
   Role,
+  StaffAnnouncementAudience,
+  StaffAnnouncementCategory,
   StaffRequestStatus,
   StaffRequestType,
   TimeEntryStatus,
-  UserStatus
+  UserStatus,
+  WorkAssignmentStatus
 } from "@prisma/client";
 import { prisma } from "../src/index";
 
@@ -26,6 +29,12 @@ async function main() {
   await prisma.payPeriod.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.timeEntry.deleteMany();
+  await prisma.rewardLedger.deleteMany();
+  await prisma.staffQuizAttempt.deleteMany();
+  await prisma.staffQuizQuestion.deleteMany();
+  await prisma.workAssignment.deleteMany();
+  await prisma.staffAnnouncement.deleteMany();
+  await prisma.notificationLog.deleteMany();
   await prisma.staffRequest.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.deductionTemplate.deleteMany();
@@ -134,6 +143,41 @@ async function main() {
       employeeId: monthlyEmployee.id,
       status: UserStatus.active,
       roles: { create: [{ role: Role.employee_tracker_user }] }
+    }
+  });
+
+  const adminForSeed = await prisma.user.findFirst({ where: { email }, select: { id: true } });
+  const todayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+  await prisma.workAssignment.create({
+    data: {
+      employeeId: monthlyEmployee.id,
+      date: todayUtc,
+      startTime: "08:00",
+      endTime: "16:00",
+      locationName: "San Pedro – Main site",
+      locationAddress: "Seeded demo address",
+      notes: "Bring your ID badge.",
+      status: WorkAssignmentStatus.SCHEDULED,
+      createdByUserId: adminForSeed?.id
+    }
+  });
+  await prisma.staffAnnouncement.create({
+    data: {
+      title: "Welcome to Staff Hub",
+      body: "Check Today for your work location. Seeded announcement for local dev — not a payroll notice.",
+      category: StaffAnnouncementCategory.GENERAL,
+      audience: StaffAnnouncementAudience.EMPLOYEES,
+      active: true,
+      createdByUserId: adminForSeed?.id
+    }
+  });
+  await prisma.staffQuizQuestion.create({
+    data: {
+      question: "What should you do before starting a shift?",
+      choices: ["Skip the safety checklist", "Review site hazards and PPE", "Ignore posted procedures"],
+      correctIndex: 1,
+      explanation: "Reviewing hazards and PPE helps keep you and the team safe.",
+      active: true
     }
   });
 

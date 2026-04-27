@@ -15,7 +15,7 @@ Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`app
 |-----|------|--------|
 | **admin-web** | Next.js App Router admin console | Primary UI for HR/payroll/finance operations; uses `NEXT_PUBLIC_API_URL` or dev rewrites to `http://127.0.0.1:8787` via `/__kleentoditee_api/*`. |
 | **api** | Hono on Node (`@hono/node-server`) | JSON API, JWT auth, CORS; default port **8787** (`PORT`). |
-| **employee-tracker** | Next.js “mobile-style” client | Remote self-service time entry: login, landing copy, month selector, draft lines, submit/delete; calls `/time/self/*`. Admin shares the sign-in URL from the employee detail page; see `docs/employee-tracker-sharing.md`. |
+| **employee-tracker** | Next.js “mobile-style” client | **Staff Hub:** time self-service (`/time/self/*`), requests (`/staff/self/requests*`), and Phase 3 **schedule, announcements, quiz/points** (`/staff/self/*`). See `docs/employee-tracker-sharing.md` and `docs/staff-hub-schedule-messages-rewards.md`. |
 
 ### Packages (`packages/`)
 
@@ -114,6 +114,31 @@ Phase 2 — Staff Hub request system. See `docs/staff-requests.md` for full cont
 
 Sensitive HR fields (SSN / NHI / IRD / work permit) are **never** accepted by these routes. `requestedContactUpdate` is restricted to a fixed allowlist (phone, personal email, address, emergency contact fields, uniform size).
 
+### `/staff` (`routes/staff.ts`)
+
+Mounted at `/staff`. **employee_tracker_user** with linked `employeeId` only.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/staff/self/schedule?from&to` | Work assignments in date range (`YYYY-MM-DD`). |
+| GET | `/staff/self/schedule/today` | Today’s assignments (UTC day). |
+| GET | `/staff/self/announcements` | Active announcements (ALL + EMPLOYEES, date window). |
+| GET | `/staff/self/quiz/daily` | Daily quiz question or null. |
+| POST | `/staff/self/quiz/attempt` | Submit answer; one attempt per question per UTC day. |
+| GET | `/staff/self/rewards/summary` | Sum of `RewardLedger` points (engagement, not pay). |
+
+### Staff Hub — admin operations (`routes/admin-staff.ts`, second mount on `/admin`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/admin/schedules?from&to&employeeId?` | List work assignments. |
+| POST | `/admin/schedules` | Create assignment. |
+| PATCH | `/admin/schedules/:id` | Update. |
+| POST | `/admin/schedules/:id/cancel` | Set status CANCELLED. |
+| GET | `/admin/announcements` | List announcements. |
+| POST | `/admin/announcements` | Create. |
+| PATCH | `/admin/announcements/:id` | Update / activate / deactivate. |
+
 ### `/payroll` (`routes/payroll.ts`)
 
 | Method | Path | Purpose |
@@ -178,6 +203,10 @@ Sensitive HR fields (SSN / NHI / IRD / work permit) are **never** accepted by th
 | **Paystub** | Printable artifact per **PayRunItem** (`stubNumber`, `payload` JSON). |
 | **PayrollExport** | Stored file contents (e.g. CSV) for a run. |
 | **StaffRequest** | Phase 2 Staff Hub request — type (`JOB_LETTER`, `TIME_OFF`, `SICK_LEAVE`, `PROFILE_UPDATE`, `SUPPLIES_REQUEST`, `EQUIPMENT_UNIFORM_REQUEST`, `INCIDENT_REPORT`, `DAMAGE_REPORT`), status lifecycle (`SUBMITTED` → `UNDER_REVIEW` → `APPROVED`/`DENIED`/`COMPLETED`/`CANCELLED`), employee owner, optional dates, reason, details, restricted `requestedContactUpdate` JSON, reviewer audit fields. |
+| **WorkAssignment** | Phase 3: per-employee date, location, optional times, status. |
+| **StaffAnnouncement** | Phase 3: title/body, category, audience, optional start/end, active. |
+| **NotificationLog** | Phase 3 foundation: channel + status for future delivery (no auto email/WhatsApp in this phase). |
+| **StaffQuizQuestion** / **StaffQuizAttempt** / **RewardLedger** | Phase 3: daily quiz and non-monetary points. |
 | **Account** | Chart of accounts; **AccountType**; optional parent/child tree. |
 | **Customer** | AR customer. |
 | **Supplier** | AP vendor. |
@@ -248,7 +277,8 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 | `/dashboard/finance/deposits/[id]` | Deposit detail / post. |
 | `/dashboard/audit` | Recent audit events (`/audit/recent`). |
 | `/dashboard/reports` | Reports **catalog** page: category cards (Payroll, Time, People, Finance, Audit) linking to existing list/detail areas (not a separate report engine). |
-| `/dashboard/schedule` | **Coming soon** placeholder route (scheduling UI not implemented). |
+| `/dashboard/schedule` | **Work assignments** table and create (API `/admin/schedules*`). |
+| `/dashboard/announcements` | **Staff announcements** list and create (API `/admin/announcements*`). |
 | `/dashboard/settings` | **Coming soon** placeholder route (org-wide settings UI not implemented). |
 | `/dashboard/users` | Users & roles list (invitations + users); `platform_owner`-oriented admin. |
 | `/dashboard/users/new` | Invite / create user flow. |
@@ -277,7 +307,7 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ### Stubs, placeholders, or “phase later” in UI
 
-- **Schedule** (`/dashboard/schedule`) and **Settings** (`/dashboard/settings`): real routes with a **Coming soon** page (no feature UI yet).  
+- **Settings** (`/dashboard/settings`): real route with a **Coming soon** page. **Work schedule** and **Staff announcements** are implemented; see `docs/staff-hub-schedule-messages-rewards.md`.  
 - **Global search** in header: **disabled** with tooltip *“Global search — wired in a later phase”*.  
 - **@kleentoditee/ui:** placeholder token export only.  
 

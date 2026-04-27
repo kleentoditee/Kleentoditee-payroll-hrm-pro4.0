@@ -46,7 +46,10 @@ model User {
   auditLogs      AuditLog[] @relation("AuditActor")
   invitations    UserInvitation[]
   documentsUploaded EmployeeDocument[] @relation("DocumentUploader")
-  staffRequestsReviewed StaffRequest[] @relation("StaffRequestReviewer")
+  staffRequestsReviewed       StaffRequest[]         @relation("StaffRequestReviewer")
+  workAssignmentsCreated      WorkAssignment[]        @relation("WorkAssignmentCreator")
+  staffAnnouncementsCreated   StaffAnnouncement[]     @relation("StaffAnnouncementCreator")
+  notificationLogsReceived   NotificationLog[]        @relation("NotificationRecipientUser")
 
   @@index([status])
 }
@@ -180,7 +183,11 @@ model Employee {
   payRunItems  PayRunItem[]
   linkedUser   User?
   documents    EmployeeDocument[]
-  staffRequests StaffRequest[]
+  staffRequests    StaffRequest[]
+  workAssignments  WorkAssignment[]
+  staffQuizAttempts StaffQuizAttempt[]
+  rewardLedgers     RewardLedger[]
+  notificationLogs  NotificationLog[] @relation("NotificationLogEmployee")
 
   @@index([templateId])
   @@index([active])
@@ -761,6 +768,135 @@ model ExpenseLine {
 
   @@index([expenseId, position])
   @@index([expenseAccountId])
+}
+
+// --- Staff Hub Phase 3 (operational engagement; not payroll math) ---
+
+enum WorkAssignmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model WorkAssignment {
+  id              String                @id @default(cuid())
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  employeeId      String
+  employee        Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime
+  startTime       String?
+  endTime         String?
+  locationName    String
+  locationAddress String?
+  notes           String?
+  status          WorkAssignmentStatus  @default(SCHEDULED)
+  createdByUserId String?
+  createdBy       User?                 @relation("WorkAssignmentCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, date])
+  @@index([date])
+}
+
+enum StaffAnnouncementCategory {
+  GENERAL
+  SAFETY
+  HOLIDAY
+  POLICY
+  WEATHER
+  PAYROLL
+  SCHEDULE
+}
+
+enum StaffAnnouncementAudience {
+  ALL
+  EMPLOYEES
+  MANAGERS
+}
+
+model StaffAnnouncement {
+  id                String                    @id @default(cuid())
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  title             String
+  body              String
+  category          StaffAnnouncementCategory
+  audience          StaffAnnouncementAudience
+  startsAt          DateTime?
+  endsAt            DateTime?
+  active            Boolean                   @default(true)
+  createdByUserId   String?
+  createdBy         User?                     @relation("StaffAnnouncementCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL_DRAFT
+  WHATSAPP_DRAFT
+  EMAIL_PROVIDER
+  WHATSAPP_PROVIDER
+}
+
+enum NotificationStatus {
+  DRAFT
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// Foundation for future queued/sent messages — no auto-send in Phase 3.
+model NotificationLog {
+  id                String                @id @default(cuid())
+  createdAt         DateTime              @default(now())
+  sentAt            DateTime?
+  channel           NotificationChannel
+  recipientUserId   String?
+  recipientUser     User?                 @relation("NotificationRecipientUser", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  employeeId        String?
+  employee          Employee?             @relation("NotificationLogEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  subject           String
+  status            NotificationStatus    @default(DRAFT)
+
+  @@index([createdAt])
+  @@index([status])
+}
+
+model StaffQuizQuestion {
+  id             String             @id @default(cuid())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  question       String
+  choices        Json
+  correctIndex   Int
+  explanation    String             @default("")
+  active         Boolean            @default(true)
+  attempts       StaffQuizAttempt[]
+}
+
+model StaffQuizAttempt {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  employeeId    String
+  employee      Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      StaffQuizQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedIndex Int
+  correct       Boolean
+  pointsAwarded Int                 @default(0)
+
+  @@index([employeeId, createdAt])
+  @@index([questionId])
+}
+
+model RewardLedger {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  points     Int
+  reason     String
+
+  @@index([employeeId, createdAt])
 }
 
 /// Bank deposits (Phase 3 Task 10C).
