@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/dashboard/people/employees", label: "Employees" },
+  { href: "/dashboard/people/requests", label: "Staff requests" },
   { href: "/dashboard/people/templates", label: "Deduction templates" }
 ] as const;
 
@@ -15,10 +16,7 @@ export default function PeopleLayout({ children }: { children: React.ReactNode }
     <div className="space-y-6">
       <nav aria-label="People section" className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         {links.map(({ href, label }) => {
-          const active =
-            href === "/dashboard/people/employees"
-              ? pathname.startsWith("/dashboard/people/employees")
-              : pathname.startsWith("/dashboard/people/templates");
+          const active = pathname.startsWith(href);
           return (
             <Link
               key={href}

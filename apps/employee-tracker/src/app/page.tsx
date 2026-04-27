@@ -239,6 +239,18 @@ export default function TrackerHome() {
         </button>
       </header>
 
+      <nav aria-label="Staff Hub" className="mb-6 grid grid-cols-2 gap-2">
+        <span className="rounded-xl bg-brand/10 px-3 py-2 text-center text-sm font-semibold text-brand">
+          Time
+        </span>
+        <Link
+          href="/requests"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-semibold text-slate-700 active:bg-slate-100"
+        >
+          Requests
+        </Link>
+      </nav>
+
       <div className="mb-4">
         <label className="text-xs font-medium text-slate-500">Month</label>
         <input

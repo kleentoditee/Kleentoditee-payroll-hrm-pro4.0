@@ -53,6 +53,7 @@ If the API call fails (e.g. old server without the route), the admin card can st
 - **Landing (`/`)** when logged out explains remote time entry, monthly lines, and approval — and links to **Sign in**.
 - **Login (`/login`)** is styled for mobile; seed hints appear only in **development** (`NODE_ENV=development`).
 - After sign-in, the header shows **pay schedule** (weekly / biweekly / monthly) from `GET /time/self/profile`.
+- **Staff Hub tabs:** "Time" (existing monthly entry) and "Requests" (`/requests`). The Requests tab calls `/staff/self/requests` and lets employees submit job letters, time off, sick leave, profile updates, supplies, equipment, incident, and damage reports, see a status-tracked list, and cancel their own active requests. Sensitive HR identifiers (SSN / NHI / IRD) are never collected through this form — see `docs/staff-requests.md`.
 
 ## Security checklist
 

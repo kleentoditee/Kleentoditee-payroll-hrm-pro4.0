@@ -13,6 +13,7 @@ import { financeInvoicesRoutes } from "./routes/finance-invoices.js";
 import { financePaymentsRoutes } from "./routes/finance-payments.js";
 import { peopleRoutes } from "./routes/people.js";
 import { payrollRoutes } from "./routes/payroll.js";
+import { staffRequestRoutes } from "./routes/staff-requests.js";
 import { timeRoutes } from "./routes/time.js";
 
 const app = new Hono();
@@ -104,5 +105,6 @@ app.route("/finance", financeDepositsRoutes);
 app.route("/people", peopleRoutes);
 app.route("/payroll", payrollRoutes);
 app.route("/time", timeRoutes);
+app.route("/", staffRequestRoutes);
 
 export { app };

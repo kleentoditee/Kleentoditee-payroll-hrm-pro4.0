@@ -1,5 +1,15 @@
 import bcrypt from "bcryptjs";
-import { AccountType, PayBasis, PaySchedule, ProductKind, Role, TimeEntryStatus, UserStatus } from "@prisma/client";
+import {
+  AccountType,
+  PayBasis,
+  PaySchedule,
+  ProductKind,
+  Role,
+  StaffRequestStatus,
+  StaffRequestType,
+  TimeEntryStatus,
+  UserStatus
+} from "@prisma/client";
 import { prisma } from "../src/index";
 
 const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@kleentoditee.local").trim().toLowerCase();
@@ -16,6 +26,7 @@ async function main() {
   await prisma.payPeriod.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.timeEntry.deleteMany();
+  await prisma.staffRequest.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.deductionTemplate.deleteMany();
   // Finance transactions must come down before their parents because the
@@ -227,6 +238,48 @@ async function main() {
     ]
   });
 
+  await prisma.staffRequest.createMany({
+    data: [
+      {
+        employeeId: monthlyEmployee.id,
+        type: StaffRequestType.TIME_OFF,
+        status: StaffRequestStatus.SUBMITTED,
+        subject: "Family event",
+        startDate: new Date("2026-05-04T00:00:00.000Z"),
+        endDate: new Date("2026-05-06T00:00:00.000Z"),
+        reason: "Family wedding out of town",
+        details: "Three working days requested. Coverage arranged with team lead."
+      },
+      {
+        employeeId: weeklyEmployee.id,
+        type: StaffRequestType.JOB_LETTER,
+        status: StaffRequestStatus.UNDER_REVIEW,
+        subject: "Embassy letter",
+        reason: "Travel visa application",
+        details: "Need salary, role, and start date addressed to the visa office."
+      },
+      {
+        employeeId: biweeklyEmployee.id,
+        type: StaffRequestType.SUPPLIES_REQUEST,
+        status: StaffRequestStatus.SUBMITTED,
+        subject: "Cleaning consumables",
+        details: "Two boxes of all-purpose cleaner and three packs of microfiber cloths for Ladyville site."
+      }
+    ]
+  });
+
+  // One pay period for dashboard and smoke tests (GET /payroll/periods).
+  await prisma.payPeriod.create({
+    data: {
+      label: "April 2026 (monthly)",
+      schedule: PaySchedule.monthly,
+      startDate: new Date("2026-04-01T00:00:00.000Z"),
+      endDate: new Date("2026-04-30T00:00:00.000Z"),
+      payDate: new Date("2026-04-28T00:00:00.000Z"),
+      notes: "Seeded pay period for smoke tests and home dashboard"
+    }
+  });
+
   const [cash, ar, ap, salesRevenue, cogs, officeExpense] = await Promise.all([
     prisma.account.create({
       data: {
@@ -392,7 +445,7 @@ async function main() {
   });
 
   console.log(
-    `Seeded templates, admin, employee tracker login, payroll-ready data, finance master data, and one draft invoice + bill. Admin: ${email} / ${password} - Tracker: maria.tracker@kleentoditee.local / ${password}`
+    `Seeded templates, admin, one pay period, employee tracker login, payroll-ready time, sample staff requests (time off, job letter, supplies), finance (accounts, customer, AR/AP), and draft invoice + bill. Admin: ${email} / ${password} — Tracker: maria.tracker@kleentoditee.local / ${password}`
   );
 }
 

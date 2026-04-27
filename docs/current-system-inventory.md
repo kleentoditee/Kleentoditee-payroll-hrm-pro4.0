@@ -3,6 +3,8 @@
 **Generated from repository review (read-only documentation; no runtime changes).**  
 Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`apps/api`), Prisma + SQLite (`@kleentoditee/db`).
 
+**Stability guardrails:** `apps/admin-web/src/lib/api-contracts.ts` encodes common API JSON shapes; `docs/stability-and-smoke-tests.md` describes `npm run smoke:core` / `smoke:admin` / `smoke:all` and how to extend them. Run smoke tests before merging changes that affect routes or response bodies.
+
 ---
 
 ## 1. Apps and packages overview
@@ -26,7 +28,7 @@ Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`app
 
 - **packageManager:** `npm@11.11.0`  
 - **Workspaces:** `apps/*`, `packages/*`  
-- **Common scripts:** `db:generate`, `db:push`, `db:seed`, `dev:api`, `dev` / `dev:admin`, `dev:tracker`, `dev:all` (api + admin), `build` (admin + tracker + api).
+- **Common scripts:** `db:generate`, `db:push`, `db:seed`, `dev:api`, `dev` / `dev:admin`, `dev:tracker`, `dev:all` (api + admin), `build` (admin + tracker + api), `smoke:core` / `smoke:admin` / `smoke:all` (see `docs/stability-and-smoke-tests.md`).
 
 ---
 
@@ -97,6 +99,21 @@ Mounted at `/admin`; **platform_owner** only for listed routes (see middleware i
 | GET, POST, PATCH, DELETE | `/time/self/entries`, `/time/self/entries/:id` | Self-service draft lines. |
 | POST | `/time/self/entries/:id/submit` | Employee submits a draft line. |
 
+### `/staff/self` and `/admin/staff-requests` (`routes/staff-requests.ts`)
+
+Phase 2 — Staff Hub request system. See `docs/staff-requests.md` for full contract.
+
+| Method | Path | Role | Purpose |
+|--------|------|------|---------|
+| GET | `/staff/self/requests` | `employee_tracker_user` | List signed-in employee's requests |
+| POST | `/staff/self/requests` | `employee_tracker_user` | Submit a new request (job letter, time off, sick leave, profile update, supplies, equipment, incident, damage) |
+| POST | `/staff/self/requests/:id/cancel` | `employee_tracker_user` | Cancel an active (`SUBMITTED` / `UNDER_REVIEW`) request the employee owns |
+| GET | `/admin/staff-requests` | platform_owner, hr_admin, operations_manager, site_supervisor (full); payroll_admin (TIME_OFF / SICK_LEAVE only) | List requests with `status` / `type` / `employeeId` filters |
+| GET | `/admin/staff-requests/:id` | same as list | Detail |
+| PATCH | `/admin/staff-requests/:id/status` | platform_owner, hr_admin, operations_manager, site_supervisor | Move status with optional `reviewNote`; sets `reviewedByUserId` and `reviewedAt`; writes audit log |
+
+Sensitive HR fields (SSN / NHI / IRD / work permit) are **never** accepted by these routes. `requestedContactUpdate` is restricted to a fixed allowlist (phone, personal email, address, emergency contact fields, uniform size).
+
 ### `/payroll` (`routes/payroll.ts`)
 
 | Method | Path | Purpose |
@@ -160,6 +177,7 @@ Mounted at `/admin`; **platform_owner** only for listed routes (see middleware i
 | **PayRunItem** | Frozen payroll line per employee in a run (amounts, templates snapshot, **sourceEntryIds** JSON). |
 | **Paystub** | Printable artifact per **PayRunItem** (`stubNumber`, `payload` JSON). |
 | **PayrollExport** | Stored file contents (e.g. CSV) for a run. |
+| **StaffRequest** | Phase 2 Staff Hub request — type (`JOB_LETTER`, `TIME_OFF`, `SICK_LEAVE`, `PROFILE_UPDATE`, `SUPPLIES_REQUEST`, `EQUIPMENT_UNIFORM_REQUEST`, `INCIDENT_REPORT`, `DAMAGE_REPORT`), status lifecycle (`SUBMITTED` → `UNDER_REVIEW` → `APPROVED`/`DENIED`/`COMPLETED`/`CANCELLED`), employee owner, optional dates, reason, details, restricted `requestedContactUpdate` JSON, reviewer audit fields. |
 | **Account** | Chart of accounts; **AccountType**; optional parent/child tree. |
 | **Customer** | AR customer. |
 | **Supplier** | AP vendor. |
@@ -185,9 +203,10 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 |-------|---------|
 | `/` | Marketing/entry; routes toward login. |
 | `/login` | Admin sign-in (JWT to localStorage; API calls use `authHeaders()`). |
-| `/dashboard` | **Business at a glance:** cards for active employees, submitted time approvals queue, draft pay runs, finance shortcuts (when API allows), users/invitations (platform owner), recent audit; each metric uses real API data or an honest “no access / unavailable” message with a link to the real screen. |
+| `/dashboard` | **Business home:** premium module launcher, create-action pills, “at a glance” metrics, and widget-style panels (payroll readiness, time queue, finance overview, HR/tracker copy, audit + reports shortcuts, honest finance/cash-flow placeholders). All numbers use live API data or explicit “no access / unavailable” messaging. Visual layout and density of this home screen were upgraded for a clearer business-console experience. |
 | `/dashboard/people` | Redirect → `/dashboard/people/employees`. |
 | `/dashboard/people/employees` | Employee list (avatar, name, work email, phone, status, search); **no** SSN in table. |
+| `/dashboard/people/requests` | **Staff requests review queue:** filter by status/type, two-column list-and-detail layout with reviewer note and status-transition buttons. See `docs/staff-requests.md`. |
 | `/dashboard/people/employees/new` | Create employee; optional employment dates; government IDs on create for platform owner / hr_admin / payroll_admin. |
 | `/dashboard/people/employees/[id]` | **HR record:** profile photo, contact, employment dates, government IDs (mask + show), payroll, **documents** (upload per type, soft remove), internal notes, **Share tracker access**. See `docs/hr-employee-records.md`. |
 | `/dashboard/people/templates` | Deduction templates list. |

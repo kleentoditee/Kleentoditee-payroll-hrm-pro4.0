@@ -46,6 +46,7 @@ model User {
   auditLogs      AuditLog[] @relation("AuditActor")
   invitations    UserInvitation[]
   documentsUploaded EmployeeDocument[] @relation("DocumentUploader")
+  staffRequestsReviewed StaffRequest[] @relation("StaffRequestReviewer")
 
   @@index([status])
 }
@@ -179,11 +180,67 @@ model Employee {
   payRunItems  PayRunItem[]
   linkedUser   User?
   documents    EmployeeDocument[]
+  staffRequests StaffRequest[]
 
   @@index([templateId])
   @@index([active])
   @@index([fullName])
   @@index([paySchedule, active])
+}
+
+/// Phase 2 — Staff Hub request types submitted by employees.
+enum StaffRequestType {
+  JOB_LETTER
+  TIME_OFF
+  SICK_LEAVE
+  PROFILE_UPDATE
+  SUPPLIES_REQUEST
+  EQUIPMENT_UNIFORM_REQUEST
+  INCIDENT_REPORT
+  DAMAGE_REPORT
+}
+
+/// Phase 2 — Staff Hub request lifecycle.
+enum StaffRequestStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  DENIED
+  COMPLETED
+  CANCELLED
+}
+
+/// Employee self-service request for letters, time off, supplies, incident
+/// reports, profile changes, etc. Sensitive HR identifiers (SSN, NHI, IRD)
+/// must NEVER be stored in `requestedContactUpdate` or any other field of
+/// this model — those live on `Employee` and are managed by HR admins only.
+model StaffRequest {
+  id                       String              @id @default(cuid())
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  employeeId               String
+  employee                 Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type                     StaffRequestType
+  status                   StaffRequestStatus  @default(SUBMITTED)
+  subject                  String?
+  startDate                DateTime?
+  endDate                  DateTime?
+  reason                   String?
+  details                  String?
+  /// JSON payload for PROFILE_UPDATE only — restricted to non-sensitive
+  /// contact fields (phone, address, emergency contact, uniform size).
+  requestedContactUpdate   Json?
+  reviewNote               String?
+  reviewedByUserId         String?
+  reviewedBy               User?               @relation("StaffRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewedAt               DateTime?
+  cancelledAt              DateTime?
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([employeeId, status])
 }
 
 model EmployeeDocument {

@@ -22,6 +22,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "People",
     items: [
       { label: "Employees", href: "/dashboard/people/employees" },
+      { label: "Staff requests", href: "/dashboard/people/requests" },
       { label: "Deduction templates", href: "/dashboard/people/templates" },
       { label: "Users & roles", href: "/dashboard/users" }
     ]
