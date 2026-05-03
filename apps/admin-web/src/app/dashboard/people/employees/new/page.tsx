@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import { canViewEmployeePii } from "@/lib/hr-roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -46,8 +45,8 @@ export default function NewEmployeePage() {
     (async () => {
       try {
         const [res, meRes] = await Promise.all([
-          fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/auth/me`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/people/templates"),
+          authenticatedFetch("/auth/me")
         ]);
         if (!res.ok) {
           throw new Error("Could not load templates");
@@ -109,10 +108,9 @@ export default function NewEmployeePage() {
         body.inlandRevenueDepartmentNumber = ird;
         body.workPermitNumber = workPermit;
       }
-      const res = await fetch(`${apiBase()}/people/employees`, {
+      const res = await authenticatedFetch("/people/employees", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(body)
+      body: JSON.stringify(body)
       });
       const data = (await res.json()) as { error?: string; employee?: { id: string } };
       if (!res.ok) {

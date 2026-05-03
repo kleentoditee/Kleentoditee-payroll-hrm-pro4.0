@@ -1,3 +1,5 @@
+import { authHeaders } from "@/lib/auth-storage";
+
 /**
  * Base URL for API calls from the admin web app.
  * - If `NEXT_PUBLIC_API_URL` is set (e.g. production or explicit dev), that URL is used.
@@ -53,12 +55,40 @@ export async function readApiData<T>(
   return data;
 }
 
+function mergeHeaders(...headersList: Array<HeadersInit | undefined>): HeadersInit {
+  const headers = new Headers();
+  for (const headerSet of headersList) {
+    if (!headerSet) {
+      continue;
+    }
+    new Headers(headerSet).forEach((value, key) => headers.set(key, value));
+  }
+  return headers;
+}
+
+function jsonHeaders(init: RequestInit): HeadersInit | undefined {
+  if (!init.body || init.body instanceof FormData || new Headers(init.headers).has("Content-Type")) {
+    return undefined;
+  }
+  return { "Content-Type": "application/json" };
+}
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${apiBase()}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init.headers
-    }
+    credentials: "include",
+    headers: mergeHeaders(jsonHeaders(init), init.headers)
   });
+}
+
+export async function authenticatedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${apiBase()}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: mergeHeaders(jsonHeaders(init), authHeaders(), init.headers)
+  });
+}
+
+export function isAuthFailure(res: Response): boolean {
+  return res.status === 401 || res.status === 403;
 }

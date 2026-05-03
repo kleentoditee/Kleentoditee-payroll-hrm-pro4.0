@@ -1,5 +1,10 @@
 const TOKEN_KEY = "kleentoditee_admin_token";
 
+/**
+ * Temporary legacy bearer-token storage.
+ * Production auth should move to httpOnly cookies; keep all localStorage token
+ * access in this file so the fallback can be removed without touching pages.
+ */
 export function getToken(): string | null {
   if (typeof window === "undefined") {
     return null;

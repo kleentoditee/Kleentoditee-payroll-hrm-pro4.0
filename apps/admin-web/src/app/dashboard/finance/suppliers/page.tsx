@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useEffect, useState } from "react";
 
 type SupplierRow = {
@@ -37,9 +36,7 @@ export default function SuppliersListPage() {
       (async () => {
         try {
           const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-          const res = await fetch(`${apiBase()}/finance/suppliers${qs}`, {
-            headers: { ...authHeaders() }
-          });
+          const res = await authenticatedFetch(`/finance/suppliers${qs}`);
           const data = await readApiData<{ items: SupplierRow[] }>(res);
           if (!cancelled) {
             setItems(data.items);
@@ -64,10 +61,9 @@ export default function SuppliersListPage() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const res = await fetch(`${apiBase()}/finance/suppliers`, {
+      const res = await authenticatedFetch("/finance/suppliers", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(form)
+      body: JSON.stringify(form)
       });
       await readApiData<{ error?: string }>(res);
       setForm(EMPTY_FORM);

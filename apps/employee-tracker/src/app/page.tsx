@@ -1,13 +1,18 @@
 "use client";
 
-import { apiBase, readApiJson } from "@/lib/api";
+import { readApiJson } from "@/lib/api";
+import {
+  authenticatedFetch,
+  fetchTrackerProfile,
+  logout as clearClientSession,
+  type TrackerProfileResponse
+} from "@/lib/auth-client";
 import {
   CLEANING_TIPS,
   DAILY_QUIZZES,
   greetingForTime,
   pickForDay
 } from "@/lib/staff-hub-data";
-import { authHeaders, clearToken, getToken } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,8 +28,6 @@ type EntryRow = {
   notes: string;
   updatedAt: string;
 };
-
-type ProfileRes = { employee?: { fullName: string; defaultSite: string; paySchedule: string } };
 
 function payScheduleLabel(s: string): string {
   if (s === "weekly" || s === "biweekly" || s === "monthly") {
@@ -98,6 +101,7 @@ function HubSection({
 export default function TrackerHome() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const [name, setName] = useState<string>("");
   const [paySchedule, setPaySchedule] = useState<string>("");
   const [month, setMonth] = useState(() => monthKeyFromDate(new Date()));
@@ -130,20 +134,19 @@ export default function TrackerHome() {
   const displayName = name.trim() || "Team member";
 
   const load = useCallback(async () => {
-    if (!getToken()) {
+    setLoadError(null);
+    const resP = await fetchTrackerProfile();
+    const { data: prof } = await readApiJson<TrackerProfileResponse>(resP);
+    if (!resP.ok || !prof?.employee) {
+      setAuthenticated(false);
+      setItems([]);
       return;
     }
-    setLoadError(null);
-    const resP = await fetch(`${apiBase()}/time/self/profile`, { headers: { ...authHeaders() } });
-    const { data: prof } = await readApiJson<ProfileRes>(resP);
-    if (resP.ok && prof?.employee) {
-      setName(prof.employee.fullName);
-      setPaySchedule(prof.employee.paySchedule);
-      setSite((prev) => prev || (prof.employee?.defaultSite ?? ""));
-    }
-    const resL = await fetch(`${apiBase()}/time/self/entries?month=${encodeURIComponent(month)}`, {
-      headers: { ...authHeaders() }
-    });
+    setAuthenticated(true);
+    setName(prof.employee.fullName);
+    setPaySchedule(prof.employee.paySchedule);
+    setSite((prev) => prev || (prof.employee?.defaultSite ?? ""));
+    const resL = await authenticatedFetch(`/time/self/entries?month=${encodeURIComponent(month)}`);
     const { data: list, rawText } = await readApiJson<ListRes & { error?: string }>(resL);
     if (!resL.ok) {
       setLoadError(list?.error ?? (rawText || `Error ${resL.status}`));
@@ -154,24 +157,20 @@ export default function TrackerHome() {
   }, [month]);
 
   const loadStaffHub = useCallback(async () => {
-    if (!getToken()) {
+    if (!authenticated) {
       return;
     }
     setStaffHubErr(null);
     setDailyQuizLoading(true);
     try {
-      const base = apiBase();
-      const h = { ...authHeaders() };
       const from = localYmd(today);
       const to = localYmd(addLocalDays(today, 7));
       const [todayRes, wRes, aRes, qRes, rRes] = await Promise.all([
-        fetch(`${base}/staff/self/schedule/today`, { headers: h }),
-        fetch(`${base}/staff/self/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
-          headers: h
-        }),
-        fetch(`${base}/staff/self/announcements`, { headers: h }),
-        fetch(`${base}/staff/self/quiz/daily`, { headers: h }),
-        fetch(`${base}/staff/self/rewards/summary`, { headers: h })
+        authenticatedFetch("/staff/self/schedule/today"),
+        authenticatedFetch(`/staff/self/schedule?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+        authenticatedFetch("/staff/self/announcements"),
+        authenticatedFetch("/staff/self/quiz/daily"),
+        authenticatedFetch("/staff/self/rewards/summary")
       ]);
       const tj = await readApiJson<{ items?: WorkAssignmentRow[] }>(todayRes);
       setScheduleToday(todayRes.ok ? (tj.data?.items ?? []) : []);
@@ -192,14 +191,10 @@ export default function TrackerHome() {
     } finally {
       setDailyQuizLoading(false);
     }
-  }, [today]);
+  }, [authenticated, today]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
-      return;
-    }
-    if (!getToken()) {
-      setReady(true);
       return;
     }
     let cancelled = false;
@@ -215,19 +210,18 @@ export default function TrackerHome() {
   }, [load]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !getToken()) {
+    if (typeof window === "undefined" || !authenticated) {
       return;
     }
     void loadStaffHub();
-  }, [loadStaffHub]);
+  }, [authenticated, loadStaffHub]);
 
   async function onQuizSelect(i: number) {
     if (dailyQuizFromApi) {
       setQuizChoice(i);
       setQuizFeedback(null);
-      const res = await fetch(`${apiBase()}/staff/self/quiz/attempt`, {
+      const res = await authenticatedFetch("/staff/self/quiz/attempt", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ questionId: dailyQuizFromApi.id, selectedIndex: i })
       });
       const { data } = await readApiJson<{
@@ -255,7 +249,7 @@ export default function TrackerHome() {
   }
 
   function logout() {
-    clearToken();
+    clearClientSession();
     router.push("/login");
   }
 
@@ -264,9 +258,8 @@ export default function TrackerHome() {
     setFormError(null);
     setSaving(true);
     try {
-      const res = await fetch(`${apiBase()}/time/self/entries`, {
+      const res = await authenticatedFetch("/time/self/entries", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           month,
           site: site.trim(),
@@ -295,10 +288,7 @@ export default function TrackerHome() {
 
   async function submitEntry(id: string) {
     setLoadError(null);
-    const res = await fetch(`${apiBase()}/time/self/entries/${id}/submit`, {
-      method: "POST",
-      headers: { ...authHeaders() }
-    });
+    const res = await authenticatedFetch(`/time/self/entries/${id}/submit`, { method: "POST" });
     if (!res.ok) {
       const { data, rawText } = await readApiJson<{ error?: string }>(res);
       setLoadError(data?.error ?? rawText);
@@ -312,10 +302,7 @@ export default function TrackerHome() {
       return;
     }
     setLoadError(null);
-    const res = await fetch(`${apiBase()}/time/self/entries/${id}`, {
-      method: "DELETE",
-      headers: { ...authHeaders() }
-    });
+    const res = await authenticatedFetch(`/time/self/entries/${id}`, { method: "DELETE" });
     if (!res.ok && res.status !== 204) {
       const { data, rawText } = await readApiJson<{ error?: string }>(res);
       setLoadError(data?.error ?? rawText);
@@ -332,7 +319,7 @@ export default function TrackerHome() {
     );
   }
 
-  if (!getToken()) {
+  if (!authenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0f2f38] from-0% via-[#f6f8fa] via-20% to-[#eef2f5] to-100%">
         <div className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-6 px-4 py-10 text-center">

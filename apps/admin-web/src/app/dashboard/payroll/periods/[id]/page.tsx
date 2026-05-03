@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -47,9 +46,7 @@ export default function PayrollPeriodDetailPage() {
 
   const loadPeriod = useCallback(async (isCancelled: () => boolean = () => false) => {
     try {
-      const res = await fetch(`${apiBase()}/payroll/periods/${id}`, {
-        headers: { ...authHeaders() }
-      });
+      const res = await authenticatedFetch(`/payroll/periods/${id}`);
       const data = (await res.json()) as { error?: string; period?: PeriodDetail };
       if (!res.ok || !data.period) {
         throw new Error(data.error ?? "Load failed");
@@ -91,10 +88,9 @@ export default function PayrollPeriodDetailPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/payroll/periods/${id}`, {
+      const res = await authenticatedFetch(`/payroll/periods/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           label,
           schedule,
           startDate,
@@ -119,10 +115,9 @@ export default function PayrollPeriodDetailPage() {
     setCreatingRun(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/payroll/runs`, {
+      const res = await authenticatedFetch("/payroll/runs", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ periodId: id })
+      body: JSON.stringify({ periodId: id })
       });
       const data = (await res.json()) as { error?: string; run?: { id: string } };
       if (!res.ok || !data.run) {

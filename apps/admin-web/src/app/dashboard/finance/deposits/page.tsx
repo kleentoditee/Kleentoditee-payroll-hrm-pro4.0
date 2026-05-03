@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -34,9 +33,7 @@ export default function DepositsListPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/finance/deposits`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch("/finance/deposits");
         const data = await readApiData<{ items: DepositRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);

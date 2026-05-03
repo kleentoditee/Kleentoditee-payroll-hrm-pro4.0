@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -48,8 +47,8 @@ export default function PayBillsPage() {
     (async () => {
       try {
         const [sRes, aRes] = await Promise.all([
-          fetch(`${apiBase()}/finance/suppliers`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/finance/suppliers"),
+          authenticatedFetch("/finance/accounts")
         ]);
         const [sJson, aJson] = await Promise.all([
           readApiData<{ items: SupplierLite[] }>(sRes),
@@ -77,10 +76,7 @@ export default function PayBillsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `${apiBase()}/finance/bills?supplierId=${encodeURIComponent(supplierId)}`,
-          { headers: { ...authHeaders() } }
-        );
+        const res = await authenticatedFetch(`/finance/bills?supplierId=${encodeURIComponent(supplierId)}`);
         const data = await readApiData<{ items: OpenBill[] }>(res);
         const open = (data.items ?? []).filter(
           (b) => b.status === "open" || b.status === "partial"
@@ -136,10 +132,9 @@ export default function PayBillsPage() {
       const applications = openBills
         .map((b) => ({ billId: b.id, amount: Number(apply[b.id] || 0) }))
         .filter((a) => a.amount > 0);
-      const res = await fetch(`${apiBase()}/finance/bill-payments`, {
+      const res = await authenticatedFetch("/finance/bill-payments", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           supplierId,
           paymentDate,
           method,

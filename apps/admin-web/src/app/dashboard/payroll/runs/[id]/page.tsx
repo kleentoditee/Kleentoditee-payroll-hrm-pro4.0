@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -62,9 +61,7 @@ export default function PayrollRunDetailPage() {
 
   const loadRun = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase()}/payroll/runs/${id}`, {
-        headers: { ...authHeaders() }
-      });
+      const res = await authenticatedFetch(`/payroll/runs/${id}`);
       const data = (await res.json()) as { error?: string; run?: RunDetail };
       if (!res.ok || !data.run) {
         throw new Error(data.error ?? "Load failed");
@@ -87,9 +84,8 @@ export default function PayrollRunDetailPage() {
     setWorking(action);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() }
+      const res = await authenticatedFetch(path, {
+        method: "POST"
       });
       const data = (await res.json()) as { error?: string; csv?: string; fileName?: string };
       if (!res.ok) {

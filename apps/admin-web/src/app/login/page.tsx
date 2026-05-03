@@ -1,7 +1,7 @@
 "use client";
 
 import { apiBase, readApiJson } from "@/lib/api";
-import { setToken } from "@/lib/auth-storage";
+import { devEmergencyLogin, loginWithPassword, storeLoginResponse, type LoginResponse } from "@/lib/auth-client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -101,12 +101,8 @@ export default function LoginPage() {
     setLoading(true);
     const emailNorm = email.trim().toLowerCase();
     try {
-      const res = await fetch(`${apiBase()}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailNorm, password })
-      });
-      const { data, rawText } = await readApiJson<{ token?: string; error?: string }>(res);
+      const res = await loginWithPassword(emailNorm, password);
+      const { data, rawText } = await readApiJson<LoginResponse>(res);
       if (!res.ok) {
         const msg =
           (data && typeof data.error === "string" && data.error) ||
@@ -119,11 +115,10 @@ export default function LoginPage() {
         );
         return;
       }
-      if (!data?.token) {
+      if (!data || !storeLoginResponse(data)) {
         setError("No token returned" + (rawText && !data ? " — " + rawText.slice(0, 80) : ""));
         return;
       }
-      setToken(data.token);
       router.replace("/dashboard");
     } catch (e) {
       setError(
@@ -142,8 +137,8 @@ export default function LoginPage() {
     setError(null);
     setEmergencyLoading(true);
     try {
-      const res = await fetch(`${apiBase()}/auth/dev-emergency`, { method: "POST" });
-      const { data, rawText } = await readApiJson<{ token?: string; error?: string }>(res);
+      const res = await devEmergencyLogin();
+      const { data, rawText } = await readApiJson<LoginResponse>(res);
       if (!res.ok) {
         setError(
           (data && typeof data.error === "string" && data.error) ||
@@ -151,8 +146,7 @@ export default function LoginPage() {
         );
         return;
       }
-      if (data?.token) {
-        setToken(data.token);
+      if (data && storeLoginResponse(data)) {
         router.replace("/dashboard");
         return;
       }

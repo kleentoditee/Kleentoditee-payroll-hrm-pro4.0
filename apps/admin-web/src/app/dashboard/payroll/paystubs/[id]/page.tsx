@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -53,9 +52,7 @@ export default function PaystubPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/payroll/paystubs/${id}`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch(`/payroll/paystubs/${id}`);
         const data = (await res.json()) as { error?: string; paystub?: PaystubDetail };
         if (!res.ok || !data.paystub) {
           throw new Error(data.error ?? "Load failed");

@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiJson } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiJson } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type EmployeeOpt = { id: string; fullName: string };
@@ -51,10 +50,7 @@ export default function ScheduleAdminPage() {
       return;
     }
     setErr(null);
-    const res = await fetch(
-      `${apiBase()}/admin/schedules?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-      { headers: { ...authHeaders() } }
-    );
+    const res = await authenticatedFetch(`/admin/schedules?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     const { data, rawText } = await readApiJson<{ items?: Row[]; error?: string }>(res);
     if (!res.ok) {
       setErr(data?.error ?? rawText ?? `Error ${res.status}`);
@@ -66,7 +62,7 @@ export default function ScheduleAdminPage() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } });
+      const res = await authenticatedFetch("/people/employees");
       const { data } = await readApiJson<{
         items?: Array<{ id: string; fullName: string; active: boolean }>;
       }>(res);
@@ -99,9 +95,8 @@ export default function ScheduleAdminPage() {
       return;
     }
     setSaving(true);
-    const res = await fetch(`${apiBase()}/admin/schedules`, {
+    const res = await authenticatedFetch("/admin/schedules", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({
         employeeId: form.employeeId,
         date: form.date,
@@ -128,9 +123,8 @@ export default function ScheduleAdminPage() {
       return;
     }
     setBusyId(id);
-    const res = await fetch(`${apiBase()}/admin/schedules/${id}/cancel`, {
-      method: "POST",
-      headers: { ...authHeaders() }
+    const res = await authenticatedFetch(`/admin/schedules/${id}/cancel`, {
+      method: "POST"
     });
     setBusyId(null);
     if (!res.ok) {

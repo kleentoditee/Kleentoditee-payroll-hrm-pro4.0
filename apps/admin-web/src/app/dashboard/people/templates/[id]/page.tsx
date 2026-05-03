@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -36,7 +35,7 @@ export default function EditTemplatePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/people/templates/${id}`, { headers: { ...authHeaders() } });
+        const res = await authenticatedFetch(`/people/templates/${id}`);
         if (!res.ok) {
           throw new Error("load");
         }
@@ -72,10 +71,9 @@ export default function EditTemplatePage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/people/templates/${id}`, {
+      const res = await authenticatedFetch(`/people/templates/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           name,
           nhiRate: Number(nhiRate),
           ssbRate: Number(ssbRate),

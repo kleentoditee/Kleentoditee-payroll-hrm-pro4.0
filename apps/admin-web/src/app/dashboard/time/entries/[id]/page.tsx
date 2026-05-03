@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -72,8 +71,8 @@ export default function EditTimeEntryPage() {
     (async () => {
       try {
         const [templateRes, entryRes] = await Promise.all([
-          fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/time/entries/${id}`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/people/templates"),
+          authenticatedFetch(`/time/entries/${id}`)
         ]);
         if (!templateRes.ok || !entryRes.ok) {
           throw new Error("load");
@@ -128,10 +127,9 @@ export default function EditTimeEntryPage() {
       return;
     }
     try {
-      const res = await fetch(`${apiBase()}/time/preview`, {
+      const res = await authenticatedFetch("/time/preview", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           employeeId,
           templateId,
           daysWorked: Number(daysWorked),
@@ -185,10 +183,9 @@ export default function EditTimeEntryPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/time/entries/${id}`, {
+      const res = await authenticatedFetch(`/time/entries/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           month,
           periodStart: periodStart || null,
           periodEnd: periodEnd || null,
@@ -228,9 +225,8 @@ export default function EditTimeEntryPage() {
     if (!window.confirm("Delete this timesheet?")) {
       return;
     }
-    const res = await fetch(`${apiBase()}/time/entries/${id}`, {
-      method: "DELETE",
-      headers: { ...authHeaders() }
+    const res = await authenticatedFetch(`/time/entries/${id}`, {
+      method: "DELETE"
     });
     if (!res.ok) {
       setError("Delete failed");

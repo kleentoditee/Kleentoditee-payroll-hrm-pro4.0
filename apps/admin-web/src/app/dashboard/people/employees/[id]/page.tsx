@@ -2,8 +2,7 @@
 
 import { EmployeeAvatar } from "@/components/employee-avatar";
 import { ShareTrackerAccessCard } from "@/components/share-tracker-access-card";
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import { canViewEmployeePii } from "@/lib/hr-roles";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -61,7 +60,7 @@ function isoToDateInput(iso: string | null | undefined): string {
 }
 
 async function downloadAuthedFile(downloadUrl: string, fileName: string) {
-  const res = await fetch(`${apiBase()}${downloadUrl}`, { headers: { ...authHeaders() } });
+  const res = await authenticatedFetch(downloadUrl);
   if (!res.ok) {
     return;
   }
@@ -171,7 +170,7 @@ export default function EditEmployeePage() {
   const formDisabledPii = !canEditPii;
 
   const loadEmployee = useCallback(async () => {
-    const employeeRes = await fetch(`${apiBase()}/people/employees/${id}`, { headers: { ...authHeaders() } });
+    const employeeRes = await authenticatedFetch(`/people/employees/${id}`);
     if (!employeeRes.ok) {
       throw new Error("Failed to load");
     }
@@ -210,8 +209,8 @@ export default function EditEmployeePage() {
     (async () => {
       try {
         const [meRes, templateRes] = await Promise.all([
-          fetch(`${apiBase()}/auth/me`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/auth/me"),
+          authenticatedFetch("/people/templates")
         ]);
         if (meRes.ok) {
           const me = (await meRes.json()) as { user: { roles: string[] } };
@@ -253,10 +252,10 @@ export default function EditEmployeePage() {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("type", type);
-    const res = await fetch(`${apiBase()}/people/employees/${id}/documents`, {
+    const res = await authenticatedFetch(`/people/employees/${id}/documents`, {
       method: "POST",
       body: fd,
-      headers: { ...authHeaders() }
+      
     });
     if (!res.ok) {
       const d = (await res.json().catch(() => ({}))) as { error?: string };
@@ -276,9 +275,8 @@ export default function EditEmployeePage() {
       return;
     }
     setError(null);
-    const res = await fetch(`${apiBase()}/people/employees/${id}/documents/${docId}`, {
-      method: "DELETE",
-      headers: { ...authHeaders() }
+    const res = await authenticatedFetch(`/people/employees/${id}/documents/${docId}`, {
+      method: "DELETE"
     });
     if (!res.ok) {
       setError("Delete failed");
@@ -318,10 +316,9 @@ export default function EditEmployeePage() {
         body.inlandRevenueDepartmentNumber = ird;
         body.workPermitNumber = workPermit;
       }
-      const res = await fetch(`${apiBase()}/people/employees/${id}`, {
+      const res = await authenticatedFetch(`/people/employees/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(body)
+      body: JSON.stringify(body)
       });
       const data = (await res.json()) as { error?: string; employee?: EmployeeFromApi };
       if (!res.ok) {
@@ -344,9 +341,8 @@ export default function EditEmployeePage() {
     if (!window.confirm("Delete this employee? This cannot be undone.")) {
       return;
     }
-    const res = await fetch(`${apiBase()}/people/employees/${id}`, {
-      method: "DELETE",
-      headers: { ...authHeaders() }
+    const res = await authenticatedFetch(`/people/employees/${id}`, {
+      method: "DELETE"
     });
     if (!res.ok) {
       const data = (await res.json()) as { error?: string };

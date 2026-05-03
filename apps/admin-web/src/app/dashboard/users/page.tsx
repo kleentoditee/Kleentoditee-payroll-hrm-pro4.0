@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import { userStatusBadgeClass, userStatusLabel } from "@/lib/user-status";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -44,7 +43,7 @@ export default function UsersListPage() {
 
   const load = useCallback(async () => {
     const qs = statusFilter === "all" ? "" : `?status=${encodeURIComponent(statusFilter)}`;
-    const res = await fetch(`${apiBase()}/admin/users${qs}`, { headers: { ...authHeaders() } });
+    const res = await authenticatedFetch(`/admin/users${qs}`);
     const j = (await res.json()) as { error?: string; items?: UserRow[] };
     if (res.status === 403) {
       throw new Error("Only a platform owner can manage users.");
@@ -56,7 +55,7 @@ export default function UsersListPage() {
   }, [statusFilter]);
 
   const loadPending = useCallback(async () => {
-    const res = await fetch(`${apiBase()}/admin/users/invitations/pending`, { headers: { ...authHeaders() } });
+    const res = await authenticatedFetch("/admin/users/invitations/pending");
     if (res.status === 403) {
       return [];
     }

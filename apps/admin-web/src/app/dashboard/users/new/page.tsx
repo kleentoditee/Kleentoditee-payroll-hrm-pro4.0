@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import { ROLE_OPTIONS } from "@/lib/role-options";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,7 +29,7 @@ export default function InviteUserPage() {
     let c = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } });
+        const res = await authenticatedFetch("/people/employees");
         if (res.status === 403) {
           throw new Error("Only a platform owner can invite users.");
         }
@@ -69,10 +68,9 @@ export default function InviteUserPage() {
     }
     setSaving(true);
     try {
-      const res = await fetch(`${apiBase()}/admin/users/invite`, {
+      const res = await authenticatedFetch("/admin/users/invite", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           email: email.trim(),
           name: name.trim() || undefined,
           roles,

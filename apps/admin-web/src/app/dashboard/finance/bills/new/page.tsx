@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -64,9 +63,9 @@ export default function NewBillPage() {
     (async () => {
       try {
         const [sRes, pRes, aRes] = await Promise.all([
-          fetch(`${apiBase()}/finance/suppliers`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/finance/products`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/finance/suppliers"),
+          authenticatedFetch("/finance/products"),
+          authenticatedFetch("/finance/accounts")
         ]);
         const [sJson, pJson, aJson] = await Promise.all([
           readApiData<{ items: SupplierLite[] }>(sRes),
@@ -145,10 +144,9 @@ export default function NewBillPage() {
           expenseAccountId: l.expenseAccountId
         }))
       };
-      const res = await fetch(`${apiBase()}/finance/bills`, {
+      const res = await authenticatedFetch("/finance/bills", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(payload)
+      body: JSON.stringify(payload)
       });
       const data = await readApiData<{ bill: { id: string } }>(res);
       router.push(`/dashboard/finance/bills/${data.bill.id}`);

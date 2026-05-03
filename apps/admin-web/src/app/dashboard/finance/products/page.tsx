@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 
 type AccountLite = {
@@ -48,9 +47,7 @@ export default function ProductsListPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/finance/accounts`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch("/finance/accounts");
         const data = await readApiData<{ items: AccountLite[] }>(res);
         if (!cancelled) {
           setAccounts(data.items);
@@ -70,9 +67,7 @@ export default function ProductsListPage() {
       (async () => {
         try {
           const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-          const res = await fetch(`${apiBase()}/finance/products${qs}`, {
-            headers: { ...authHeaders() }
-          });
+          const res = await authenticatedFetch(`/finance/products${qs}`);
           const data = await readApiData<{ items: ProductRow[] }>(res);
           if (!cancelled) {
             setItems(data.items);
@@ -106,10 +101,9 @@ export default function ProductsListPage() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const res = await fetch(`${apiBase()}/finance/products`, {
+      const res = await authenticatedFetch("/finance/products", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           ...form,
           salesPrice: Number(form.salesPrice || "0"),
           expenseAccountId: form.expenseAccountId || null

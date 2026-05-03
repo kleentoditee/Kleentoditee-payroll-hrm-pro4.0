@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -49,9 +48,7 @@ export default function PaymentDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase()}/finance/payments/${id}`, {
-        headers: { ...authHeaders() }
-      });
+      const res = await authenticatedFetch(`/finance/payments/${id}`);
       const data = await readApiData<{ payment: PaymentDetail }>(res);
       setPayment(data.payment);
       setError(null);
@@ -69,10 +66,7 @@ export default function PaymentDetailPage() {
     setBusy(true);
     setActionError(null);
     try {
-      const res = await fetch(
-        `${apiBase()}/finance/payments/${id}/unapply/${applicationId}`,
-        { method: "POST", headers: { ...authHeaders() } }
-      );
+      const res = await authenticatedFetch(`/finance/payments/${id}/unapply/${applicationId}`, { method: "POST" });
       if (!res.ok) {
         await readApiData<{ error?: string }>(res);
       }
@@ -88,9 +82,8 @@ export default function PaymentDetailPage() {
     setBusy(true);
     setActionError(null);
     try {
-      const res = await fetch(`${apiBase()}/finance/payments/${id}`, {
-        method: "DELETE",
-        headers: { ...authHeaders() }
+      const res = await authenticatedFetch(`/finance/payments/${id}`, {
+        method: "DELETE"
       });
       if (!res.ok) {
         await readApiData<{ error?: string }>(res);

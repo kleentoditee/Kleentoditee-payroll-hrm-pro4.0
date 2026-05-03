@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 
 type AccountRow = {
@@ -43,9 +42,7 @@ export default function AccountsListPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/finance/accounts`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch("/finance/accounts");
         const data = await readApiData<{ items: AccountRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);
@@ -81,10 +78,9 @@ export default function AccountsListPage() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const res = await fetch(`${apiBase()}/finance/accounts`, {
+      const res = await authenticatedFetch("/finance/accounts", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(form)
+      body: JSON.stringify(form)
       });
       await readApiData<{ error?: string }>(res);
       setForm(EMPTY_FORM);

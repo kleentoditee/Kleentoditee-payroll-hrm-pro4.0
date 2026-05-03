@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -38,9 +37,7 @@ export default function TimeApprovalsPage() {
     if (q.trim()) {
       params.set("q", q.trim());
     }
-    const res = await fetch(`${apiBase()}/time/entries?${params}`, {
-      headers: { ...authHeaders() }
-    });
+    const res = await authenticatedFetch(`/time/entries?${params}`);
     const data = (await res.json()) as { error?: string; items?: Row[] };
     if (!res.ok) {
       throw new Error(data.error ?? res.statusText);
@@ -100,10 +97,9 @@ export default function TimeApprovalsPage() {
     setBusy(true);
     setToast(null);
     try {
-      const res = await fetch(`${apiBase()}/time/entries/bulk-approve`, {
+      const res = await authenticatedFetch("/time/entries/bulk-approve", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ ids })
+      body: JSON.stringify({ ids })
       });
       const j = (await res.json()) as { error?: string; updated?: number; skipped?: string[] };
       if (!res.ok) {

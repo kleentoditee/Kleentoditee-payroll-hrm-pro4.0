@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -54,9 +53,7 @@ export default function PayrollPeriodsPage() {
   const loadPeriods = useCallback(async () => {
     try {
       const qs = scheduleFilter ? `?schedule=${scheduleFilter}` : "";
-      const res = await fetch(`${apiBase()}/payroll/periods${qs}`, {
-        headers: { ...authHeaders() }
-      });
+      const res = await authenticatedFetch(`/payroll/periods${qs}`);
       const data = await readApiData<{ items: Period[] }>(res);
       setItems(data.items);
       setError(null);
@@ -75,10 +72,9 @@ export default function PayrollPeriodsPage() {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/payroll/periods`, {
+      const res = await authenticatedFetch("/payroll/periods", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           label,
           schedule,
           startDate,

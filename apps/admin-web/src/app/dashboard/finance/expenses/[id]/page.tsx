@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -59,9 +58,7 @@ export default function ExpenseDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase()}/finance/expenses/${id}`, {
-        headers: { ...authHeaders() }
-      });
+      const res = await authenticatedFetch(`/finance/expenses/${id}`);
       const data = await readApiData<{ expense: ExpenseDetail }>(res);
       setExpense(data.expense);
       setError(null);
@@ -79,9 +76,9 @@ export default function ExpenseDetailPage() {
     setBusy(true);
     setActionError(null);
     try {
-      const res = await fetch(`${apiBase()}${path}`, {
+      const res = await authenticatedFetch(path, {
         method,
-        headers: { ...authHeaders() }
+        
       });
       if (!res.ok) {
         await readApiData<{ error?: string }>(res);

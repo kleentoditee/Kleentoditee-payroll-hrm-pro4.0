@@ -1,14 +1,12 @@
 "use client";
 
-import { apiBase, readApiJson } from "@/lib/api";
-import { setToken } from "@/lib/auth-storage";
+import { readApiJson } from "@/lib/api";
+import { loginWithPassword, storeLoginResponse, type TrackerLoginResponse } from "@/lib/auth-client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 const isDev = process.env.NODE_ENV === "development";
-
-type LoginRes = { token?: string; error?: string };
 
 export default function TrackerLogin() {
   const router = useRouter();
@@ -22,18 +20,13 @@ export default function TrackerLogin() {
     setError(null);
     setBusy(true);
     try {
-      const res = await fetch(`${apiBase()}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password })
-      });
-      const { data } = await readApiJson<LoginRes>(res);
+      const res = await loginWithPassword(email.trim().toLowerCase(), password);
+      const { data } = await readApiJson<TrackerLoginResponse>(res);
       if (!res.ok) {
         setError(data?.error ?? `Sign-in failed (${res.status}).`);
         return;
       }
-      if (data?.token) {
-        setToken(data.token);
+      if (data && storeLoginResponse(data)) {
         router.push("/");
         router.refresh();
         return;

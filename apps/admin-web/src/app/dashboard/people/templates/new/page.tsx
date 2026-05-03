@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -23,10 +22,9 @@ export default function NewTemplatePage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/people/templates`, {
+      const res = await authenticatedFetch("/people/templates", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           name,
           nhiRate: Number(nhiRate),
           ssbRate: Number(ssbRate),

@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -40,9 +39,7 @@ export default function PayrollRunsPage() {
           params.set("schedule", schedule);
         }
         const qs = params.toString() ? `?${params}` : "";
-        const res = await fetch(`${apiBase()}/payroll/runs${qs}`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch(`/payroll/runs${qs}`);
         const data = (await res.json()) as { error?: string; items?: RunRow[] };
         if (!res.ok || !data.items) {
           throw new Error(data.error ?? "Load failed");

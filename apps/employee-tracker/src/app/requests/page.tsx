@@ -1,7 +1,7 @@
 "use client";
 
-import { apiBase, readApiJson } from "@/lib/api";
-import { authHeaders, getToken } from "@/lib/auth-storage";
+import { readApiJson } from "@/lib/api";
+import { authenticatedFetch } from "@/lib/auth-client";
 import {
   isActiveStatus,
   REQUEST_STATUS_LABELS,
@@ -61,13 +61,12 @@ export default function RequestsPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!getToken()) {
+    setLoadError(null);
+    const res = await authenticatedFetch("/staff/self/requests");
+    if (res.status === 401 || res.status === 403) {
+      router.replace("/login");
       return;
     }
-    setLoadError(null);
-    const res = await fetch(`${apiBase()}/staff/self/requests`, {
-      headers: { ...authHeaders() }
-    });
     const { data, rawText } = await readApiJson<ListRes>(res);
     if (!res.ok) {
       setLoadError(data?.error ?? rawText ?? `Error ${res.status}`);
@@ -75,14 +74,10 @@ export default function RequestsPage() {
       return;
     }
     setItems(data?.items ?? []);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
-      return;
-    }
-    if (!getToken()) {
-      router.replace("/login");
       return;
     }
     let cancelled = false;
@@ -155,9 +150,8 @@ export default function RequestsPage() {
         body.requestedContactUpdate = trimmed;
       }
 
-      const res = await fetch(`${apiBase()}/staff/self/requests`, {
+      const res = await authenticatedFetch("/staff/self/requests", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(body)
       });
       const { data, rawText } = await readApiJson<OneRes>(res);
@@ -180,10 +174,7 @@ export default function RequestsPage() {
       return;
     }
     setLoadError(null);
-    const res = await fetch(`${apiBase()}/staff/self/requests/${id}/cancel`, {
-      method: "POST",
-      headers: { ...authHeaders() }
-    });
+    const res = await authenticatedFetch(`/staff/self/requests/${id}/cancel`, { method: "POST" });
     if (!res.ok) {
       const { data, rawText } = await readApiJson<{ error?: string }>(res);
       setLoadError(data?.error ?? rawText ?? `Error ${res.status}`);

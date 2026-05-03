@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import { ROLE_OPTIONS } from "@/lib/role-options";
 import { userStatusBadgeClass, userStatusLabel } from "@/lib/user-status";
 import Link from "next/link";
@@ -46,8 +45,8 @@ export default function UserDetailPage() {
 
   const load = useCallback(async () => {
     const [res, eres] = await Promise.all([
-      fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}`, { headers: { ...authHeaders() } }),
-      fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } })
+      authenticatedFetch(`/admin/users/${encodeURIComponent(id)}`),
+      authenticatedFetch("/people/employees")
     ]);
     const j = (await res.json()) as { error?: string; user?: UserDetail; pendingInvitation?: PendingInv };
     if (res.status === 403) {
@@ -133,10 +132,9 @@ export default function UserDetailPage() {
         }
         body.password = newPassword;
       }
-      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}`, {
+      const res = await authenticatedFetch(`/admin/users/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(body)
+      body: JSON.stringify(body)
       });
       const j = (await res.json()) as { error?: string; user?: UserDetail; pendingInvitation?: PendingInv };
       if (res.status === 403) {
@@ -164,9 +162,8 @@ export default function UserDetailPage() {
     setActBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}/suspend`, {
-        method: "POST",
-        headers: { ...authHeaders() }
+      const res = await authenticatedFetch(`/admin/users/${encodeURIComponent(id)}/suspend`, {
+        method: "POST"
       });
       const j = (await res.json()) as { error?: string; user?: UserDetail };
       if (!res.ok) {
@@ -194,9 +191,8 @@ export default function UserDetailPage() {
     setActBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}/deactivate`, {
-        method: "POST",
-        headers: { ...authHeaders() }
+      const res = await authenticatedFetch(`/admin/users/${encodeURIComponent(id)}/deactivate`, {
+        method: "POST"
       });
       const j = (await res.json()) as { error?: string; user?: UserDetail };
       if (!res.ok) {
@@ -223,9 +219,8 @@ export default function UserDetailPage() {
     setActBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/admin/users/${encodeURIComponent(id)}/reactivate`, {
-        method: "POST",
-        headers: { ...authHeaders() }
+      const res = await authenticatedFetch(`/admin/users/${encodeURIComponent(id)}/reactivate`, {
+        method: "POST"
       });
       const j = (await res.json()) as { error?: string; user?: UserDetail };
       if (!res.ok) {

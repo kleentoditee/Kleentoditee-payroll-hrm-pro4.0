@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -42,9 +41,7 @@ export default function ExpensesListPage() {
     (async () => {
       try {
         const qs = status ? `?status=${status}` : "";
-        const res = await fetch(`${apiBase()}/finance/expenses${qs}`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch(`/finance/expenses${qs}`);
         const data = await readApiData<{ items: ExpenseRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);

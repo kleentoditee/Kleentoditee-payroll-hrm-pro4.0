@@ -1,8 +1,7 @@
 "use client";
 
 import { EmployeeAvatar } from "@/components/employee-avatar";
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -31,9 +30,7 @@ export default function EmployeesListPage() {
       (async () => {
         try {
           const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-          const res = await fetch(`${apiBase()}/people/employees${qs}`, {
-            headers: { ...authHeaders() }
-          });
+          const res = await authenticatedFetch(`/people/employees${qs}`);
           if (!res.ok) {
             const j = (await res.json()) as { error?: string };
             throw new Error(j.error ?? res.statusText);

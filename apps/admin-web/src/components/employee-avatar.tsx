@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 
 type Props = {
@@ -38,7 +37,7 @@ export function EmployeeAvatar({ employeeId, hasPhoto, name, sizeClassName, prof
     let objectUrl: string | null = null;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}${profilePhotoViewUrl}`, { headers: { ...authHeaders() } });
+        const res = await authenticatedFetch(profilePhotoViewUrl);
         if (!res.ok || !alive) {
           return;
         }

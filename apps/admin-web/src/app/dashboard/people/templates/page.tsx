@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -22,7 +21,7 @@ export default function TemplatesListPage() {
 
   async function load() {
     try {
-      const res = await fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } });
+      const res = await authenticatedFetch("/people/templates");
       if (!res.ok) {
         throw new Error("Failed to load");
       }
@@ -43,9 +42,8 @@ export default function TemplatesListPage() {
     if (!window.confirm("Delete this template? Employees must not be using it.")) {
       return;
     }
-    const res = await fetch(`${apiBase()}/people/templates/${id}`, {
-      method: "DELETE",
-      headers: { ...authHeaders() }
+    const res = await authenticatedFetch(`/people/templates/${id}`, {
+      method: "DELETE"
     });
     if (res.status === 409) {
       const j = (await res.json()) as { error?: string };

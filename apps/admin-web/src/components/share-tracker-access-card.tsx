@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -47,9 +46,7 @@ export function ShareTrackerAccessCard({ employeeId, employeeName }: { employeeI
   const load = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const res = await fetch(`${apiBase()}/people/employees/${encodeURIComponent(employeeId)}/tracker-share`, {
-      headers: { ...authHeaders() }
-    });
+    const res = await authenticatedFetch(`/people/employees/${encodeURIComponent(employeeId)}/tracker-share`);
     if (res.ok) {
       setErr(null);
       setData((await res.json()) as TrackerShareRes);

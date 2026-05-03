@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -56,9 +55,7 @@ export default function DepositDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase()}/finance/deposits/${id}`, {
-        headers: { ...authHeaders() }
-      });
+      const res = await authenticatedFetch(`/finance/deposits/${id}`);
       const data = await readApiData<{ deposit: DepositDetail }>(res);
       setDeposit(data.deposit);
       setError(null);
@@ -76,9 +73,9 @@ export default function DepositDetailPage() {
     setBusy(true);
     setActionError(null);
     try {
-      const res = await fetch(`${apiBase()}${path}`, {
+      const res = await authenticatedFetch(path, {
         method,
-        headers: { ...authHeaders() }
+        
       });
       if (!res.ok) {
         await readApiData<{ error?: string }>(res);

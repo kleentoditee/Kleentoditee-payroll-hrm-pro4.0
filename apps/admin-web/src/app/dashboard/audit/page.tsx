@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -22,7 +21,7 @@ export default function AuditPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/audit/recent?take=80`, { headers: { ...authHeaders() } });
+        const res = await authenticatedFetch("/audit/recent?take=80");
         if (!res.ok) {
           const j = (await res.json()) as { error?: string };
           throw new Error(j.error ?? res.statusText);

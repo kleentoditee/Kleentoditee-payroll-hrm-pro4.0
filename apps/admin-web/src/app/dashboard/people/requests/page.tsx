@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiJson } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiJson } from "@/lib/api";
 import {
   allowedNextStatuses,
   REQUEST_STATUS_LABELS,
@@ -55,9 +54,7 @@ export default function StaffRequestsPage() {
       params.set("type", typeFilter);
     }
     const qs = params.toString();
-    const res = await fetch(`${apiBase()}/admin/staff-requests${qs ? `?${qs}` : ""}`, {
-      headers: { ...authHeaders() }
-    });
+    const res = await authenticatedFetch(`/admin/staff-requests${qs ? `?${qs}` : ""}`);
     const { data, rawText } = await readApiJson<ListRes>(res);
     if (!res.ok) {
       setLoadError(data?.error ?? rawText ?? `Error ${res.status}`);
@@ -94,10 +91,9 @@ export default function StaffRequestsPage() {
     setActionError(null);
     setActionBusy(target);
     try {
-      const res = await fetch(`${apiBase()}/admin/staff-requests/${selected.id}/status`, {
+      const res = await authenticatedFetch(`/admin/staff-requests/${selected.id}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ status: target, reviewNote: reviewNote.trim() || undefined })
+      body: JSON.stringify({ status: target, reviewNote: reviewNote.trim() || undefined })
       });
       const { data, rawText } = await readApiJson<OneRes>(res);
       if (!res.ok) {

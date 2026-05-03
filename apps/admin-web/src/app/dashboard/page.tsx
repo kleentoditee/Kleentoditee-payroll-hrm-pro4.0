@@ -1,8 +1,7 @@
 "use client";
 
 import { BusinessOperatingDashboard, type AuditDay, type BusinessOverviewData } from "@/components/business-operating-dashboard";
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
 type EmployeeRow = { active: boolean };
@@ -73,7 +72,6 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<{ data: BusinessOverviewData; roles: string[] }> => {
-    const headers = { ...authHeaders() };
     const [
       meRes,
       empRes,
@@ -86,16 +84,16 @@ export default function DashboardPage() {
       auditRes,
       periodsRes
     ] = await Promise.all([
-      fetch(`${apiBase()}/auth/me`, { headers }),
-      fetch(`${apiBase()}/people/employees`, { headers }),
-      fetch(`${apiBase()}/time/entries/count?queue=all&status=submitted`, { headers }),
-      fetch(`${apiBase()}/payroll/runs?status=draft`, { headers }),
-      fetch(`${apiBase()}/finance/invoices`, { headers }),
-      fetch(`${apiBase()}/finance/bills`, { headers }),
-      fetch(`${apiBase()}/admin/users/invitations/pending`, { headers }),
-      fetch(`${apiBase()}/admin/users`, { headers }),
-      fetch(`${apiBase()}/audit/recent?take=120`, { headers }),
-      fetch(`${apiBase()}/payroll/periods`, { headers })
+      authenticatedFetch("/auth/me"),
+      authenticatedFetch("/people/employees"),
+      authenticatedFetch("/time/entries/count?queue=all&status=submitted"),
+      authenticatedFetch("/payroll/runs?status=draft"),
+      authenticatedFetch("/finance/invoices"),
+      authenticatedFetch("/finance/bills"),
+      authenticatedFetch("/admin/users/invitations/pending"),
+      authenticatedFetch("/admin/users"),
+      authenticatedFetch("/audit/recent?take=120"),
+      authenticatedFetch("/payroll/periods")
     ]);
 
     const me = await safeJson<MeResponse>(meRes);

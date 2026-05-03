@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -32,9 +31,7 @@ export default function BillPaymentsListPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/finance/bill-payments`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch("/finance/bill-payments");
         const data = await readApiData<{ items: BillPaymentRow[] }>(res);
         if (!cancelled) {
           setItems(data.items);

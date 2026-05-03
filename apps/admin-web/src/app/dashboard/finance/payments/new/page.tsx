@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -48,8 +47,8 @@ export default function RecordPaymentPage() {
     (async () => {
       try {
         const [cRes, aRes] = await Promise.all([
-          fetch(`${apiBase()}/finance/customers`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/finance/customers"),
+          authenticatedFetch("/finance/accounts")
         ]);
         const [cJson, aJson] = await Promise.all([
           readApiData<{ items: CustomerLite[] }>(cRes),
@@ -77,10 +76,7 @@ export default function RecordPaymentPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `${apiBase()}/finance/invoices?customerId=${encodeURIComponent(customerId)}`,
-          { headers: { ...authHeaders() } }
-        );
+        const res = await authenticatedFetch(`/finance/invoices?customerId=${encodeURIComponent(customerId)}`);
         const data = await readApiData<{ items: OpenInvoice[] }>(res);
         const open = (data.items ?? []).filter(
           (i) => i.status === "open" || i.status === "partial"
@@ -136,10 +132,9 @@ export default function RecordPaymentPage() {
       const applications = openInvoices
         .map((inv) => ({ invoiceId: inv.id, amount: Number(apply[inv.id] || 0) }))
         .filter((a) => a.amount > 0);
-      const res = await fetch(`${apiBase()}/finance/payments`, {
+      const res = await authenticatedFetch("/finance/payments", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           customerId,
           paymentDate,
           method,

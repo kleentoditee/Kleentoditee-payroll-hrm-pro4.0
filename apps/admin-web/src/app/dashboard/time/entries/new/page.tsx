@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch } from "@/lib/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -61,8 +60,8 @@ export default function NewTimeEntryPage() {
     (async () => {
       try {
         const [employeeRes, templateRes] = await Promise.all([
-          fetch(`${apiBase()}/people/employees`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/people/templates`, { headers: { ...authHeaders() } })
+          authenticatedFetch("/people/employees"),
+          authenticatedFetch("/people/templates")
         ]);
         if (!employeeRes.ok || !templateRes.ok) {
           throw new Error("load");
@@ -101,10 +100,9 @@ export default function NewTimeEntryPage() {
       return;
     }
     try {
-      const res = await fetch(`${apiBase()}/time/preview`, {
+      const res = await authenticatedFetch("/time/preview", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           employeeId,
           templateId,
           daysWorked: Number(daysWorked),
@@ -158,10 +156,9 @@ export default function NewTimeEntryPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/time/entries`, {
+      const res = await authenticatedFetch("/time/entries", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
+      body: JSON.stringify({
           employeeId,
           month,
           periodStart,

@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiData } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiData } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -40,9 +39,7 @@ export default function NewDepositPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}/finance/accounts`, {
-          headers: { ...authHeaders() }
-        });
+        const res = await authenticatedFetch("/finance/accounts");
         const data = await readApiData<{ items: AccountLite[] }>(res);
         if (!cancelled) setAccounts(data.items ?? []);
       } catch (e) {
@@ -63,12 +60,9 @@ export default function NewDepositPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `${apiBase()}/finance/deposits/available-payments?bankAccountId=${encodeURIComponent(
+        const res = await authenticatedFetch(`/finance/deposits/available-payments?bankAccountId=${encodeURIComponent(
             bankAccountId
-          )}`,
-          { headers: { ...authHeaders() } }
-        );
+          )}`);
         const data = await readApiData<{ items: AvailablePayment[] }>(res);
         if (!cancelled) {
           setAvailable(data.items ?? []);
@@ -124,10 +118,9 @@ export default function NewDepositPage() {
           amount: p.amount,
           description: `${p.number} · ${p.customer.displayName}`
         }));
-      const res = await fetch(`${apiBase()}/finance/deposits`, {
+      const res = await authenticatedFetch("/finance/deposits", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ bankAccountId, depositDate, memo, lines })
+      body: JSON.stringify({ bankAccountId, depositDate, memo, lines })
       });
       const data = await readApiData<{ deposit: { id: string } }>(res);
       router.push(`/dashboard/finance/deposits/${data.deposit.id}`);

@@ -1,7 +1,6 @@
 "use client";
 
-import { apiBase, readApiJson } from "@/lib/api";
-import { authHeaders } from "@/lib/auth-storage";
+import { authenticatedFetch, readApiJson } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
 const CATS = [
@@ -49,7 +48,7 @@ export default function StaffAnnouncementsPage() {
 
   const load = useCallback(async () => {
     setErr(null);
-    const res = await fetch(`${apiBase()}/admin/announcements`, { headers: { ...authHeaders() } });
+    const res = await authenticatedFetch("/admin/announcements");
     const { data, rawText } = await readApiJson<{ items?: Item[]; error?: string }>(res);
     if (!res.ok) {
       setErr(data?.error ?? rawText ?? `Error ${res.status}`);
@@ -71,9 +70,8 @@ export default function StaffAnnouncementsPage() {
       return;
     }
     setSaving(true);
-    const res = await fetch(`${apiBase()}/admin/announcements`, {
+    const res = await authenticatedFetch("/admin/announcements", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({
         title: form.title.trim(),
         body: form.body.trim(),
@@ -93,9 +91,8 @@ export default function StaffAnnouncementsPage() {
 
   async function setActive(id: string, active: boolean) {
     setToggleBusy(id);
-    const res = await fetch(`${apiBase()}/admin/announcements/${id}`, {
+    const res = await authenticatedFetch(`/admin/announcements/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ active })
     });
     setToggleBusy(null);
