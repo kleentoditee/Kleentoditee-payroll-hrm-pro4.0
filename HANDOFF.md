@@ -1,10 +1,12 @@
-# KleenToDiTee Payroll Pro Handoff
+# KleenToDiTee Payroll HRM Pro 4.0 — Handoff
+
+> **North star:** continue this monorepo and **harden it** for production. **No rewrite, no microservices, no new modules before the P0 hardening track.** See [docs/ROADMAP_PRODUCTION_HARDENING.md](docs/ROADMAP_PRODUCTION_HARDENING.md).
 
 ## Canonical workspace
 
-- Repo path: `C:\Users\HomePC\OneDrive\Documents\GitHub\Kleentoditee-payroll-hrm-pro4.0`
+- Repo path: `C:\Users\HomePC\OneDrive\Documents\GitHub\Kleentoditee-payroll-hrm-pro4.0` (path contains a space — quote it on every shell).
 - Treat this repo as the single source of truth for active work.
-- The old Playground copy is a backup only.
+- The old `Playground 4\kleentoditee-payroll-pro` copy is a **legacy static-app prototype**, not the active platform. Read [README.md](README.md) for the boundary between the two.
 
 ## Current focus
 
@@ -32,20 +34,29 @@
 
 ## Key local commands
 
+These map to scripts that **actually exist** in [package.json](package.json) on `main`. `npm.cmd` is preferred over bare `npm` so PowerShell does not block on its execution policy.
+
 - Start admin: `npm.cmd run dev:admin`
-- Start API: `npm.cmd --workspace api run start`
+- Start API (workspace): `npm.cmd run dev:api` (the `api` package's `start` script also works: `npm.cmd --workspace api run start`)
+- Run API + admin together: `npm.cmd run dev:all` (does **not** include the employee tracker)
+- Start employee tracker: `npm.cmd run dev:tracker`
+- One-shot boot from cold: `npm.cmd run boot` (runs `db:sync`, then `dev:all`)
 - Generate Prisma client: `npm.cmd run db:generate`
 - Push schema to local DB: `npm.cmd run db:push`
 - Seed local DB: `npm.cmd run db:seed`
-- Payroll helper test: `npm.cmd run test --workspace api`
+- Payroll helper test: `npm.cmd run test --workspace api` (currently runs `payroll-utils.test.ts` only)
 - Full workspace lint: `npm.cmd run lint`
 - Full workspace typecheck: `npm.cmd run typecheck`
+- Full build: `npm.cmd run build`
+
+> Smoke-test scripts (`smoke:core`, `smoke:admin`, `smoke:all`) referenced in older notes are **not** wired into `package.json` on `main`. Treat them as planned, not current. The supporting `scripts/smoke-finance-{a,b,c}.mjs` files exist but have no `npm` entry point. See [docs/QA_TEST_MATRIX.md](docs/QA_TEST_MATRIX.md) and [docs/DOC_DRIFT_FINDINGS.md](docs/DOC_DRIFT_FINDINGS.md).
 
 ## Important local env note
 
-- Local SQLite should stay off the OneDrive repo path.
-- Working `DATABASE_URL` for local dev:
+- The repo lives under OneDrive, but Prisma's query-engine generation collides with OneDrive sync (EPERM). **Keep the SQLite DB file off the OneDrive path** even if the repo stays on it.
+- Working `DATABASE_URL` for local dev (writes the DB to `%LocalAppData%`, which is **not** synced):
   - `file:C:/Users/HomePC/AppData/Local/KleenToDiTeePayrollPro/dev.db`
+- If `prisma generate` keeps failing with `EPERM`, the durable fix is to copy the entire repo to a non-OneDrive path (e.g. `C:\dev\Kleentoditee-payroll-hrm-pro4.0`). See [README.md](README.md) § Troubleshooting and `scripts\copy-project-to-c-dev.bat`.
 
 ## User workflow preference
 
@@ -76,12 +87,15 @@
 
 ## Expected next-step verification after pulling
 
+These steps map 1:1 to scripts in `package.json` and to the lone `tsx --test` suite in `apps/api`:
+
 1. `npm.cmd run db:generate`
 2. `npm.cmd run db:push`
-3. `npm.cmd run test --workspace api`
+3. `npm.cmd run test --workspace api` (runs `apps/api/src/lib/payroll-utils.test.ts` only — there is no broader test runner today)
 4. `npm.cmd run typecheck`
 5. `npm.cmd run lint`
-6. Start admin and API, then test:
+6. `npm.cmd run build` (builds admin-web, employee-tracker, and api)
+7. Start admin and API (`npm.cmd run dev:all`), then manual-test:
    - `/dashboard/payroll/periods`
    - create period
    - create draft run

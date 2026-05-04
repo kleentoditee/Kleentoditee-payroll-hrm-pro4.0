@@ -1,6 +1,6 @@
 # PR handoff: local dev hardening, login, OneDrive, CodeRabbit
 
-Use the **title** and **body** below when you open a pull request so **CodeRabbit** (and human reviewers) have full context.
+> **Status: historical reference.** This is the PR body that originally landed the local-dev hardening (Windows batch entry points, Prisma/OneDrive workarounds, same-origin admin→API proxy, dev-emergency login, and the supporting scripts). Those changes are merged into `main`. Keep this doc as a description of what was done and why; do **not** treat it as an open task. New work should follow [ROADMAP_PRODUCTION_HARDENING.md](ROADMAP_PRODUCTION_HARDENING.md).
 
 ## Suggested PR title
 
@@ -41,9 +41,9 @@ Improves first-run and day-to-day local development on **Windows** (especially u
 
 ### Out of scope
 
-- No production auth hardening (still JWT in `localStorage` for dev as before).
+- No production auth hardening (still JWT in `localStorage` for dev as before — see [AUTH_SESSION_MIGRATION_PLAN.md](AUTH_SESSION_MIGRATION_PLAN.md) for the staged plan that addresses this).
 - Prisma `package.json#prisma` deprecation warning left as separate follow-up.
 
 ---
 
-**After you merge:** delete or trim `PUSH-ME.txt` if you do not want push reminders in the repo.
+**Note (historical):** the original PR body suggested deleting `PUSH-ME.txt` after merge. The file still exists at the repo root on `main` as legacy push-reminder text. It is harmless but unused; clean-up is tracked alongside the README cleanup in [DOC_DRIFT_FINDINGS.md](DOC_DRIFT_FINDINGS.md).
