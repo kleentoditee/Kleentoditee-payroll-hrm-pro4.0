@@ -2,6 +2,8 @@
 
 This project can move faster with Codex, Claude, and Cursor working at the same time, but not by editing the same files at the same time. The safe pattern is one branch and one worktree per agent.
 
+> **North star:** continue this monorepo, harden it for production. **No rewrite, no microservices, no new modules before the P0 hardening track.** See [ROADMAP_PRODUCTION_HARDENING.md](ROADMAP_PRODUCTION_HARDENING.md).
+
 ## Why Worktrees
 
 Git worktrees let one repository have multiple checked-out branches in separate folders. Each agent gets its own folder, branch, local changes, and test cycle while still sharing the same GitHub repo.
@@ -16,12 +18,18 @@ This keeps active Node and Prisma work outside OneDrive, which reduces the `EPER
 
 ## Create A Worktree
 
-From the canonical repo:
+From the canonical repo (paths with spaces — keep the working directory quoted):
 
 ```powershell
 .\scripts\new-agent-worktree.ps1 -Agent claude -Lane finance-core
 .\scripts\new-agent-worktree.ps1 -Agent cursor -Lane employee-tracker
 .\scripts\new-agent-worktree.ps1 -Agent codex -Lane integration-qa
+```
+
+If PowerShell blocks the script with `cannot be loaded because running scripts is disabled on this system`, use the per-process unblock instead of changing system policy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\new-agent-worktree.ps1 -Agent claude -Lane finance-core
 ```
 
 Then open the matching folder in the tool:
@@ -46,8 +54,8 @@ If two worktrees modify the same file, pause and merge one lane before continuin
 
 1. Agent finishes a lane in its worktree.
 2. Agent verifies, commits, and pushes its branch.
-3. Integration lane reviews the branch, runs CodeRabbit, and merges or rebases into `codex/consolidate-live-build`.
-4. Other lanes rebase from `codex/consolidate-live-build` before continuing.
+3. The integration lane reviews the branch and merges via a small focused PR. Today, recent merges have gone **directly to `main`** as small PRs (see `git log main`); the historical multi-lane staging branch `codex/consolidate-live-build` still exists upstream and may still be used when several lanes need to land together. Confirm the target with the integration lead before opening a PR against it.
+4. Other lanes rebase from whichever target was merged into (`main` for the small-PR flow; `codex/consolidate-live-build` for staging) before continuing.
 
 ## Practical Ownership
 
