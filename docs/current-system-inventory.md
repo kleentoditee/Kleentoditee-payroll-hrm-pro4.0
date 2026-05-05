@@ -3,7 +3,7 @@
 **Generated from repository review (read-only documentation; no runtime changes).**  
 Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`apps/api`), Prisma + SQLite (`@kleentoditee/db`).
 
-**Stability guardrails:** `apps/admin-web/src/lib/api-contracts.ts` encodes common API JSON shapes; `docs/stability-and-smoke-tests.md` describes `npm run smoke:core` / `smoke:admin` / `smoke:all` and how to extend them. Run smoke tests before merging changes that affect routes or response bodies.
+**Stability guardrails today:** the API package has a `tsx --test` suite at [apps/api/src/lib/payroll-utils.test.ts](../apps/api/src/lib/payroll-utils.test.ts) (run with `npm run test --workspace api`); `npm run typecheck`, `npm run lint`, and `npm run build` are the workspace-wide checks. The roadmap for adding integration tests, API smoke checks, and Playwright E2E coverage lives in [QA_TEST_MATRIX.md](QA_TEST_MATRIX.md). Older notes that reference `npm run smoke:core` / `smoke:admin` / `smoke:all`, `scripts/smoke-core.mjs`, `scripts/smoke-admin-pages.mjs`, `apps/admin-web/src/lib/api-contracts.ts`, or `docs/stability-and-smoke-tests.md` describe **planned**, **in-flight on a feature branch**, or **not-yet-merged** artifacts — none of those exist on `main` today. See [DOC_DRIFT_FINDINGS.md](DOC_DRIFT_FINDINGS.md).
 
 ---
 
@@ -28,7 +28,7 @@ Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`app
 
 - **packageManager:** `npm@11.11.0`  
 - **Workspaces:** `apps/*`, `packages/*`  
-- **Common scripts:** `db:generate`, `db:push`, `db:seed`, `dev:api`, `dev` / `dev:admin`, `dev:tracker`, `dev:all` (api + admin), `build` (admin + tracker + api), `smoke:core` / `smoke:admin` / `smoke:all` (see `docs/stability-and-smoke-tests.md`).
+- **Common scripts (verified against [package.json](../package.json) on main):** `db:generate`, `db:push`, `db:push:loss`, `db:seed`, `db:studio`, `db:sync`, `boot`, `dev` / `dev:admin`, `dev:tracker`, `dev:api`, `dev:all` (api + admin only — tracker not included), `build` (admin + tracker + api), `lint`, `typecheck`. The `api` workspace also exposes `npm run test --workspace api` (currently `tsx --test src/lib/payroll-utils.test.ts`).
 
 ---
 

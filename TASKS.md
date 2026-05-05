@@ -2,10 +2,13 @@
 
 Use this file as the live coordination board for Codex, Claude, Cursor, and the human owner.
 
+> **North star:** continue this monorepo, **harden it for production**. **No rewrite, no microservices, no new modules before the P0 hardening track.** See [docs/ROADMAP_PRODUCTION_HARDENING.md](docs/ROADMAP_PRODUCTION_HARDENING.md).
+
 ## Current Integration Branch
 
-- Branch: `codex/consolidate-live-build`
-- Rule: finish locally, verify, commit, push.
+- **Primary integration target: `main`.** Recent merges have been small, focused PRs against `main` directly (see `git log main`).
+- The legacy multi-lane integration branch `codex/consolidate-live-build` still exists upstream and is the historical reference for the active lanes table below; new work should target `main` via small PRs unless a coordinator says otherwise.
+- Rule: **finish locally, verify, commit, push** (one focused PR per concern).
 - CodeRabbit: local CLI works through WSL; rerun after rate limits clear.
 
 ## Active Lanes
@@ -43,7 +46,10 @@ Only one lane should edit these at a time. Add a row before touching a shared fi
 npm.cmd run typecheck
 npm.cmd run lint
 npm.cmd run test --workspace api
+npm.cmd run build
 ```
+
+> Note: `npm run test --workspace api` runs only `apps/api/src/lib/payroll-utils.test.ts`. There is no broader test runner today. Smoke-test scripts named `smoke:core`, `smoke:admin`, `smoke:all` referenced in older PR descriptions are **not** wired into `package.json` on `main`. See [docs/QA_TEST_MATRIX.md](docs/QA_TEST_MATRIX.md).
 
 3. Run CodeRabbit when available:
 
@@ -55,10 +61,17 @@ wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-pay
 5. Push your branch.
 6. Update this board with what changed, what passed, and what is next.
 
-## Suggested Next Parallel Slices
+## Suggested Next Parallel Slices (production hardening track)
 
-| Slice | Best Agent | Why |
-| --- | --- | --- |
-| Paystubs and export polish (no banking) | Claude | User priority is payroll output and exports, not banking workflows |
-| Admin/tracker readability fixes | Cursor | Left rail widgets and top action buttons need larger, clearer UI |
-| Cross-app QA, CodeRabbit pass, and merge cleanup | Codex | Integration and verification lane |
+These follow the priority order in [docs/ROADMAP_PRODUCTION_HARDENING.md](docs/ROADMAP_PRODUCTION_HARDENING.md). Pick from the top; hold P1 work until P0 is in flight.
+
+| Slice | Priority | Best Agent | Why |
+| --- | --- | --- | --- |
+| GitHub Actions CI for `typecheck` / `lint` / `build` / `test --workspace api` | P0-1 | Codex (Integration QA) | Unblocks every other PR's "green" claim; small, contained config change. |
+| Validate `JWT_SECRET` length and refuse SQLite `DATABASE_URL` in production boot | P0-2 + P0-3 | Codex / Claude | Tiny edit to `apps/api/src/env.ts`; closes [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) S-1, S-2. |
+| Register `/auth/dev-emergency` only when `NODE_ENV !== "production"` (compile-time exclusion, not runtime 403) | P0-2 | Claude | Closes [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) D-1; one route registration change. |
+| httpOnly cookie session + CSRF (Phase 1 of [docs/AUTH_SESSION_MIGRATION_PLAN.md](docs/AUTH_SESSION_MIGRATION_PLAN.md)) | P0-2 | Claude / Codex pair | Larger; needs coordinated change in API and both web clients. Confirm CSRF strategy with the human owner first. |
+| Postgres + `prisma migrate` workflow for non-local environments | P0-3 | Codex | Schema migration files + docker-compose updates; do **not** rip out SQLite for local dev. |
+| S3-compatible object storage for HR documents | P0-4 | Claude | Replace `apps/api/src/lib/employee-files.ts` filesystem path with R2/S3 client; add MIME and size limits. |
+| Expose or remove `scripts/smoke-finance-{a,b,c}.mjs` | doc-aligned | Codex | Closes drift finding 1 in [docs/DOC_DRIFT_FINDINGS.md](docs/DOC_DRIFT_FINDINGS.md). |
+| Admin/tracker readability fixes | P1 (defer) | Cursor | Hold until CI and auth/storage hardening are in flight. |
