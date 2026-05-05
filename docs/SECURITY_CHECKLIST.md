@@ -52,8 +52,8 @@ Companion: [ROADMAP_PRODUCTION_HARDENING.md](ROADMAP_PRODUCTION_HARDENING.md) ·
 
 | ID | Control | Today | Target |
 |----|---------|-------|--------|
-| S-1 | **`JWT_SECRET` minimum entropy in production** | 🟥 | `assertApiBootEnv` ([apps/api/src/env.ts:33](apps/api/src/env.ts)) only checks "not empty". Target: in production, require ≥ 32 bytes and reject the dev placeholder string. |
-| S-2 | **`DATABASE_URL` shape check** | 🟨 | Boot fails on missing URL; doesn't enforce postgres in production. Target: in production, refuse `file:` (SQLite) URLs with a clear error. |
+| S-1 | **`JWT_SECRET` minimum entropy in production** | 🟥 | [apps/api/src/env.ts](apps/api/src/env.ts) on `main` exports a `requireEnv(name)` helper that throws when a var is empty, but the boot path does not call it on `JWT_SECRET` — there is no startup-time validation today. Target: in production, fail boot when `JWT_SECRET` is missing, shorter than 32 bytes, or equals the dev placeholder string. |
+| S-2 | **`DATABASE_URL` shape check** | 🟥 | Same — no startup-time validation on `main`. Target: in production, fail boot when `DATABASE_URL` is missing, and refuse `file:` (SQLite) URLs with a clear error. |
 | S-3 | **No real secrets in `.env.example`** | 🟩 | The placeholder `JWT_SECRET` in [.env.example](.env.example) is clearly marked dev-only; reviewer must keep it that way. |
 | S-4 | **Env vars never logged** | 🟨 | `[api] Emergency passwordless login is ON …` is a known log; no secret values are emitted. Keep this discipline when adding boot diagnostics. |
 

@@ -60,16 +60,16 @@ Scope: read-only audit, performed 2026-05-03 against branch `main`. Findings are
 
 ---
 
-## Finding 4 — `.env.example` says "Min ~32 chars in production" but boot only checks "non-empty"
+## Finding 4 — `.env.example` says "Min ~32 chars in production" but boot does no validation at all
 
 **Severity:** 🟥 High
 **Where:**
-- [.env.example](.env.example) line 11: `# Min ~32 chars in production. Dev default is fine for localhost only.`
-- [apps/api/src/env.ts:33](apps/api/src/env.ts) (`assertApiBootEnv`) only enforces `process.env.JWT_SECRET?.trim()` is non-empty. The dev placeholder string itself would satisfy the boot check on a production server.
+- [.env.example](.env.example) line 9: `# Min ~32 chars in production. Dev default is fine for localhost only.`
+- [apps/api/src/env.ts](apps/api/src/env.ts) on `main` is a 27-line file. It loads `dotenv` from the repo root and exports a `requireEnv(name)` helper that throws when a var is empty — but the boot path does **not** call `requireEnv` on `JWT_SECRET` (or on `DATABASE_URL`). The dev placeholder string would not be rejected by anything the API itself does at startup.
 
-**Why it's drift:** Documentation creates a false sense of safety. An ops engineer reading `.env.example` thinks the API will refuse to start with a weak secret. It will not.
+**Why it's drift:** Documentation creates a false sense of safety. An ops engineer reading `.env.example` thinks the API will refuse to start with a weak secret. It will not — there is no startup check at all today.
 
-**Recommended fix:** Match the doc with code — either tighten `assertApiBootEnv` to enforce length and reject the dev placeholder when `NODE_ENV=production`, or downgrade the `.env.example` comment to "you must enforce this yourself; the API does not validate it." The first option is preferred and is captured as security item **S-1** in [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md).
+**Recommended fix (small follow-up code PR):** add a boot-time validator that, in production, refuses an empty / placeholder / short `JWT_SECRET` and refuses a `file:` `DATABASE_URL`. Captured as security items **S-1** and **S-2** in [SECURITY_CHECKLIST.md](SECURITY_CHECKLIST.md). Until that PR lands, the doc and the code disagree by design — the security checklist is the source of truth for what the target state should be.
 
 ---
 
