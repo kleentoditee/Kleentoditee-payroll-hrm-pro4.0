@@ -27,7 +27,7 @@ import {
 } from "../lib/auth-cookies.js";
 import { clearAttempts, isAttemptBlocked, isIntervalThrottled, recordAttempt } from "../lib/rate-limit.js";
 import { signSessionToken } from "../lib/token.js";
-import { authRequired, type AuthVariables } from "../middleware/auth.js";
+import { authOnly, authRequired, type AuthVariables } from "../middleware/auth.js";
 
 function isValidEmail(s: string): boolean {
   return s.length > 0 && s.length < 256 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -129,16 +129,29 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: {
-        email,
-        emailCanonical: email,
-        passwordHash,
-        name,
-        status: UserStatus.active,
-        roles: { create: [{ role: Role.platform_owner }, { role: Role.payroll_admin }] }
-      },
-      include: { roles: true }
+    // First-user bootstrap also creates the tenant organization (Batch 12).
+    const baseSlug = (email.split("@")[1] || "org").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+    const user = await prisma.$transaction(async (tx) => {
+      let slug = baseSlug;
+      for (let i = 2; await tx.organization.findUnique({ where: { slug } }); i += 1) {
+        slug = `${baseSlug}-${i}`;
+      }
+      const org = await tx.organization.create({
+        data: { name: `${name}'s Organization`, slug }
+      });
+      const created = await tx.user.create({
+        data: {
+          email,
+          emailCanonical: email,
+          passwordHash,
+          name,
+          status: UserStatus.active,
+          roles: { create: [{ role: Role.platform_owner }, { role: Role.payroll_admin }] },
+          memberships: { create: [{ orgId: org.id }] }
+        },
+        include: { roles: true }
+      });
+      return created;
     });
 
     await writeAudit({
@@ -435,6 +448,11 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
         where: { id: inv.id },
         data: { acceptedAt: new Date() }
       });
+      await tx.organizationMembership.upsert({
+        where: { orgId_userId: { orgId: inv.orgId, userId: inv.userId } },
+        create: { orgId: inv.orgId, userId: inv.userId },
+        update: {}
+      });
       const u = await tx.user.update({
         where: { id: inv.userId },
         data: {
@@ -461,7 +479,7 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
       email: updated.email
     });
   })
-    .post("/logout", authRequired, async (c) => {
+    .post("/logout", authOnly, async (c) => {
     const userId = c.get("userId");
     await prisma.user.update({ where: { id: userId }, data: { tokenVersion: { increment: 1 } } });
     await writeAudit({
@@ -474,7 +492,7 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
     c.header("Set-Cookie", expiredCookieValue(CSRF_COOKIE, false), { append: true });
     return c.json({ ok: true });
   })
-  .get("/me", authRequired, async (c) => {
+  .get("/me", authOnly, async (c) => {
     const userId = c.get("userId");
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -484,7 +502,10 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
         name: true,
         status: true,
         employeeId: true,
-        roles: { select: { role: true } }
+        roles: { select: { role: true } },
+        memberships: {
+          select: { orgId: true, organization: { select: { name: true, slug: true, status: true } } }
+        }
       }
     });
     if (!user) {
@@ -500,7 +521,13 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
         name: user.name,
         status: user.status,
         employeeId: user.employeeId,
-        roles: user.roles.map((r) => r.role)
+        roles: user.roles.map((r) => r.role),
+        organizations: user.memberships.map((m) => ({
+          id: m.orgId,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          status: m.organization.status
+        }))
       }
     });
   });

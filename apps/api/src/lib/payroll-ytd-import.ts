@@ -1,4 +1,4 @@
-import { prisma } from "@kleentoditee/db";
+import { requireOrgId, prisma } from "@kleentoditee/db";
 
 /**
  * Historical / year-to-date payroll opening-balance import.
@@ -343,7 +343,7 @@ export async function commitYtdImport(csv: string, year: number, actorUserId: st
       };
       const saved = await tx.payrollYtdOpeningBalance.upsert({
         where: { employeeId_year: { employeeId: row.employeeId as string, year } },
-        create: { employeeId: row.employeeId as string, ...data },
+        create: { orgId: requireOrgId(), employeeId: row.employeeId as string, ...data },
         update: data
       });
       if (row.willOverwrite) {

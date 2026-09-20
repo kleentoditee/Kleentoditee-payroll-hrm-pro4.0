@@ -1,4 +1,4 @@
-import { StaffRequestStatus, StaffRequestType, prisma } from "@kleentoditee/db";
+import { requireOrgId, StaffRequestStatus, StaffRequestType, prisma } from "@kleentoditee/db";
 import { roundMoney } from "./payroll-calc.js";
 import { businessDaysBetween, businessDaysOverlap } from "./leave-days.js";
 
@@ -136,8 +136,9 @@ export function computeLeaveBalances(
 export async function ensureDefaultLeavePolicies() {
   for (const policy of DEFAULT_LEAVE_POLICIES) {
     await prisma.leavePolicy.upsert({
-      where: { code: policy.code },
+      where: { orgId_code: { orgId: requireOrgId(), code: policy.code } },
       create: {
+        orgId: requireOrgId(),
         code: policy.code,
         name: policy.name,
         requestType: policy.requestType,

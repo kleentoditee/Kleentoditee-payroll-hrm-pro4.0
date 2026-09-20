@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { EmployeeDocumentType, PayBasis, prisma, Role, UserStatus, WorkAuthorizationStatus } from "@kleentoditee/db";
+import { requireOrgId, EmployeeDocumentType, PayBasis, prisma, Role, UserStatus, WorkAuthorizationStatus } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { documentStorage, safeDocumentKeyForEmployee } from "../lib/document-storage.js";
@@ -197,6 +197,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     const row = await prisma.deductionTemplate.create({
       data: {
+        orgId: requireOrgId(),
         name,
         nhiRate: Number(body.nhiRate ?? 0),
         ssbRate: Number(body.ssbRate ?? 0),
@@ -366,7 +367,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "The file contents do not match the selected file type." }, 400);
     }
     const relative = `doc-${randomUUID()}${upload.extension}`;
-    const relPath = safeDocumentKeyForEmployee(employee.id, relative);
+    const relPath = `${requireOrgId()}/${safeDocumentKeyForEmployee(employee.id, relative)}`;
     const previousPhotoDocuments = docType === EmployeeDocumentType.PHOTO
       ? await prisma.employeeDocument.findMany({
           where: { employeeId: employee.id, type: EmployeeDocumentType.PHOTO, deletedAt: null },
@@ -390,6 +391,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
         }
         const nextDocument = await tx.employeeDocument.create({
           data: {
+            orgId: requireOrgId(),
             employeeId: employee.id,
             type: docType,
             fileName: file.name || "upload",
@@ -580,6 +582,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     const requestedActive = body.active !== undefined ? Boolean(body.active) : true;
     const row = await prisma.employee.create({
       data: {
+        orgId: requireOrgId(),
         fullName,
         sex: body.sex === "M" || body.sex === "F" ? String(body.sex) : "",
         role: String(body.role ?? ""),

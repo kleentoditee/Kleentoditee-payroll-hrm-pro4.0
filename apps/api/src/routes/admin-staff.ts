@@ -3,7 +3,8 @@ import {
   Role,
   WorkAssignmentStatus,
   StaffAnnouncementCategory,
-  StaffAnnouncementAudience
+  StaffAnnouncementAudience,
+  requireOrgId
 } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
@@ -126,6 +127,7 @@ export const adminStaffRoutes = new Hono<{ Variables: AuthVariables }>()
     const createdBy = c.get("userId");
     const row = await prisma.workAssignment.create({
       data: {
+        orgId: requireOrgId(),
         employeeId,
         date,
         startTime: st,
@@ -286,6 +288,7 @@ export const adminStaffRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     const row = await prisma.staffAnnouncement.create({
       data: {
+        orgId: requireOrgId(),
         title,
         body: tBody,
         category: cat,

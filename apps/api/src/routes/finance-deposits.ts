@@ -1,4 +1,4 @@
-import { AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { MONEY_TOLERANCE, nextDepositNumber, round2 } from "../lib/finance-transactions.js";
@@ -157,13 +157,14 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
 
       const row = await prisma.deposit.create({
         data: {
+          orgId: requireOrgId(),
           number,
           depositDate,
           memo: String(body.memo ?? ""),
           bankAccountId,
           total,
           status: TransactionStatus.draft,
-          lines: { create: resolvedLines }
+          lines: { create: resolvedLines.map((l) => ({ orgId: requireOrgId(), ...l })) }
         },
         include: {
           bankAccount: true,

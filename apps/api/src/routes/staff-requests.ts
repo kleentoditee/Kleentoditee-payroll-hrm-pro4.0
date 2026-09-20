@@ -1,4 +1,4 @@
-import { prisma, Role, StaffRequestStatus, StaffRequestType, type Prisma } from "@kleentoditee/db";
+import { requireOrgId, prisma, Role, StaffRequestStatus, StaffRequestType, type Prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
@@ -295,6 +295,7 @@ function buildCreateData(
   }
 
   const data: Prisma.StaffRequestUncheckedCreateInput = {
+    orgId: requireOrgId(),
     employeeId,
     type,
     status: StaffRequestStatus.SUBMITTED,

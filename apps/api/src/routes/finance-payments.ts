@@ -3,7 +3,8 @@ import {
   PaymentMethod,
   Role,
   TransactionStatus,
-  prisma
+  prisma,
+  requireOrgId
 } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
@@ -182,6 +183,7 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       const payment = await prisma.$transaction(async (tx) => {
         const created = await tx.payment.create({
           data: {
+            orgId: requireOrgId(),
             number,
             customerId,
             paymentDate,
@@ -193,7 +195,7 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
             unapplied,
             depositAccountId,
             applications: {
-              create: applications.map((a) => ({ invoiceId: a.invoiceId, amount: a.amount }))
+              create: applications.map((a) => ({ orgId: requireOrgId(), invoiceId: a.invoiceId, amount: a.amount }))
             }
           }
         });
@@ -303,7 +305,7 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       const payment = await prisma.$transaction(async (tx) => {
         for (const app of applications) {
           await tx.paymentApplication.create({
-            data: { paymentId: id, invoiceId: app.invoiceId, amount: app.amount }
+            data: { orgId: requireOrgId(), paymentId: id, invoiceId: app.invoiceId, amount: app.amount }
           });
           const inv = invoiceById.get(app.invoiceId)!;
           const nextAmountPaid = round2(inv.amountPaid + app.amount);

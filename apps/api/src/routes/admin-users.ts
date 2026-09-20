@@ -1,4 +1,4 @@
-import { prisma, type Prisma, Role, UserStatus } from "@kleentoditee/db";
+import { requireOrgId, prisma, type Prisma, Role, UserStatus } from "@kleentoditee/db";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { Hono } from "hono";
@@ -248,6 +248,7 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         });
         const invRow = await tx.userInvitation.create({
           data: {
+            orgId: requireOrgId(),
             userId: user.id,
             tokenHash: await bcrypt.hash(`placeholder:${user.id}:${invSecret}`, 8),
             expiresAt
@@ -361,7 +362,8 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
           passwordHash,
           status: UserStatus.active,
           employeeId,
-          roles: { create: roles.map((role) => ({ role })) }
+          roles: { create: roles.map((role) => ({ role })) },
+          memberships: { create: [{ orgId: requireOrgId() }] }
         },
         select: userSelect
       });

@@ -1,4 +1,4 @@
-import { PaySchedule, Role, prisma } from "@kleentoditee/db";
+import { requireOrgId, PaySchedule, Role, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
@@ -16,8 +16,8 @@ const CAN_EDIT = [Role.platform_owner, Role.hr_admin, Role.payroll_admin, Role.f
 
 async function loadOrgSettings() {
   return prisma.orgSettings.upsert({
-    where: { id: "singleton" },
-    create: { id: "singleton" },
+    where: { orgId: requireOrgId() },
+    create: { orgId: requireOrgId() },
     update: {}
   });
 }
@@ -159,7 +159,7 @@ export const settingsRoutes = new Hono<{ Variables: AuthVariables }>()
     }
 
     const settings = await prisma.orgSettings.update({
-      where: { id: "singleton" },
+      where: { orgId: requireOrgId() },
       data
     });
 

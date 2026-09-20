@@ -1,4 +1,4 @@
-import { AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import {
@@ -169,6 +169,7 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
 
       const row = await prisma.bill.create({
         data: {
+          orgId: requireOrgId(),
           number,
           supplierId,
           billDate,
@@ -180,7 +181,7 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
           total: totals.total,
           amountPaid: 0,
           balance: totals.balance,
-          lines: { create: resolvedLines }
+          lines: { create: resolvedLines.map((l) => ({ orgId: requireOrgId(), ...l })) }
         },
         include: {
           supplier: true,
@@ -274,7 +275,7 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
           await tx.billLine.deleteMany({ where: { billId: id } });
           await tx.bill.update({
             where: { id },
-            data: { ...data, lines: { create: nextLines } }
+            data: { ...data, lines: { create: nextLines.map((l) => ({ orgId: requireOrgId(), ...l })) } }
           });
         } else {
           await tx.bill.update({ where: { id }, data: data as never });

@@ -1,4 +1,4 @@
-import { PaySchedule, PayRunStatus, Prisma, TimeEntryStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, PaySchedule, PayRunStatus, Prisma, TimeEntryStatus, prisma } from "@kleentoditee/db";
 import { employeeForNestedTimeContextSelect } from "./employee-privacy.js";
 import { roundMoney } from "./payroll-calc.js";
 import { buildRunItemsFromEntries } from "./payroll-run-builder.js";
@@ -74,9 +74,10 @@ async function loadOrgPayrollContext(schedule: PaySchedule, asOf?: Date): Promis
   company: OrgCompanyInfo;
   statutorySource: StatutorySourceMeta;
 }> {
+  const orgId = requireOrgId();
   const org = await prisma.orgSettings.upsert({
-    where: { id: "singleton" },
-    create: { id: "singleton" },
+    where: { orgId },
+    create: { orgId },
     update: {}
   });
 
@@ -365,6 +366,7 @@ async function replaceDraftRunItems(runId: string, items: Awaited<ReturnType<typ
     for (const item of items) {
       await tx.payRunItem.create({
         data: {
+          orgId: requireOrgId(),
           runId,
           ...item,
           sourceEntryIds: item.sourceEntryIds as Prisma.InputJsonValue,
@@ -389,7 +391,7 @@ export async function createDraftRun(periodId: string, notes = "") {
   const items = await buildRunItemPayloads(period);
   const run = await prisma.payRun
     .create({
-      data: { periodId, notes },
+      data: { orgId: requireOrgId(), periodId, notes },
       include: RUN_DETAIL_INCLUDE
     })
     .catch((e) => {
@@ -508,6 +510,7 @@ export async function finalizeRun(runId: string) {
           payload: buildPaystubPayload(run.period, item, company)
         },
         create: {
+          orgId: requireOrgId(),
           payRunItemId: item.id,
           stubNumber: createPaystubNumber(run.id, item.id),
           issuedAt,
@@ -557,6 +560,7 @@ export async function createRunExport(runId: string) {
 
   const exportRow = await prisma.payrollExport.create({
     data: {
+      orgId: requireOrgId(),
       runId,
       format: "csv",
       fileName,

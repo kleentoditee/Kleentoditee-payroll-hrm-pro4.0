@@ -3,7 +3,8 @@ import {
   PaymentMethod,
   Role,
   TransactionStatus,
-  prisma
+  prisma,
+  requireOrgId
 } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
@@ -177,6 +178,7 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
       const billPayment = await prisma.$transaction(async (tx) => {
         const created = await tx.billPayment.create({
           data: {
+            orgId: requireOrgId(),
             number,
             supplierId,
             paymentDate,
@@ -188,7 +190,7 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
             unapplied,
             sourceAccountId,
             applications: {
-              create: applications.map((a) => ({ billId: a.billId, amount: a.amount }))
+              create: applications.map((a) => ({ orgId: requireOrgId(), billId: a.billId, amount: a.amount }))
             }
           }
         });

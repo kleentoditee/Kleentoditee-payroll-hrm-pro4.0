@@ -1,4 +1,4 @@
-import { PayRunStatus, Role, prisma } from "@kleentoditee/db";
+import { requireOrgId, PayRunStatus, Role, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import {
@@ -104,7 +104,7 @@ async function loadStatutoryForms(month: string) {
   const nextMonth = new Date(Date.UTC(year, monthIndex + 1, 1));
 
     const [settings, runs, currentEmployees] = await Promise.all([
-    prisma.orgSettings.upsert({ where: { id: "singleton" }, update: {}, create: { id: "singleton" } }),
+    prisma.orgSettings.upsert({ where: { orgId: requireOrgId() }, update: {}, create: { orgId: requireOrgId() } }),
     prisma.payRun.findMany({
       where: {
         status: { in: [PayRunStatus.finalized, PayRunStatus.exported, PayRunStatus.paid] },
@@ -238,6 +238,7 @@ async function loadStatutoryForms(month: string) {
 
     const row = await prisma.payPeriod.create({
       data: {
+        orgId: requireOrgId(),
         schedule,
         startDate,
         endDate,

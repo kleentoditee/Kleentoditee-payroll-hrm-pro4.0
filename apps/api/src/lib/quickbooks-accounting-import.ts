@@ -4,6 +4,7 @@ import {
   ProductKind,
   TransactionStatus,
   prisma,
+  requireOrgId,
   type Prisma
 } from "@kleentoditee/db";
 import {
@@ -644,9 +645,10 @@ async function importCustomer(row: CsvRow) {
   const phone = looksLikePhone(row.phone ?? "") ? sanitizeCell(row.phone) : "";
   if (!displayName) return "skipped";
   if (email && (await prisma.customer.findFirst({ where: { email } }))) return "duplicate";
-  if (await prisma.customer.findUnique({ where: { displayName } })) return "duplicate";
+  if (await prisma.customer.findFirst({ where: { displayName } })) return "duplicate";
   await prisma.customer.create({
     data: {
+      orgId: requireOrgId(),
       displayName,
       companyName: row.companyName ?? "",
       email,
@@ -664,9 +666,10 @@ async function importSupplier(row: CsvRow) {
   const phone = looksLikePhone(row.phone ?? "") ? sanitizeCell(row.phone) : "";
   if (!displayName) return "skipped";
   if (email && (await prisma.supplier.findFirst({ where: { email } }))) return "duplicate";
-  if (await prisma.supplier.findUnique({ where: { displayName } })) return "duplicate";
+  if (await prisma.supplier.findFirst({ where: { displayName } })) return "duplicate";
   await prisma.supplier.create({
     data: {
+      orgId: requireOrgId(),
       displayName,
       companyName: row.companyName ?? "",
       email,
@@ -685,9 +688,10 @@ async function importAccount(row: CsvRow) {
   const existing = await prisma.account.findFirst({ where: { name, type } });
   if (existing) return "duplicate";
   const code = row.code || (await nextAccountCode(type));
-  const codeClash = await prisma.account.findUnique({ where: { code } });
+  const codeClash = await prisma.account.findFirst({ where: { code } });
   await prisma.account.create({
     data: {
+      orgId: requireOrgId(),
       code: codeClash ? await nextAccountCode(type) : code,
       name,
       type,
@@ -706,6 +710,7 @@ async function importProduct(row: CsvRow) {
   const incomeAccount = await findOrCreateAccount(row.incomeAccountName || "Sales", AccountType.revenue);
   await prisma.product.create({
     data: {
+      orgId: requireOrgId(),
       sku,
       name,
       kind: parseProductKind(row.kind),
@@ -719,7 +724,7 @@ async function importProduct(row: CsvRow) {
 
 async function importInvoice(row: CsvRow) {
   const number = row.number;
-  if (await prisma.invoice.findUnique({ where: { number } })) return "duplicate";
+  if (await prisma.invoice.findFirst({ where: { number } })) return "duplicate";
   const customer = await findOrCreateCustomer(row.customerName);
   const incomeAccount = await findOrCreateAccount("Sales", AccountType.revenue);
   const issueDate = normalizeDate(row.issueDate) ?? new Date();
@@ -728,6 +733,7 @@ async function importInvoice(row: CsvRow) {
   const amountPaid = Math.max(0, total - normalizeCurrency(row.balance));
   await prisma.invoice.create({
     data: {
+      orgId: requireOrgId(),
       number,
       customerId: customer.id,
       issueDate,
@@ -739,6 +745,7 @@ async function importInvoice(row: CsvRow) {
       balance: round2(total - amountPaid),
       lines: {
         create: [{
+          orgId: requireOrgId(),
           position: 1,
           description: row.lineItemName || "QuickBooks import",
           quantity: 1,
@@ -764,6 +771,7 @@ async function importBill(row: CsvRow) {
   const expenseAccount = await findOrCreateAccount("Cost of Goods Sold", AccountType.expense);
   await prisma.bill.create({
     data: {
+      orgId: requireOrgId(),
       number,
       supplierId: supplier.id,
       billDate,
@@ -773,7 +781,7 @@ async function importBill(row: CsvRow) {
       total,
       balance: normalizeCurrency(row.balance) || total,
       lines: {
-        create: [{ position: 1, description: "QuickBooks import", quantity: 1, unitCost: total, amount: total, expenseAccountId: expenseAccount.id }]
+        create: [{ orgId: requireOrgId(), position: 1, description: "QuickBooks import", quantity: 1, unitCost: total, amount: total, expenseAccountId: expenseAccount.id }]
       }
     }
   });
@@ -789,6 +797,7 @@ async function importExpense(row: CsvRow) {
   const expenseAccount = await findOrCreateAccount(row.categoryName || "General Expenses", AccountType.expense);
   await prisma.expense.create({
     data: {
+      orgId: requireOrgId(),
       number: await nextExpenseNumber(),
       expenseDate,
       payeeName: row.payeeName,
@@ -797,7 +806,7 @@ async function importExpense(row: CsvRow) {
       subtotal: amount,
       total: amount,
       status: TransactionStatus.open,
-      lines: { create: [{ position: 1, description: row.memo ?? "", quantity: 1, unitCost: amount, amount, expenseAccountId: expenseAccount.id }] }
+      lines: { create: [{ orgId: requireOrgId(), position: 1, description: row.memo ?? "", quantity: 1, unitCost: amount, amount, expenseAccountId: expenseAccount.id }] }
     }
   });
   return "created";
@@ -813,6 +822,7 @@ async function importPayment(row: CsvRow) {
   const depositAccount = await findOrCreateAccount(row.depositAccountName || "Undeposited Funds", AccountType.asset);
   await prisma.payment.create({
     data: {
+      orgId: requireOrgId(),
       number: reference || (await nextPaymentNumber()),
       customerId: customer.id,
       paymentDate,
@@ -834,13 +844,14 @@ async function importDeposit(row: CsvRow) {
   if (existing) return "duplicate";
   await prisma.deposit.create({
     data: {
+      orgId: requireOrgId(),
       number: await nextDepositNumber(),
       depositDate,
       memo: [row.receivedFrom, row.memo].filter(Boolean).join(" - "),
       bankAccountId: bankAccount.id,
       total,
       status: TransactionStatus.open,
-      lines: { create: [{ position: 1, description: row.receivedFrom || row.memo || "QuickBooks import", amount: total }] }
+      lines: { create: [{ orgId: requireOrgId(), position: 1, description: row.receivedFrom || row.memo || "QuickBooks import", amount: total }] }
     }
   });
   return "created";
@@ -1024,17 +1035,17 @@ async function findOrCreateAccount(name: string, type: AccountType) {
   const displayName = sanitizeText(name) || (type === AccountType.revenue ? "Sales" : type === AccountType.expense ? "General Expenses" : "Checking");
   const existing = await prisma.account.findFirst({ where: { name: displayName, type } });
   if (existing) return existing;
-  return prisma.account.create({ data: { code: await nextAccountCode(type), name: displayName, type } });
+  return prisma.account.create({ data: { orgId: requireOrgId(), code: await nextAccountCode(type), name: displayName, type } });
 }
 
 async function findOrCreateCustomer(displayName: string) {
   const name = sanitizeText(displayName);
-  const existing = await prisma.customer.findUnique({ where: { displayName: name } });
-  return existing ?? prisma.customer.create({ data: { displayName: name } });
+  const existing = await prisma.customer.findFirst({ where: { displayName: name } });
+  return existing ?? prisma.customer.create({ data: { orgId: requireOrgId(), displayName: name } });
 }
 
 async function findOrCreateSupplier(displayName: string) {
   const name = sanitizeText(displayName);
-  const existing = await prisma.supplier.findUnique({ where: { displayName: name } });
-  return existing ?? prisma.supplier.create({ data: { displayName: name } });
+  const existing = await prisma.supplier.findFirst({ where: { displayName: name } });
+  return existing ?? prisma.supplier.create({ data: { orgId: requireOrgId(), displayName: name } });
 }

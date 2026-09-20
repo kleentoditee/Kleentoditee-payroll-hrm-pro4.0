@@ -8,7 +8,7 @@
  *  - posting is idempotent via the unique sourceKey `${sourceType}:${sourceId}`;
  *  - corrections are reversal journals, never edits to posted rows.
  */
-import { prisma, type Prisma } from "@kleentoditee/db";
+import { requireOrgId, prisma, type Prisma } from "@kleentoditee/db";
 
 export const GL_TOLERANCE = 0.005;
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -348,7 +348,7 @@ export async function ensureControlAccounts(db: DbClient): Promise<Record<Contro
       continue;
     }
     const created = await db.account.create({
-      data: { code: def.code, name: def.name, type: def.type, subtype: def.subtype, description: "GL control account (auto-provisioned)" },
+      data: { orgId: requireOrgId(), code: def.code, name: def.name, type: def.type, subtype: def.subtype, description: "GL control account (auto-provisioned)" },
       select: { id: true }
     });
     out[key] = created.id;
@@ -365,27 +365,28 @@ export async function postJournal(db: DbClient, input: GlJournalInput, createdBy
   const lines = validateJournalLines(input.lines);
   const key = sourceKey(input.sourceType, input.sourceId);
 
-  const existing = await db.journalEntry.findUnique({ where: { sourceKey: key }, select: { id: true } });
+  const existing = await db.journalEntry.findFirst({ where: { sourceKey: key }, select: { id: true } });
   if (existing) {
     return { entryId: existing.id, sourceKey: key, created: false };
   }
   try {
     const entry = await db.journalEntry.create({
       data: {
+        orgId: requireOrgId(),
         date: input.date,
         memo: input.memo,
         sourceType: input.sourceType,
         sourceId: input.sourceId,
         sourceKey: key,
         createdByUserId: createdByUserId ?? null,
-        lines: { create: lines.map((l, i) => ({ position: i + 1, ...l })) }
+        lines: { create: lines.map((l, i) => ({ orgId: requireOrgId(), position: i + 1, ...l })) }
       },
       select: { id: true }
     });
     return { entryId: entry.id, sourceKey: key, created: true };
   } catch (err) {
     // Unique-race fallback: another request posted first.
-    const won = await db.journalEntry.findUnique({ where: { sourceKey: key }, select: { id: true } });
+    const won = await db.journalEntry.findFirst({ where: { sourceKey: key }, select: { id: true } });
     if (won) return { entryId: won.id, sourceKey: key, created: false };
     throw err;
   }
@@ -402,7 +403,7 @@ export async function reverseJournal(
   sourceId: string,
   opts: { date: Date; memo: string; createdByUserId?: string | null }
 ): Promise<PostResult | null> {
-  const original = await db.journalEntry.findUnique({
+  const original = await db.journalEntry.findFirst({
     where: { sourceKey: sourceKey(sourceType, sourceId) },
     include: { lines: true }
   });

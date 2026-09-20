@@ -1,4 +1,4 @@
-import { prisma, Role, TimeEntryStatus } from "@kleentoditee/db";
+import { requireOrgId, prisma, Role, TimeEntryStatus } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { employeeForNestedTimeContextSelect } from "../lib/employee-privacy.js";
@@ -305,6 +305,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const rows = await prisma.$transaction(
       locations.map((location, index) => prisma.timeEntry.create({
         data: {
+        orgId: requireOrgId(),
         employeeId,
         month,
         periodStart,
@@ -412,6 +413,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       for (const location of locations.slice(1)) {
         created.push(await tx.timeEntry.create({
           data: {
+            orgId: requireOrgId(),
             employeeId: before.employeeId, month, periodStart, periodEnd, site: location.site,
             startTime: location.startTime, endTime: location.endTime, breakMinutes: location.breakMinutes,
             status, daysWorked: (location.shiftHours ?? 0) > 0 ? 1 : 0, hoursWorked: location.shiftHours ?? 0,
@@ -709,6 +711,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const rows = await prisma.$transaction(
       locations.map((location) => prisma.timeEntry.create({
         data: {
+        orgId: requireOrgId(),
         employeeId: eid,
         month,
         periodStart,

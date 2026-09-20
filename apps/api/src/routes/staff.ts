@@ -1,4 +1,4 @@
-import { prisma, Role, StaffAnnouncementAudience, UserStatus } from "@kleentoditee/db";
+import { requireOrgId, prisma, Role, StaffAnnouncementAudience, UserStatus } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -198,6 +198,7 @@ export const staffRoutes = new Hono<{ Variables: AuthVariables }>()
     await prisma.$transaction(async (tx) => {
       await tx.staffQuizAttempt.create({
         data: {
+          orgId: requireOrgId(),
           employeeId: eid,
           questionId: q.id,
           selectedIndex,
@@ -208,6 +209,7 @@ export const staffRoutes = new Hono<{ Variables: AuthVariables }>()
       if (correct && pointsAwarded > 0) {
         await tx.rewardLedger.create({
           data: {
+            orgId: requireOrgId(),
             employeeId: eid,
             points: pointsAwarded,
             reason: "Daily quiz (correct answer)"
