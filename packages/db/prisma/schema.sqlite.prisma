@@ -3,9 +3,7 @@ generator client {
 }
 
 datasource db {
-  // Production, staging, and CI use PostgreSQL with Prisma migrations.
-  // For local SQLite fallback, use prisma/schema.sqlite.prisma explicitly.
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 /// Matches master plan Task 4 role list.
@@ -137,7 +135,6 @@ enum PayRunStatus {
   finalized
   exported
   paid
-  void
 }
 
 model DeductionTemplate {
@@ -165,20 +162,6 @@ enum EmployeeDocumentType {
   OTHER
 }
 
-enum PayrollTaxClass {
-  NOT_SET
-  CLASS_1
-  CLASS_2
-}
-
-enum WorkAuthorizationStatus {
-  NOT_SPECIFIED
-  WORK_PERMIT
-  BELONGER
-  RESIDENT
-  BV_ISLANDER
-}
-
 model Employee {
   id            String            @id @default(cuid())
   createdAt     DateTime          @default(now())
@@ -188,7 +171,6 @@ model Employee {
   role          String            @default("")
   defaultSite   String            @default("")
   phone         String            @default("")
-  email         String            @default("")
   /// Storage object key for the current profile image, e.g. `employees/{id}/profile-{cuid}.jpg`.
   profilePhotoPath String?
   /// Sensitive — not exposed in list APIs or employee-tracker; audit logs must redact.
@@ -198,7 +180,6 @@ model Employee {
   inlandRevenueDepartmentNumber String @default("")
   employmentStartDate  DateTime?
   employmentEndDate    DateTime?
-  workAuthorizationStatus WorkAuthorizationStatus @default(NOT_SPECIFIED)
   workPermitNumber     String  @default("")
   workPermitExpiryDate DateTime?
   basePayType   PayBasis          @default(daily)
@@ -210,16 +191,12 @@ model Employee {
   standardHours Float             @default(0)
   paySchedule   PaySchedule       @default(monthly)
   active        Boolean           @default(true)
-  /// Applies the employer's annual payroll-tax exemption to this employee.
-  payrollTaxExemptionEnabled Boolean @default(true)
   notes         String            @default("")
   templateId    String
   template      DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
 
   timeEntries  TimeEntry[]
   payRunItems  PayRunItem[]
-
-  ytdOpeningBalances PayrollYtdOpeningBalance[]
   linkedUser   User?
   documents    EmployeeDocument[]
   staffRequests    StaffRequest[]
@@ -231,7 +208,6 @@ model Employee {
   @@index([templateId])
   @@index([active])
   @@index([fullName])
-  @@index([email])
   @@index([paySchedule, active])
 }
 
@@ -240,7 +216,6 @@ enum StaffRequestType {
   JOB_LETTER
   TIME_OFF
   SICK_LEAVE
-  UNPAID_LEAVE
   PROFILE_UPDATE
   SUPPLIES_REQUEST
   EQUIPMENT_UNIFORM_REQUEST
@@ -322,9 +297,6 @@ model TimeEntry {
   periodStart           DateTime?
   periodEnd             DateTime?
   site                  String          @default("")
-  startTime             String          @default("")
-  endTime               String          @default("")
-  breakMinutes          Int             @default(0)
   status                TimeEntryStatus @default(draft)
   daysWorked            Float           @default(0)
   hoursWorked           Float           @default(0)
@@ -370,24 +342,17 @@ model PayRun {
   id         String        @id @default(cuid())
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
-  // Not @unique: a period may have at most one ACTIVE (non-void) run, but a
-  // voided run is kept for audit while a corrected run is created. The
-  // "one active run per period" rule is enforced in the payroll service.
-  periodId   String
+  periodId   String        @unique
   period     PayPeriod     @relation(fields: [periodId], references: [id], onDelete: Cascade)
   status     PayRunStatus  @default(draft)
   notes      String        @default("")
   finalizedAt DateTime?
   exportedAt DateTime?
   paidAt     DateTime?
-  voidedAt   DateTime?
-  /// Immutable statutory/company settings used to calculate this run.
-  statutorySnapshot Json?
   items      PayRunItem[]
   exports    PayrollExport[]
 
   @@index([status])
-  @@index([periodId])
 }
 
 model PayRunItem {
@@ -410,10 +375,6 @@ model PayRunItem {
   nhi                 Float       @default(0)
   ssb                 Float       @default(0)
   incomeTax           Float       @default(0)
-  payrollTax          Float       @default(0)
-  employerNhi         Float       @default(0)
-  employerSsb         Float       @default(0)
-  employerPayrollTax  Float       @default(0)
   manualDeductions    Float       @default(0)
   totalDeductions     Float       @default(0)
   net                 Float       @default(0)
@@ -427,11 +388,6 @@ model PayRunItem {
   withdrawalDeduction Float       @default(0)
   loanDeduction       Float       @default(0)
   otherDeduction      Float       @default(0)
-  /// Approved unpaid-leave business days in this run's period and the pro-rated
-  /// fixed-pay reduction already applied to `gross` (fixed-basis employees only;
-  /// daily/hourly staff simply have no time entries on unpaid-leave days).
-  unpaidLeaveDays      Float       @default(0)
-  unpaidLeaveDeduction Float       @default(0)
   paystub             Paystub?
 
   @@unique([runId, employeeId])
@@ -460,49 +416,6 @@ model PayrollExport {
   contents  String
 
   @@index([runId])
-}
-
-/// Organization-level payroll configuration (single row, id "singleton").
-/// Surfaces the centralized BVI statutory config so it can be edited in admin
-/// settings instead of living as hardcoded placeholders in code.
-///
-model OrgSettings {
-  id        String   @id @default("singleton")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// Legal company name printed on paystubs and exports.
-  companyLegalName String @default("")
-  companyAddress   String @default("")
-  ssbEmployerNumber String @default("")
-  nhiEmployerNumber String @default("")
-  /// PNG data URL used only on authenticated statutory-form exports.
-  statutorySignatureDataUrl String @default("")
-
-  /// Pay calendar defaults used when creating new pay periods.
-  defaultPaySchedule   PaySchedule @default(monthly)
-  defaultPayDayOfMonth Int         @default(0)
-
-  /// BVI Social Security Board contribution (employee/employer split + ceiling).
-  ssbEmployeeRate  Float   @default(0.04)
-  ssbEmployerRate  Float   @default(0.045)
-  ssbPeriodCeiling Float   @default(0)
-  ssbAnnualCeiling Float   @default(53400)
-  ssbEnabled       Boolean @default(true)
-
-  /// BVI National Health Insurance contribution (employee/employer split + ceiling).
-  nhiEmployeeRate  Float   @default(0.0375)
-  nhiEmployerRate  Float   @default(0.0375)
-  nhiPeriodCeiling Float   @default(0)
-  nhiAnnualCeiling Float   @default(106800)
-  nhiEnabled       Boolean @default(true)
-
-  /// BVI payroll tax: employee withholding plus the employer's Class 1/2 share.
-  payrollTaxEnabled         Boolean         @default(true)
-  payrollTaxEmployeeRate    Float           @default(0.08)
-  payrollTaxEmployerClass   PayrollTaxClass @default(NOT_SET)
-  payrollTaxAnnualExemption Float           @default(10000)
-  statutoryEffectiveYear    Int             @default(2026)
 }
 
 /// Finance master data (Phase 3 Task 9).
@@ -548,7 +461,6 @@ model Account {
   expensesAsPayment  Expense[]     @relation("ExpensePaymentAccount")
   expenseLines       ExpenseLine[] @relation("ExpenseLineExpenseAccount")
   depositsAsBank     Deposit[]     @relation("DepositBankAccount")
-  journalLines       JournalLine[]
 
   @@index([type, active])
   @@index([parentId])
@@ -1041,165 +953,4 @@ model DepositLine {
 
   @@index([depositId, position])
   @@index([paymentId])
-}
-
-// --- General ledger (Batch 8, R7) ---
-// Double-entry journal core. Every posted business document writes exactly one
-// balanced journal identified by a unique sourceKey (idempotent re-posts).
-// Corrections never edit posted rows: a reversal journal (sourceType suffixed
-// `_reversal`, reversalOfId pointing at the original) undoes the original.
-
-enum JournalEntryStatus {
-  posted
-  void
-}
-
-model JournalEntry {
-  id              String             @id @default(cuid())
-  createdAt       DateTime           @default(now())
-  date            DateTime
-  memo            String             @default("")
-  /// invoice | payment | bill | bill_payment | expense | payroll_run (+ `_reversal` variants)
-  sourceType      String
-  sourceId        String
-  /// Unique idempotency key: `${sourceType}:${sourceId}`.
-  sourceKey       String             @unique
-  status          JournalEntryStatus @default(posted)
-  reversalOfId    String?
-  reversalOf      JournalEntry?      @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
-  reversals       JournalEntry[]     @relation("JournalReversal")
-  createdByUserId String?
-  lines           JournalLine[]
-
-  @@index([date])
-  @@index([sourceType, sourceId])
-  @@index([status])
-}
-
-model JournalLine {
-  id        String       @id @default(cuid())
-  createdAt DateTime     @default(now())
-  entryId   String
-  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  position  Int
-  accountId String
-  account   Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  /// Decimal money: exactly one of debit/credit is > 0 per line.
-  debit     Decimal      @default(0) @db.Decimal(14, 2)
-  credit    Decimal      @default(0) @db.Decimal(14, 2)
-  memo      String       @default("")
-
-  @@index([entryId, position])
-  @@index([accountId])
-}
-
-/// Versioned BVI statutory rate record. One row per effective tax year.
-/// Payroll calculations keep reading OrgSettings; this table is the
-/// audit/verification source of truth that those live values must match.
-/// A version counts as verified only when sourceUrl is set and verifiedAt
-/// is filled, and as approved for live use only when approvedAt is filled.
-model StatutoryRateVersion {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// Tax year the rates apply to (e.g. 2026).
-  effectiveYear Int
-  /// Optional in-year effective range for mid-year rate changes.
-  effectiveFrom DateTime?
-  effectiveTo   DateTime?
-
-  /// BVI Social Security Board contribution.
-  ssbEmployeeRate  Float
-  ssbEmployerRate  Float
-  ssbAnnualCeiling Float
-  ssbEnabled       Boolean @default(true)
-
-  /// BVI National Health Insurance contribution.
-  nhiEmployeeRate  Float
-  nhiEmployerRate  Float
-  nhiAnnualCeiling Float
-  nhiEnabled       Boolean @default(true)
-
-  /// BVI payroll tax (employee withholding + employer Class 1/2 share).
-  payrollTaxEmployeeRate    Float
-  payrollTaxEmployerClass   PayrollTaxClass @default(NOT_SET)
-  payrollTaxAnnualExemption Float
-  payrollTaxEnabled         Boolean         @default(true)
-
-  /// Official source the values were checked against (laws.gov.vg, bvissb.vg, vinhi.vg, IRD).
-  sourceUrl String @default("")
-  /// When the values were last compared against the official source.
-  verifiedAt DateTime?
-  verifiedBy String @default("")
-  /// Owner / qualified BVI payroll-professional sign-off before live use.
-  approvedAt DateTime?
-  approvedBy String @default("")
-
-  @@index([effectiveYear])
-}
-
-/// Database-backed rate limiting for authentication endpoints
-/// (sign-in attempts per IP+email, password-reset request intervals).
-/// Replaces the previous in-memory maps so limits survive restarts and
-/// work when more than one API process is running.
-model AuthRateLimit {
-  id     String   @id @default(cuid())
-  /// Unique bucket key, e.g. "login:192.168.1.1:user@example.com" or "reset:user@example.com".
-  key    String   @unique
-  count  Int      @default(0)
-  /// Attempts after this instant start a new window.
-  resetAt DateTime
-
-  @@index([resetAt])
-}
-
-/// Opening year-to-date payroll balances for employees whose pay history
-/// predates this system (imported from a previous payroll provider).
-/// `gross` feeds the payroll-tax annual-exemption calculation so mid-year
-/// migrations tax the remainder of the year correctly; the other components
-/// are kept for audit and future register/reconciliation reports.
-model PayrollYtdOpeningBalance {
-  id         String   @id @default(cuid())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  /// Calendar year these opening balances apply to.
-  year       Int
-  gross      Float    @default(0)
-  nhi        Float    @default(0)
-  ssb        Float    @default(0)
-  incomeTax  Float    @default(0)
-  payrollTax Float    @default(0)
-  employerNhi         Float @default(0)
-  employerSsb         Float @default(0)
-  employerPayrollTax  Float @default(0)
-  net        Float    @default(0)
-  /// How the balance was recorded, e.g. "csv-import" or "manual".
-  source     String   @default("csv-import")
-  notes      String   @default("")
-  importedBy String   @default("")
-
-  @@unique([employeeId, year])
-  @@index([year])
-}
-
-/// Leave policy: maps a staff-request type to a paid/unpaid leave scheme with
-/// an optional annual allowance (0 = untracked). Approved requests consume
-/// the allowance; unpaid-policy requests reduce fixed-basis pay pro-rata.
-model LeavePolicy {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  /// Stable machine code, e.g. ANNUAL, SICK, UNPAID.
-  code      String   @unique
-  name      String
-  /// Staff-request type whose approved requests count against this policy.
-  requestType StaffRequestType @unique
-  paid      Boolean  @default(true)
-  /// Business days per calendar year per employee; 0 means untracked/unlimited.
-  annualAllowanceDays Float @default(0)
-  active    Boolean  @default(true)
-  sortOrder Int      @default(0)
 }

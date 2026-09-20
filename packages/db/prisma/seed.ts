@@ -117,7 +117,7 @@ async function main() {
     data: {
       fullName: "Maria Monthly",
       role: "Lead cleaner",
-      defaultSite: "San Pedro",
+      defaultSite: "Road Town",
       phone: "501-600-0101",
       basePayType: PayBasis.daily,
       paySchedule: PaySchedule.monthly,
@@ -128,11 +128,13 @@ async function main() {
       standardDays: 20,
       standardHours: 0,
       active: true,
-      notes: "Seeded monthly employee",
+      notes: "",
       templateId: standardTemplate.id
     }
   });
 
+  // Tracker demo user: active, employee_tracker_user only, same bcrypt hash as seed admin,
+  // linked to Maria Monthly employee (required for /time/self/*).
   const mariaEmail = "maria.tracker@kleentoditee.local";
   await prisma.user.create({
     data: {
@@ -154,8 +156,8 @@ async function main() {
       date: todayUtc,
       startTime: "08:00",
       endTime: "16:00",
-      locationName: "San Pedro – Main site",
-      locationAddress: "Seeded demo address",
+      locationName: "Road Town - Main site",
+      locationAddress: "",
       notes: "Bring your ID badge.",
       status: WorkAssignmentStatus.SCHEDULED,
       createdByUserId: adminForSeed?.id
@@ -164,7 +166,7 @@ async function main() {
   await prisma.staffAnnouncement.create({
     data: {
       title: "Welcome to Staff Hub",
-      body: "Check Today for your work location. Seeded announcement for local dev — not a payroll notice.",
+      body: "Check Today for your work location.",
       category: StaffAnnouncementCategory.GENERAL,
       audience: StaffAnnouncementAudience.EMPLOYEES,
       active: true,
@@ -185,7 +187,7 @@ async function main() {
     data: {
       fullName: "Wendy Weekly",
       role: "Site supervisor",
-      defaultSite: "Belize City",
+      defaultSite: "Virgin Gorda",
       phone: "501-600-0102",
       basePayType: PayBasis.hourly,
       paySchedule: PaySchedule.weekly,
@@ -196,7 +198,7 @@ async function main() {
       standardDays: 5,
       standardHours: 40,
       active: true,
-      notes: "Seeded weekly employee",
+      notes: "",
       templateId: taxedTemplate.id
     }
   });
@@ -216,7 +218,7 @@ async function main() {
       standardDays: 10,
       standardHours: 80,
       active: true,
-      notes: "Seeded biweekly employee",
+      notes: "",
       templateId: manualTemplate.id
     }
   });
@@ -239,7 +241,7 @@ async function main() {
         applyNhi: true,
         applySsb: true,
         applyIncomeTax: false,
-        notes: "Seeded monthly payroll-ready entry"
+        notes: ""
       },
       {
         employeeId: weeklyEmployee.id,
@@ -257,7 +259,7 @@ async function main() {
         applyNhi: true,
         applySsb: true,
         applyIncomeTax: true,
-        notes: "Seeded weekly payroll-ready entry"
+        notes: ""
       },
       {
         employeeId: biweeklyEmployee.id,
@@ -277,7 +279,7 @@ async function main() {
         applyIncomeTax: false,
         advanceDeduction: 25,
         otherDeduction: 10,
-        notes: "Seeded biweekly payroll-ready entry"
+        notes: ""
       }
     ]
   });
@@ -312,7 +314,7 @@ async function main() {
     ]
   });
 
-  // One pay period for dashboard and smoke tests (GET /payroll/periods).
+  // One pay period for the dashboard.
   await prisma.payPeriod.create({
     data: {
       label: "April 2026 (monthly)",
@@ -320,7 +322,7 @@ async function main() {
       startDate: new Date("2026-04-01T00:00:00.000Z"),
       endDate: new Date("2026-04-30T00:00:00.000Z"),
       payDate: new Date("2026-04-28T00:00:00.000Z"),
-      notes: "Seeded pay period for smoke tests and home dashboard"
+      notes: ""
     }
   });
 
@@ -386,14 +388,36 @@ async function main() {
   void ap;
   void cogs;
 
+  // GL control accounts (Batch 8) — upsert by code so reseeds stay additive.
+  // The API's posting engine auto-provisions these too; seeding keeps a fresh
+  // install complete without posting activity.
+  const controlAccounts = [
+    { code: "2100", name: "NHI Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
+    { code: "2200", name: "SSB Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
+    { code: "2300", name: "Payroll Tax Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
+    { code: "2400", name: "Income Tax Withheld Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
+    { code: "2500", name: "Net Wages Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
+    { code: "2600", name: "Other Payroll Deductions Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
+    { code: "2700", name: "Tax Payable", type: AccountType.liability, subtype: "Taxes" },
+    { code: "6100", name: "Wages & Salaries", type: AccountType.expense, subtype: "Payroll" },
+    { code: "6200", name: "Employer Statutory Contributions", type: AccountType.expense, subtype: "Payroll" }
+  ];
+  for (const account of controlAccounts) {
+    await prisma.account.upsert({
+      where: { code: account.code },
+      update: {},
+      create: { ...account, description: "GL control account" }
+    });
+  }
+
   const sampleCustomer = await prisma.customer.create({
     data: {
-      displayName: "Belize Bay Resort",
-      companyName: "Belize Bay Resort Ltd.",
+      displayName: "Tortola Bay Resort",
+      companyName: "Tortola Bay Resort Ltd.",
       primaryContact: "Sandra Torres",
-      email: "ap@belizebay.example",
+      email: "ap@tortolabay.example",
       phone: "501-500-7001",
-      billingAddress: "Marine Parade, Belize City",
+      billingAddress: "Road Town, Tortola, British Virgin Islands",
       notes: "Weekly housekeeping contract"
     }
   });
@@ -431,7 +455,7 @@ async function main() {
       customerId: sampleCustomer.id,
       issueDate: new Date(`${year}-04-15T00:00:00.000Z`),
       dueDate: new Date(`${year}-05-15T00:00:00.000Z`),
-      memo: "Seeded draft invoice - weekly housekeeping",
+      memo: "Weekly housekeeping",
       subtotal: 300,
       taxTotal: 0,
       total: 300,
@@ -459,7 +483,7 @@ async function main() {
       supplierId: sampleSupplier.id,
       billDate: new Date(`${year}-04-18T00:00:00.000Z`),
       dueDate: new Date(`${year}-05-18T00:00:00.000Z`),
-      memo: "Seeded draft bill - monthly consumables",
+      memo: "Monthly consumables",
       subtotal: 145,
       taxTotal: 0,
       total: 145,
@@ -487,6 +511,52 @@ async function main() {
       }
     }
   });
+
+  // Statutory verification baseline: seed the current year's BVI rates as an
+  // UNVERIFIED version (no source/verification/approval). Payroll keeps using
+  // OrgSettings; this row records what the live defaults claim to be so the
+  // settings UI can flag them until they are checked against official sources.
+  const statutoryYear = new Date().getFullYear();
+  const existingVersion = await prisma.statutoryRateVersion.findFirst({
+    where: { effectiveYear: statutoryYear }
+  });
+  if (!existingVersion) {
+    await prisma.statutoryRateVersion.create({
+      data: {
+        effectiveYear: statutoryYear,
+        ssbEmployeeRate: 0.04,
+        ssbEmployerRate: 0.045,
+        ssbAnnualCeiling: 53400,
+        ssbEnabled: true,
+        nhiEmployeeRate: 0.0375,
+        nhiEmployerRate: 0.0375,
+        nhiAnnualCeiling: 106800,
+        nhiEnabled: true,
+        payrollTaxEmployeeRate: 0.08,
+        payrollTaxEmployerClass: "NOT_SET",
+        payrollTaxAnnualExemption: 10000,
+        payrollTaxEnabled: true,
+        sourceUrl: "",
+        verifiedBy: "",
+        approvedBy: ""
+      }
+    });
+  }
+
+  // Leave policies (R8): default annual/sick/unpaid schemes. Upsert by code so
+  // seeding never overwrites admin edits to allowances or paid flags.
+  const defaultLeavePolicies = [
+    { code: "ANNUAL", name: "Annual vacation", requestType: "TIME_OFF" as const, paid: true, annualAllowanceDays: 15, sortOrder: 1 },
+    { code: "SICK", name: "Sick leave", requestType: "SICK_LEAVE" as const, paid: true, annualAllowanceDays: 10, sortOrder: 2 },
+    { code: "UNPAID", name: "Unpaid leave", requestType: "UNPAID_LEAVE" as const, paid: false, annualAllowanceDays: 0, sortOrder: 3 }
+  ];
+  for (const policy of defaultLeavePolicies) {
+    await prisma.leavePolicy.upsert({
+      where: { code: policy.code },
+      create: policy,
+      update: {}
+    });
+  }
 
   console.log(
     `Seeded templates, admin, one pay period, employee tracker login, payroll-ready time, sample staff requests (time off, job letter, supplies), finance (accounts, customer, AR/AP), and draft invoice + bill. Admin: ${email} / ${password} — Tracker: maria.tracker@kleentoditee.local / ${password}`
