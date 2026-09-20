@@ -381,6 +381,8 @@ model PayRun {
   exportedAt DateTime?
   paidAt     DateTime?
   voidedAt   DateTime?
+  /// Set when the run's NHI/SSB/payroll-tax liabilities were remitted (GL journal posted).
+  statutoryRemittedAt DateTime?
   /// Immutable statutory/company settings used to calculate this run.
   statutorySnapshot Json?
   items      PayRunItem[]

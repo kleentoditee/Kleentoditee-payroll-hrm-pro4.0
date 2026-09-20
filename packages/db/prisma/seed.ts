@@ -72,15 +72,18 @@ async function main() {
     }
   });
 
+  // BVI has NO income tax (rate zero since the Payroll Taxes Act, 2004). The
+  // legacy "income tax" template was misleading; payroll tax is computed from the
+  // statutory config, never from template incomeTaxRate (which calc forces to 0).
   const taxedTemplate = await prisma.deductionTemplate.create({
     data: {
-      name: "NHI + SSB + income tax",
+      name: "NHI + SSB (full statutory)",
       nhiRate: 0.0375,
       ssbRate: 0.04,
-      incomeTaxRate: 0.08,
+      incomeTaxRate: 0,
       applyNhi: true,
       applySsb: true,
-      applyIncomeTax: true
+      applyIncomeTax: false
     }
   });
 
@@ -395,7 +398,6 @@ async function main() {
     { code: "2100", name: "NHI Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2200", name: "SSB Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2300", name: "Payroll Tax Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
-    { code: "2400", name: "Income Tax Withheld Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2500", name: "Net Wages Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2600", name: "Other Payroll Deductions Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2700", name: "Tax Payable", type: AccountType.liability, subtype: "Taxes" },
@@ -533,12 +535,12 @@ async function main() {
         nhiAnnualCeiling: 106800,
         nhiEnabled: true,
         payrollTaxEmployeeRate: 0.08,
-        payrollTaxEmployerClass: "NOT_SET",
+        payrollTaxEmployerClass: "CLASS_1",
         payrollTaxAnnualExemption: 10000,
         payrollTaxEnabled: true,
-        sourceUrl: "",
-        verifiedBy: "",
-        approvedBy: ""
+        sourceUrl: "https://bvi.gov.vg/sites/default/files/resources/Guide%20to%20Payroll%20Tax.pdf",
+        verifiedBy: "Kimi Batch 11 (2026-09-19): NHI 2026 bulletin vinhi.vg; SSB form bvissb.vg",
+        approvedBy: "Owner directive 2026-09-19"
       }
     });
   }
@@ -547,7 +549,7 @@ async function main() {
   // seeding never overwrites admin edits to allowances or paid flags.
   const defaultLeavePolicies = [
     { code: "ANNUAL", name: "Annual vacation", requestType: "TIME_OFF" as const, paid: true, annualAllowanceDays: 15, sortOrder: 1 },
-    { code: "SICK", name: "Sick leave", requestType: "SICK_LEAVE" as const, paid: true, annualAllowanceDays: 10, sortOrder: 2 },
+    { code: "SICK", name: "Sick leave", requestType: "SICK_LEAVE" as const, paid: true, annualAllowanceDays: 12, sortOrder: 2 },
     { code: "UNPAID", name: "Unpaid leave", requestType: "UNPAID_LEAVE" as const, paid: false, annualAllowanceDays: 0, sortOrder: 3 }
   ];
   for (const policy of defaultLeavePolicies) {
