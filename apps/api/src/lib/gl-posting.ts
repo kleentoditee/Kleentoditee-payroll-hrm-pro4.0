@@ -9,6 +9,7 @@
  *  - corrections are reversal journals, never edits to posted rows.
  */
 import { requireOrgId, prisma, type Prisma } from "@kleentoditee/db";
+import { assertPeriodOpen } from "./fiscal-periods.js";
 
 export const GL_TOLERANCE = 0.005;
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -27,6 +28,7 @@ export type ControlAccountKey =
   | "payrollTaxPayable"
   | "netWagesPayable"
   | "otherDeductionsPayable"
+  | "undepositedFunds"
   | "wagesExpense"
   | "employerStatutoryExpense";
 
@@ -42,6 +44,7 @@ export const CONTROL_ACCOUNTS: Record<
   payrollTaxPayable: { code: "2300", name: "Payroll Tax Payable", type: "liability", subtype: "Payroll Liabilities" },
   netWagesPayable: { code: "2500", name: "Net Wages Payable", type: "liability", subtype: "Payroll Liabilities" },
   otherDeductionsPayable: { code: "2600", name: "Other Payroll Deductions Payable", type: "liability", subtype: "Payroll Liabilities" },
+  undepositedFunds: { code: "1150", name: "Undeposited Funds", type: "asset", subtype: "Cash and Cash Equivalents" },
   wagesExpense: { code: "6100", name: "Wages & Salaries", type: "expense", subtype: "Payroll" },
   employerStatutoryExpense: { code: "6200", name: "Employer Statutory Contributions", type: "expense", subtype: "Payroll" }
 };
@@ -329,6 +332,50 @@ export async function findAccountIdByCode(db: DbClient, code: string): Promise<s
 // DB-backed posting (idempotent by sourceKey)
 // ---------------------------------------------------------------------------
 
+
+/**
+ * Deposit posting via undeposited funds (Batch 13): Dr the deposit's bank
+ * account for the total; Cr Undeposited Funds for payment-linked lines (their
+ * receipts already debited UF); Cr each ad-hoc line's attributed account.
+ */
+export function buildDepositPostedJournal(input: {
+  id: string;
+  number: string;
+  depositDate: Date;
+  bankAccountId: string;
+  total: number;
+  /** Resolved Undeposited Funds account id (from ensureControlAccounts). */
+  undepositedFundsAccountId: string;
+  /** Payment-linked line amounts (credit UF). */
+  paymentAmounts: Array<{ number: string; amount: number }>;
+  /** Ad-hoc lines with account attribution. */
+  adhocLines: Array<{ accountId: string; amount: number; description: string }>;
+}): GlJournalInput {
+  const lines: GlLineInput[] = [
+    { accountId: input.bankAccountId, debit: round2(input.total), memo: `Deposit ${input.number}` }
+  ];
+  const ufTotal = round2(input.paymentAmounts.reduce((s, p) => s + p.amount, 0));
+  if (ufTotal > 0) {
+    lines.push({
+      accountId: input.undepositedFundsAccountId,
+      credit: ufTotal,
+      memo: `Undeposited funds cleared by ${input.number}`
+    });
+  }
+  for (const l of input.adhocLines) {
+    lines.push({ accountId: l.accountId, credit: round2(l.amount), memo: l.description || `Deposit ${input.number}` });
+  }
+  return {
+    sourceType: "deposit_posted",
+    sourceId: input.id,
+    date: input.depositDate,
+    memo: `Deposit ${input.number}`,
+    lines
+  };
+}
+
+// ---------------------------------------------------------------------------
+
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
 export type PostResult = { entryId: string; sourceKey: string; created: boolean };
@@ -364,6 +411,9 @@ export async function ensureControlAccounts(db: DbClient): Promise<Record<Contro
 export async function postJournal(db: DbClient, input: GlJournalInput, createdByUserId?: string | null): Promise<PostResult> {
   const lines = validateJournalLines(input.lines);
   const key = sourceKey(input.sourceType, input.sourceId);
+
+  // Batch 13: every posting is period-controlled (soft_closed/locked reject).
+  await assertPeriodOpen(db, input.date);
 
   const existing = await db.journalEntry.findFirst({ where: { sourceKey: key }, select: { id: true } });
   if (existing) {

@@ -170,6 +170,95 @@ export const financeReportsRoutes = new Hono<{ Variables: AuthVariables }>().get
     const entries = await listJournalEntries({ from, to, sourceType: c.req.query("sourceType") || undefined });
     return c.json({ entries });
   })
+  .get("/reports/control-reconciliation", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    // GL control account balances (posted + void-with-reversal journals; drafts excluded) vs operational subledgers.
+    const controlCodes = ["1100", "2000", "2100", "2200", "2300", "2500"];
+    const accounts = await prisma.account.findMany({
+      where: { code: { in: controlCodes } },
+      select: { id: true, code: true, name: true, type: true }
+    });
+    const byCode = new Map(accounts.map((a) => [a.code, a]));
+    const glLines = await prisma.journalLine.findMany({
+      where: { entry: { status: { in: ["posted", "void"] } }, accountId: { in: accounts.map((a) => a.id) } },
+      select: { accountId: true, debit: true, credit: true }
+    });
+    const glBalance = new Map<string, number>();
+    for (const l of glLines) {
+      const acc = accounts.find((a) => a.id === l.accountId)!;
+      const sign = acc.type === "asset" || acc.type === "expense" ? 1 : -1;
+      glBalance.set(acc.code, money((glBalance.get(acc.code) ?? 0) + (Number(l.debit) - Number(l.credit)) * sign));
+    }
+
+    // Subledgers.
+    const openInvoices = await prisma.invoice.findMany({
+      where: { status: { in: ["open", "partial"] } },
+      select: { balance: true }
+    });
+    const unappliedPayments = await prisma.payment.findMany({
+      where: { unapplied: { gt: 0 } },
+      select: { unapplied: true }
+    });
+    const arSub = money(openInvoices.reduce((s, i) => s + i.balance, 0) - unappliedPayments.reduce((s, p) => s + p.unapplied, 0));
+
+    const openBills = await prisma.bill.findMany({
+      where: { status: { in: ["open", "partial"] } },
+      select: { balance: true }
+    });
+    const unappliedBillPayments = await prisma.billPayment.findMany({
+      where: { unapplied: { gt: 0 } },
+      select: { unapplied: true }
+    });
+    const apSub = money(openBills.reduce((s, b) => s + b.balance, 0) - unappliedBillPayments.reduce((s, p) => s + p.unapplied, 0));
+
+    // Payroll subledger: finalized/exported/paid runs not yet statutory-remitted
+    // carry open NHI/SSB/payroll-tax liabilities; not-yet-paid runs carry net wages.
+    const openRuns = await prisma.payRun.findMany({
+      where: { status: { in: ["finalized", "exported", "paid"] } },
+      select: {
+        status: true,
+        statutoryRemittedAt: true,
+        items: {
+          select: {
+            net: true, nhi: true, employerNhi: true, ssb: true, employerSsb: true,
+            payrollTax: true, employerPayrollTax: true
+          }
+        }
+      }
+    });
+    let nhiSub = 0, ssbSub = 0, ptaxSub = 0, netSub = 0;
+    for (const run of openRuns) {
+      for (const item of run.items) {
+        if (!run.statutoryRemittedAt) {
+          nhiSub += item.nhi + item.employerNhi;
+          ssbSub += item.ssb + item.employerSsb;
+          ptaxSub += item.payrollTax + item.employerPayrollTax;
+        }
+        if (run.status !== "paid") netSub += item.net;
+      }
+    }
+
+    const rows = [
+      { code: "1100", name: "Accounts Receivable", subledger: arSub },
+      { code: "2000", name: "Accounts Payable", subledger: apSub },
+      { code: "2100", name: "NHI Payable", subledger: money(nhiSub) },
+      { code: "2200", name: "SSB Payable", subledger: money(ssbSub) },
+      { code: "2300", name: "Payroll Tax Payable", subledger: money(ptaxSub) },
+      { code: "2500", name: "Net Wages Payable", subledger: money(netSub) }
+    ].map((r) => {
+      const gl = money(glBalance.get(r.code) ?? 0);
+      const difference = money(gl - r.subledger);
+      return {
+        code: r.code,
+        name: byCode.get(r.code)?.name ?? r.name,
+        accountPresent: byCode.has(r.code),
+        glBalance: gl,
+        subledgerBalance: r.subledger,
+        difference,
+        status: Math.abs(difference) < 0.005 ? "ok" : "mismatch"
+      };
+    });
+    return c.json({ rows, allOk: rows.every((r) => r.status === "ok") });
+  })
   .get("/reports/ledger/:accountId", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const fromParam = c.req.query("from");
     const toParam = c.req.query("to");

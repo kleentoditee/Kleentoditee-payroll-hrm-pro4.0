@@ -1,6 +1,8 @@
 import { requireOrgId, AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
+import { buildDepositPostedJournal, ensureControlAccounts, postJournal, reverseJournal } from "../lib/gl-posting.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { MONEY_TOLERANCE, nextDepositNumber, round2 } from "../lib/finance-transactions.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
@@ -28,6 +30,7 @@ function parseDate(value: unknown): Date | null {
 
 type IncomingLine = {
   paymentId?: string | null;
+  accountId?: string | null;
   description?: string;
   amount: number;
   position?: number;
@@ -119,6 +122,12 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
         : [];
       const paymentById = new Map(payments.map((p) => [p.id, p]));
 
+      const requestedAccountIds = [...new Set(rawLines.map((l) => l.accountId).filter((v): v is string => typeof v === "string" && v.length > 0))];
+      const validAccountRows = requestedAccountIds.length
+        ? await prisma.account.findMany({ where: { id: { in: requestedAccountIds } }, select: { id: true } })
+        : [];
+      const validAccountIds = new Set(validAccountRows.map((a) => a.id));
+
       const resolvedLines = rawLines.map((line, index) => {
         const paymentId = line.paymentId ? String(line.paymentId).trim() : null;
         const amount = round2(Number(line.amount ?? 0));
@@ -144,9 +153,17 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
             );
           }
         }
+        let accountId: string | null = null;
+        if (!paymentId) {
+          accountId = line.accountId ? String(line.accountId).trim() : null;
+          if (accountId && !validAccountIds.has(accountId)) {
+            throw new Error(`Line ${index + 1}: offset account not found.`);
+          }
+        }
         return {
           position: line.position ?? index + 1,
           paymentId,
+          accountId,
           description: String(line.description ?? ""),
           amount
         };
@@ -211,6 +228,15 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
       )
     );
 
+    // Batch 13: ad-hoc (non-payment) lines need an offset account for the GL.
+    const adhocMissing = before.lines.filter((l) => !l.paymentId && !l.accountId);
+    if (adhocMissing.length > 0) {
+      return c.json(
+        { error: "Ad-hoc deposit lines need an offset account before posting. Edit the deposit and choose an account for each line." },
+        400
+      );
+    }
+
     const now = new Date();
     let row;
     try {
@@ -237,6 +263,22 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
           where: { id },
           data: { status: TransactionStatus.open, postedAt: now }
         });
+        const accounts = await ensureControlAccounts(tx);
+        const linkedPayments = paymentIds.length
+          ? await tx.payment.findMany({ where: { id: { in: paymentIds } }, select: { number: true, amount: true } })
+          : [];
+        await postJournal(tx, buildDepositPostedJournal({
+          id,
+          number: before.number,
+          depositDate: before.depositDate,
+          bankAccountId: before.bankAccountId,
+          total: before.total,
+          undepositedFundsAccountId: accounts.undepositedFunds,
+          paymentAmounts: linkedPayments,
+          adhocLines: before.lines
+            .filter((l) => !l.paymentId && l.accountId)
+            .map((l) => ({ accountId: l.accountId as string, amount: l.amount, description: l.description }))
+        }), c.get("userId"));
         return tx.deposit.findUnique({
           where: { id },
           include: {
@@ -249,7 +291,7 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
         });
       });
     } catch (e) {
-      if (e instanceof DepositConflictError) {
+      if (e instanceof DepositConflictError || e instanceof PeriodClosedError) {
         return c.json({ error: e.message }, 409);
       }
       return c.json({ error: e instanceof Error ? e.message : "Could not post deposit." }, 400);
@@ -293,6 +335,13 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
         where: { id },
         data: { status: TransactionStatus.void, voidedAt: now }
       });
+      if (before.status === TransactionStatus.open) {
+        await reverseJournal(tx, "deposit_posted", id, {
+          date: now,
+          memo: `Void deposit ${before.number}`,
+          createdByUserId: c.get("userId")
+        });
+      }
       return tx.deposit.findUnique({
         where: { id },
         include: {

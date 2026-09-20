@@ -105,10 +105,15 @@ export function buildLedgerRows(
 // DB loaders
 // ---------------------------------------------------------------------------
 
+// Reports count posted + void entries: a voided entry is always paired with a
+// posted reversal entry, so including both nets to zero and keeps the full
+// audit trail visible. Draft/approved manual journals are excluded.
+const COUNTED = { in: ["posted" as const, "void" as const] };
+
 export async function loadTrialBalance(asOf?: Date): Promise<TrialBalance & { asOf: string }> {
   const [lines, accounts] = await Promise.all([
     prisma.journalLine.findMany({
-      where: asOf ? { entry: { date: { lte: asOf } } } : undefined,
+      where: { entry: { status: COUNTED, ...(asOf ? { date: { lte: asOf } } : {}) } },
       select: { accountId: true, debit: true, credit: true }
     }),
     prisma.account.findMany({ orderBy: { code: "asc" } })
@@ -128,7 +133,7 @@ export async function loadAccountLedger(accountId: string, from?: Date, to?: Dat
   let opening = 0;
   if (from) {
     const prior = await prisma.journalLine.findMany({
-      where: { accountId, entry: { date: { lt: from } } },
+      where: { accountId, entry: { status: COUNTED, date: { lt: from } } },
       select: { debit: true, credit: true }
     });
     opening = round2(
@@ -139,7 +144,7 @@ export async function loadAccountLedger(accountId: string, from?: Date, to?: Dat
   const lines = await prisma.journalLine.findMany({
     where: {
       accountId,
-      entry: { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+      entry: { status: COUNTED, date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
     },
     orderBy: [{ entry: { date: "asc" } }, { position: "asc" }],
     select: {

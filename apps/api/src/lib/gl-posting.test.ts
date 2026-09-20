@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildBillPaymentJournal,
   buildBillReceivedJournal,
+  buildDepositPostedJournal,
   buildExpensePostedJournal,
   buildInvoiceIssuedJournal,
   buildPaymentReceivedJournal,
@@ -24,6 +25,7 @@ const ACC = {
   incomeTaxPayable: "itax",
   netWagesPayable: "net",
   otherDeductionsPayable: "oth",
+  undepositedFunds: "uf",
   wagesExpense: "wages",
   employerStatutoryExpense: "estat"
 } as const;
@@ -162,6 +164,54 @@ test("payroll run journal balances and splits employee vs employer statutory", (
   const dr = round2(v.reduce((s, l) => s + l.debit, 0));
   const cr = round2(v.reduce((s, l) => s + l.credit, 0));
   assert.equal(dr, cr);
+});
+
+test("deposit posting debits bank, clears undeposited funds, credits ad-hoc accounts", () => {
+  const j = buildDepositPostedJournal({
+    id: "dep1",
+    number: "DEP-2026-0001",
+    depositDate: new Date("2026-09-18T00:00:00Z"),
+    bankAccountId: "bank",
+    total: 950,
+    undepositedFundsAccountId: ACC.undepositedFunds,
+    paymentAmounts: [
+      { number: "PMT-2026-0001", amount: 400 },
+      { number: "PMT-2026-0002", amount: 300 }
+    ],
+    adhocLines: [
+      { accountId: "sales", amount: 200, description: "Walk-in sale" },
+      { accountId: "sales", amount: 50, description: "Tip" }
+    ]
+  });
+  assert.equal(j.sourceType, "deposit_posted");
+  assert.equal(sourceKey(j.sourceType, j.sourceId), "deposit_posted:dep1");
+  const v = validateJournalLines(j.lines);
+  assert.equal(v.find((l) => l.accountId === "bank")?.debit, 950);
+  assert.equal(v.find((l) => l.accountId === "uf")?.credit, 700);
+  // ad-hoc lines stay per-line; the two sales credits sum to 250
+  const salesCredits = v.filter((l) => l.accountId === "sales");
+  assert.equal(salesCredits.length, 2);
+  assert.equal(round2(salesCredits.reduce((s, l) => s + l.credit, 0)), 250);
+  const dr = round2(v.reduce((s, l) => s + l.debit, 0));
+  const cr = round2(v.reduce((s, l) => s + l.credit, 0));
+  assert.equal(dr, cr);
+});
+
+test("ad-hoc-only deposit skips undeposited funds entirely", () => {
+  const j = buildDepositPostedJournal({
+    id: "dep2",
+    number: "DEP-2026-0002",
+    depositDate: new Date(),
+    bankAccountId: "bank",
+    total: 120,
+    undepositedFundsAccountId: ACC.undepositedFunds,
+    paymentAmounts: [],
+    adhocLines: [{ accountId: "other", amount: 120, description: "Owner contribution" }]
+  });
+  const v = validateJournalLines(j.lines);
+  assert.equal(v.find((l) => l.accountId === "uf"), undefined);
+  assert.equal(v.find((l) => l.accountId === "bank")?.debit, 120);
+  assert.equal(v.find((l) => l.accountId === "other")?.credit, 120);
 });
 
 test("reversalLines swaps debit and credit exactly", () => {
