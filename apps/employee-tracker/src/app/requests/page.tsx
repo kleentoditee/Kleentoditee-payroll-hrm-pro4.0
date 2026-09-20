@@ -17,8 +17,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ListRes = { items?: StaffRequest[]; error?: string };
 type OneRes = { item?: StaffRequest; error?: string };
+type LeaveBalance = {
+  code: string;
+  name: string;
+  paid: boolean;
+  allowanceDays: number;
+  usedDays: number;
+  pendingDays: number;
+  remainingDays: number | null;
+};
+type BalancesRes = { rows?: Array<{ balances: LeaveBalance[] }>; error?: string };
 
-const TIME_OFF_TYPES: StaffRequestType[] = ["TIME_OFF", "SICK_LEAVE"];
+const TIME_OFF_TYPES: StaffRequestType[] = ["TIME_OFF", "SICK_LEAVE", "UNPAID_LEAVE"];
 const DETAILS_REQUIRED_TYPES: StaffRequestType[] = [
   "SUPPLIES_REQUEST",
   "EQUIPMENT_UNIFORM_REQUEST",
@@ -47,6 +57,7 @@ export default function RequestsPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [items, setItems] = useState<StaffRequest[]>([]);
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -77,6 +88,19 @@ export default function RequestsPage() {
     setItems(data?.items ?? []);
   }, []);
 
+  const loadBalances = useCallback(async () => {
+    if (!getToken()) {
+      return;
+    }
+    const res = await fetch(`${apiBase()}/staff/self/leave-balances`, {
+      headers: { ...authHeaders() }
+    });
+    const { data } = await readApiJson<BalancesRes>(res);
+    if (res.ok) {
+      setLeaveBalances(data?.rows?.[0]?.balances ?? []);
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -92,10 +116,11 @@ export default function RequestsPage() {
         setReady(true);
       }
     });
+    void loadBalances();
     return () => {
       cancelled = true;
     };
-  }, [load, router]);
+  }, [load, loadBalances, router]);
 
   const showStartEnd = useMemo(() => TIME_OFF_TYPES.includes(type), [type]);
   const showReason = useMemo(() => type === "JOB_LETTER", [type]);
@@ -168,6 +193,7 @@ export default function RequestsPage() {
       setSuccessMsg("Request submitted. We will let you know when it is reviewed.");
       resetForm();
       await load();
+      void loadBalances();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -211,9 +237,40 @@ export default function RequestsPage() {
           href="/"
           className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-700 active:bg-slate-100"
         >
-          ← Time
+          Home
         </Link>
       </header>
+
+      {leaveBalances.length > 0 && (
+        <section className="mb-6 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-slate-800">My leave balances</h2>
+          <ul className="space-y-1.5">
+            {leaveBalances.map((balance) => (
+              <li key={balance.code} className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">
+                  {balance.name}
+                  {!balance.paid && <span className="ml-1 text-xs text-amber-700">(unpaid)</span>}
+                </span>
+                <span className="font-medium text-slate-800">
+                  {balance.remainingDays !== null ? (
+                    <>
+                      {balance.remainingDays} left
+                      <span className="ml-1 text-xs font-normal text-slate-400">
+                        of {balance.allowanceDays}d
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-normal text-slate-400">{balance.usedDays}d used</span>
+                  )}
+                  {balance.pendingDays > 0 && (
+                    <span className="ml-1 text-xs font-normal text-amber-700">+{balance.pendingDays}d pending</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <form onSubmit={submit} className="mb-8 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-slate-800">New request</h2>
