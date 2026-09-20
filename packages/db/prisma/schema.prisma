@@ -630,6 +630,9 @@ model Account {
 
   depositLines DepositLine[] @relation("DepositLineAccount")
 
+  bankStatementImports BankStatementImport[] @relation("BankStatementImportAccount")
+  bankReconciliations  BankReconciliation[]  @relation("BankReconciliationAccount")
+
   @@unique([orgId, code])
   @@index([type, active])
   @@index([parentId])
@@ -1309,6 +1312,141 @@ model JournalLine {
 
   @@index([entryId, position])
   @@index([accountId])
+  @@index([orgId])
+}
+
+// --- Banking and reconciliation (Batch 14) ---
+// Statement imports are append-only with per-line fingerprints so a repeated
+// import can never duplicate entries. Matching links a statement line to the
+// document that moved the bank account (payment, deposit, expense,
+// bill_payment, or a manual journal). A reconciliation session clears
+// statement lines against an opening balance; completion locks when the
+// difference is zero, and a completed reconciliation can only be reopened by
+// a controlled, audited unlock of the latest session for that account.
+
+enum BankStatementLineStatus {
+  unmatched
+  /// Linked to a bank document (payment/deposit/expense/bill_payment/journal).
+  matched
+  /// Deliberately ignored (e.g. already recorded another way); audit-visible.
+  excluded
+}
+
+enum BankReconciliationStatus {
+  in_progress
+  completed
+}
+
+/// One imported bank statement file (CSV). Header balances are optional and
+/// informational; the lines carry the truth.
+model BankStatementImport {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  bankAccount        Account  @relation("BankStatementImportAccount", fields: [bankAccountId], references: [id], onDelete: Restrict)
+  bankAccountId      String
+  fileName           String   @default("")
+  /// Statement window, when known from the file.
+  statementStartDate DateTime?
+  statementEndDate   DateTime?
+  openingBalance     Float?
+  closingBalance     Float?
+  rowCount           Int      @default(0)
+  duplicateCount     Int      @default(0)
+  importedByUserId   String?
+  /// Owning organization (Batch 12).
+  orgId              String
+
+  lines BankStatementLine[]
+
+  @@index([bankAccountId])
+  @@index([orgId])
+}
+
+/// One transaction row from a bank statement. `amount` is signed:
+/// positive = money in, negative = money out.
+model BankStatementLine {
+  id          String                   @id @default(cuid())
+  createdAt   DateTime                 @default(now())
+  importId    String
+  import      BankStatementImport      @relation(fields: [importId], references: [id], onDelete: Cascade)
+  position    Int
+  date        DateTime
+  description String                   @default("")
+  reference   String                   @default("")
+  amount      Float
+  /// sha256 over bankAccountId|date|amount|description|reference — the
+  /// duplicate detector. Unique per org, so re-imports skip, never double-post.
+  fingerprint String
+  status      BankStatementLineStatus  @default(unmatched)
+  /// payment | deposit | expense | bill_payment | journal
+  matchedEntityType String?
+  matchedEntityId   String?
+  matchedAt         DateTime?
+  matchedByUserId   String?
+  /// Set when this line was cleared in a completed reconciliation.
+  reconciledAt      DateTime?
+  /// Owning organization (Batch 12).
+  orgId             String
+
+  reconciliationLines BankReconciliationLine[]
+
+  @@unique([orgId, fingerprint])
+  @@index([importId, position])
+  @@index([status])
+  @@index([date])
+  @@index([orgId])
+}
+
+/// A reconciliation session for one bank account: opening balance + cleared
+/// statement lines must agree with the statement's ending balance to complete.
+model BankReconciliation {
+  id                     String                   @id @default(cuid())
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  bankAccount            Account                  @relation("BankReconciliationAccount", fields: [bankAccountId], references: [id], onDelete: Restrict)
+  bankAccountId          String
+  statementEndingDate    DateTime
+  statementEndingBalance Float
+  /// Ending balance of the previous completed reconciliation (0 for the first).
+  openingBalance         Float                    @default(0)
+  /// Sum of cleared statement lines (signed). Recomputed on every clear/unclear.
+  clearedNet             Float                    @default(0)
+  /// statementEndingBalance - (openingBalance + clearedNet); must be ~0 to complete.
+  difference             Float                    @default(0)
+  status                 BankReconciliationStatus @default(in_progress)
+  completedAt            DateTime?
+  completedByUserId      String?
+  /// Controlled undo: only the latest completed session can be unlocked, with a reason.
+  unlockedAt             DateTime?
+  unlockedByUserId       String?
+  unlockReason           String?
+  createdByUserId        String?
+  /// Owning organization (Batch 12).
+  orgId                  String
+
+  lines BankReconciliationLine[]
+
+  @@index([bankAccountId, status])
+  @@index([orgId])
+}
+
+/// A statement line cleared inside a reconciliation session. Snapshots the
+/// line's date/description/amount so a completed reconciliation is
+/// reproducible even if the import row is later inspected or re-matched.
+model BankReconciliationLine {
+  id               String              @id @default(cuid())
+  createdAt        DateTime            @default(now())
+  reconciliationId String
+  reconciliation   BankReconciliation  @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  statementLineId  String
+  statementLine    BankStatementLine   @relation(fields: [statementLineId], references: [id], onDelete: Cascade)
+  date             DateTime
+  description      String              @default("")
+  amount           Float
+  /// Owning organization (Batch 12).
+  orgId            String
+
+  @@unique([reconciliationId, statementLineId])
   @@index([orgId])
 }
 
