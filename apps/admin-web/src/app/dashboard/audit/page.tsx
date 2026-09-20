@@ -48,10 +48,6 @@ export default function AuditPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Compliance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Audit log</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Recent events (login, registration, and future domain changes). Requires HR / payroll / finance /
-            platform role.
-          </p>
         </div>
         <Link href="/dashboard" className="text-sm font-semibold text-brand hover:underline">
           ← Dashboard

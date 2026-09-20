@@ -1,3 +1,5 @@
+import { getCsrfCookie } from "@/lib/auth-storage";
+
 /**
  * Base URL for API calls from the admin web app.
  * - If `NEXT_PUBLIC_API_URL` is set (e.g. production or explicit dev), that URL is used.
@@ -16,10 +18,7 @@ export function apiBase(): string {
       return "/__kleentoditee_api";
     }
   }
-  if (process.env.NODE_ENV === "development") {
-    return "/__kleentoditee_api";
-  }
-  return "http://127.0.0.1:8787";
+  return "/__kleentoditee_api";
 }
 
 /** Read body once: avoids throw when the server returns HTML (e.g. 502) instead of JSON. */
@@ -61,4 +60,36 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       ...init.headers
     }
   });
+}
+
+/**
+ * CSRF double-submit guard: mutating API requests automatically echo the
+ * `kt_csrf` cookie in the `x-kt-csrf` header, which the API requires on
+ * cookie-authenticated mutations. Idempotent — safe to call on every mount.
+ */
+export function installCsrfFetchGuard(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const w = window as unknown as { __ktCsrfGuard?: boolean };
+  if (w.__ktCsrfGuard) {
+    return;
+  }
+  w.__ktCsrfGuard = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const isApiCall = url.startsWith(apiBase()) || url.startsWith("/__kleentoditee_api");
+    if (isApiCall && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")) {
+      const csrf = getCsrfCookie();
+      if (csrf) {
+        const headers = new Headers(init?.headers);
+        headers.set("x-kt-csrf", csrf);
+        init = { ...init, headers };
+      }
+    }
+    return originalFetch(input, init);
+  }) as typeof window.fetch;
 }

@@ -7,9 +7,16 @@ import { useCallback, useEffect, useState } from "react";
 
 type EmployeeRow = { active: boolean };
 
-type MeResponse = { user: { roles: string[] } };
+type MeResponse = { user: { name: string; email: string; roles: string[] } };
 
 type PayPeriodItem = { label: string; endDate: string; payDate: string | null };
+type PayRunItem = {
+  id: string;
+  status: string;
+  itemCount: number;
+  summary: { gross: number; totalDeductions: number; net: number; employerCost: number };
+  period: { label: string; schedule: string; payDate: string | null };
+};
 
 function startOfTodayMs(): number {
   const d = new Date();
@@ -70,9 +77,11 @@ async function safeJson<T>(res: Response): Promise<T | null> {
 export default function DashboardPage() {
   const [m, setM] = useState<BusinessOverviewData | null>(null);
   const [userRoles, setUserRoles] = useState<string[]>([]);
+  const [userName, setUserName] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(async (): Promise<{ data: BusinessOverviewData; roles: string[] }> => {
+  const load = useCallback(async (): Promise<{ data: BusinessOverviewData; roles: string[]; name: string; email: string }> => {
     const headers = { ...authHeaders() };
     const [
       meRes,
@@ -84,22 +93,26 @@ export default function DashboardPage() {
       pendRes,
       usersRes,
       auditRes,
-      periodsRes
+      periodsRes,
+      settingsRes
     ] = await Promise.all([
       fetch(`${apiBase()}/auth/me`, { headers }),
       fetch(`${apiBase()}/people/employees`, { headers }),
       fetch(`${apiBase()}/time/entries/count?queue=all&status=submitted`, { headers }),
-      fetch(`${apiBase()}/payroll/runs?status=draft`, { headers }),
+      fetch(`${apiBase()}/payroll/runs`, { headers }),
       fetch(`${apiBase()}/finance/invoices`, { headers }),
       fetch(`${apiBase()}/finance/bills`, { headers }),
       fetch(`${apiBase()}/admin/users/invitations/pending`, { headers }),
       fetch(`${apiBase()}/admin/users`, { headers }),
       fetch(`${apiBase()}/audit/recent?take=120`, { headers }),
-      fetch(`${apiBase()}/payroll/periods`, { headers })
+      fetch(`${apiBase()}/payroll/periods`, { headers }),
+      fetch(`${apiBase()}/settings/org`, { headers })
     ]);
 
     const me = await safeJson<MeResponse>(meRes);
     const roles = me?.user?.roles ?? [];
+    const name = me?.user?.name ?? "";
+    const email = me?.user?.email ?? "";
 
     let activeEmployees: number | null = null;
     let employeesError: string | null = null;
@@ -128,11 +141,24 @@ export default function DashboardPage() {
     }
 
     let draftRuns: number | null = null;
+    let recentRuns: PayRunItem[] = [];
+    let payrollSummary: BusinessOverviewData["payrollSummary"] = null;
     let payrollError: string | null = null;
     try {
       if (runRes.ok) {
-        const r = await readApiData<{ items: unknown[] }>(runRes, "payroll runs");
-        draftRuns = r.items.length;
+        const r = await readApiData<{ items: PayRunItem[] }>(runRes, "payroll runs");
+        draftRuns = r.items.filter((run) => run.status === "draft").length;
+        recentRuns = r.items.slice(0, 5);
+        const source = r.items[0];
+        if (source) {
+          payrollSummary = {
+            gross: source.summary.gross,
+            deductions: source.summary.totalDeductions,
+            net: source.summary.net,
+            employerCost: source.summary.employerCost,
+            sourceLabel: source.period.label
+          };
+        }
       } else {
         payrollError = "Could not load draft pay runs.";
       }
@@ -220,6 +246,38 @@ export default function DashboardPage() {
       periodsError = "Could not load pay periods.";
     }
 
+    let statutoryReady: boolean | null = null;
+    let statutoryError: string | null = null;
+    if (settingsRes.ok) {
+      const result = await safeJson<{
+        settings: {
+          companyLegalName: string;
+          ssbEnabled: boolean;
+          ssbEmployeeRate: number;
+          ssbEmployerRate: number;
+          ssbAnnualCeiling: number;
+          nhiEnabled: boolean;
+          nhiEmployeeRate: number;
+          nhiEmployerRate: number;
+          nhiAnnualCeiling: number;
+          payrollTaxEnabled: boolean;
+          payrollTaxEmployeeRate: number;
+          payrollTaxEmployerClass: string;
+          statutoryEffectiveYear: number;
+        };
+      }>(settingsRes);
+      const s = result?.settings;
+      statutoryReady = Boolean(
+        s?.companyLegalName.trim() &&
+          (!s.ssbEnabled || (s.ssbEmployeeRate > 0 && s.ssbEmployerRate > 0 && s.ssbAnnualCeiling > 0)) &&
+          (!s.nhiEnabled || (s.nhiEmployeeRate > 0 && s.nhiEmployerRate > 0 && s.nhiAnnualCeiling > 0)) &&
+          (!s.payrollTaxEnabled || (s.payrollTaxEmployeeRate > 0 && s.payrollTaxEmployerClass !== "NOT_SET")) &&
+          s.statutoryEffectiveYear >= 2020
+      );
+    } else {
+      statutoryError = "Could not verify payroll settings.";
+    }
+
     const data: BusinessOverviewData = {
       activeEmployees,
       employeesError,
@@ -227,6 +285,8 @@ export default function DashboardPage() {
       timeError,
       draftRuns,
       payrollError,
+      payrollSummary,
+      recentRuns,
       invoiceCount,
       financeError,
       billsCount,
@@ -240,20 +300,24 @@ export default function DashboardPage() {
       periodCount,
       latestPeriod,
       nextPayroll,
-      periodsError
+      periodsError,
+      statutoryReady,
+      statutoryError
     };
 
-    return { data, roles };
+    return { data, roles, name, email };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { data, roles } = await load();
+        const { data, roles, name, email } = await load();
         if (!cancelled) {
           setM(data);
           setUserRoles(roles);
+          setUserName(name);
+          setUserEmail(email);
           setLoadError(null);
         }
       } catch (e) {
@@ -276,5 +340,5 @@ export default function DashboardPage() {
     );
   }
 
-  return <BusinessOperatingDashboard data={m} userRoles={userRoles} />;
+  return <BusinessOperatingDashboard data={m} userRoles={userRoles} userName={userName} userEmail={userEmail} />;
 }

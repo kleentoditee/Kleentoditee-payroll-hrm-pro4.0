@@ -3,7 +3,7 @@
 import { apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type RunItem = {
@@ -13,6 +13,10 @@ type RunItem = {
   defaultSite: string;
   paySchedule: string;
   gross: number;
+  payrollTax: number;
+  employerNhi: number;
+  employerSsb: number;
+  employerPayrollTax: number;
   totalDeductions: number;
   net: number;
   paystub: { id: string; stubNumber: string } | null;
@@ -53,6 +57,7 @@ function downloadCsv(fileName: string, csv: string) {
 
 export default function PayrollRunDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = String(params.id ?? "");
 
   const [run, setRun] = useState<RunDetail | null>(null);
@@ -102,6 +107,78 @@ export default function PayrollRunDetailPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : `${action} failed`);
     } finally {
+      setWorking(null);
+    }
+  }
+
+  async function downloadExport(exportId: string, fileName: string) {
+    setWorking(`download:${exportId}`);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase()}/payroll/runs/${id}/exports/${exportId}`, {
+        headers: { ...authHeaders() }
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Download failed");
+      }
+      const csv = await res.text();
+      downloadCsv(fileName, csv);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function voidRun() {
+    const paid = run?.status === "paid";
+    const confirmed = window.confirm(
+      paid
+        ? "This run is already paid. Voiding it will revert its time entries back to approved. Continue?"
+        : "Void this pay run? Its paystubs will be removed and a corrected run can be created for the period."
+    );
+    if (!confirmed) {
+      return;
+    }
+    setWorking("Void");
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase()}/payroll/runs/${id}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ reversePaid: paid })
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Void failed");
+      }
+      await loadRun();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Void failed");
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function deleteRun() {
+    if (!window.confirm("Delete this draft pay run? This cannot be undone.")) {
+      return;
+    }
+    setWorking("Delete");
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase()}/payroll/runs/${id}`, {
+        method: "DELETE",
+        headers: { ...authHeaders() }
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Delete failed");
+      }
+      router.push("/dashboard/payroll/runs");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
       setWorking(null);
     }
   }
@@ -189,6 +266,26 @@ export default function PayrollRunDetailPage() {
           >
             {working === "Mark paid" ? "Marking paid..." : "Mark paid"}
           </button>
+          {run.status === "draft" ? (
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => void deleteRun()}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
+            >
+              {working === "Delete" ? "Deleting..." : "Delete draft"}
+            </button>
+          ) : null}
+          {run.status !== "draft" && run.status !== "void" ? (
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => void voidRun()}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
+            >
+              {working === "Void" ? "Voiding..." : "Void run"}
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -196,9 +293,6 @@ export default function PayrollRunDetailPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h3 className="font-serif text-xl text-slate-900">Employee lines</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              These values are frozen snapshots of the approved time imported into this run.
-            </p>
           </div>
         </div>
         {run.items.length === 0 ? (
@@ -211,6 +305,8 @@ export default function PayrollRunDetailPage() {
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Employee</th>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Schedule</th>
                   <th className="px-3 py-2 text-right font-semibold text-slate-700">Gross</th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Payroll tax</th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Employer costs</th>
                   <th className="px-3 py-2 text-right font-semibold text-slate-700">Deductions</th>
                   <th className="px-3 py-2 text-right font-semibold text-slate-700">Net</th>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Paystub</th>
@@ -227,6 +323,10 @@ export default function PayrollRunDetailPage() {
                     </td>
                     <td className="px-3 py-3 text-slate-700">{item.paySchedule}</td>
                     <td className="px-3 py-3 text-right text-slate-700">{formatMoney(item.gross)}</td>
+                    <td className="px-3 py-3 text-right text-slate-700">{formatMoney(item.payrollTax)}</td>
+                    <td className="px-3 py-3 text-right text-slate-700">
+                      {formatMoney(item.employerNhi + item.employerSsb + item.employerPayrollTax)}
+                    </td>
                     <td className="px-3 py-3 text-right text-slate-700">{formatMoney(item.totalDeductions)}</td>
                     <td className="px-3 py-3 text-right font-semibold text-slate-900">{formatMoney(item.net)}</td>
                     <td className="px-3 py-3">
@@ -256,8 +356,18 @@ export default function PayrollRunDetailPage() {
         ) : (
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
             {run.exports.map((exportRow) => (
-              <li key={exportRow.id}>
-                {exportRow.fileName} | {exportRow.createdAt.slice(0, 10)}
+              <li key={exportRow.id} className="flex flex-wrap items-center gap-3">
+                <span>
+                  {exportRow.fileName} | {exportRow.createdAt.slice(0, 10)}
+                </span>
+                <button
+                  type="button"
+                  disabled={working !== null}
+                  onClick={() => void downloadExport(exportRow.id, exportRow.fileName)}
+                  className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
+                >
+                  {working === `download:${exportRow.id}` ? "Downloading..." : "Download"}
+                </button>
               </li>
             ))}
           </ul>

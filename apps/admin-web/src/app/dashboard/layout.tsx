@@ -2,7 +2,7 @@
 
 import { AppShell } from "@/components/app-shell";
 import { apiBase } from "@/lib/api";
-import { authHeaders, clearToken, getToken } from "@/lib/auth-storage";
+import { authHeaders, clearToken } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -13,14 +13,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [user, setUser] = useState<Me | null>(null);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
+        // Cookie-first: the session lives in the HttpOnly kt_session cookie,
+        // so we ask the API directly instead of requiring a stored token.
         const res = await fetch(`${apiBase()}/auth/me`, { headers: { ...authHeaders() } });
         if (!res.ok) {
           throw new Error("unauthorized");
@@ -55,6 +52,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       userEmail={user.email}
       userRoles={user.roles}
       onLogout={() => {
+        // Revoke the session server-side (bumps tokenVersion, expires cookies),
+        // then clear any legacy stored token and return to the sign-in page.
+        void fetch(`${apiBase()}/auth/logout`, {
+          method: "POST",
+          headers: { ...authHeaders() }
+        }).catch(() => undefined);
         clearToken();
         router.replace("/login");
       }}

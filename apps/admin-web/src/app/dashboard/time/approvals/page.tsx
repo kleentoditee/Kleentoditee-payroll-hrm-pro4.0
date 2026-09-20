@@ -11,6 +11,8 @@ type Row = {
   periodStart: string | null;
   periodEnd: string | null;
   site: string;
+  startTime: string;
+  endTime: string;
   status: string;
   daysWorked: number;
   hoursWorked: number;
@@ -20,7 +22,8 @@ type Row = {
 
 function formatPeriod(row: Row): string {
   if (row.periodStart && row.periodEnd) {
-    return `${row.periodStart.slice(0, 10)} → ${row.periodEnd.slice(0, 10)}`;
+    if (row.periodStart.slice(0, 10) === row.periodEnd.slice(0, 10)) return row.periodStart.slice(0, 10);
+    return `${row.periodStart.slice(0, 10)} to ${row.periodEnd.slice(0, 10)}`;
   }
   return row.month;
 }
@@ -125,10 +128,6 @@ export default function TimeApprovalsPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Time</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Approval queue</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Submitted timesheets across all payroll months. Approve here so they become eligible for pay runs.
-          Managers and payroll roles can approve; finance-only viewers cannot.
-        </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
@@ -187,7 +186,7 @@ export default function TimeApprovalsPage() {
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-slate-900">{entry.employee.fullName}</p>
                 <p className="text-sm text-slate-600">
-                  {entry.site || "—"} · {formatPeriod(entry)} · {entry.daysWorked}d / {entry.hoursWorked}h
+                  {entry.site || "-"} · {formatPeriod(entry)} · {entry.startTime || "-"} to {entry.endTime || "-"} · {entry.hoursWorked}h
                 </p>
                 <p className="text-xs text-slate-500">{entry.template.name}</p>
               </div>

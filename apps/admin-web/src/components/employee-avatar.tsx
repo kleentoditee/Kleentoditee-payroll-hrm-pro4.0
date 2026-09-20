@@ -38,7 +38,10 @@ export function EmployeeAvatar({ employeeId, hasPhoto, name, sizeClassName, prof
     let objectUrl: string | null = null;
     (async () => {
       try {
-        const res = await fetch(`${apiBase()}${profilePhotoViewUrl}`, { headers: { ...authHeaders() } });
+        const res = await fetch(`${apiBase()}${profilePhotoViewUrl}`, {
+          headers: { ...authHeaders() },
+          cache: "no-store"
+        });
         if (!res.ok || !alive) {
           return;
         }

@@ -44,6 +44,7 @@ export default function StaffRequestsPage() {
   const [reviewNote, setReviewNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<StaffRequestStatus | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -115,14 +116,36 @@ export default function StaffRequestsPage() {
     }
   }
 
+  async function deleteRequest() {
+    if (!selected) return;
+    const employeeName = selected.employee?.fullName ?? "this employee";
+    if (!window.confirm(`Delete this request from ${employeeName}? This cannot be undone.`)) return;
+
+    setDeleting(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`${apiBase()}/admin/staff-requests/${selected.id}`, {
+        method: "DELETE",
+        headers: { ...authHeaders() }
+      });
+      if (!res.ok) {
+        const { data, rawText } = await readApiJson<{ error?: string }>(res);
+        setActionError(data?.error ?? rawText ?? `Error ${res.status}`);
+        return;
+      }
+      setSelected(null);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <section className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Staff requests</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Review and act on time off, supplies, equipment, incidents, profile updates and other employee requests
-          submitted from the Staff Hub.
-        </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4">
@@ -332,6 +355,14 @@ export default function StaffRequestsPage() {
                       </button>
                     ))
                   )}
+                  <button
+                    type="button"
+                    onClick={() => void deleteRequest()}
+                    disabled={deleting || actionBusy !== null}
+                    className="ml-auto rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                  >
+                    {deleting ? "Deleting..." : "Delete request"}
+                  </button>
                 </div>
               </div>
             </div>

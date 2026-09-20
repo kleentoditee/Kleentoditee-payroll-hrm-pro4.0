@@ -65,9 +65,6 @@ export default function TemplatesListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">People</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Deduction templates</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            NHI / SSB / income tax defaults for timesheets (rates are illustrative until compliance review).
-          </p>
         </div>
         <Link
           href="/dashboard/people/templates/new"
@@ -90,14 +87,12 @@ export default function TemplatesListPage() {
               <div>
                 <p className="font-medium text-slate-900">{t.name}</p>
                 <p className="text-sm text-slate-600">
-                  NHI {(t.nhiRate * 100).toFixed(2)}% · SSB {(t.ssbRate * 100).toFixed(2)}% · Tax{" "}
-                  {(t.incomeTaxRate * 100).toFixed(2)}%
+                  NHI {(t.nhiRate * 100).toFixed(2)}% · SSB {(t.ssbRate * 100).toFixed(2)}%
                 </p>
                 <p className="text-xs text-slate-500">
                   Apply: {t.applyNhi ? "NHI " : ""}
                   {t.applySsb ? "SSB " : ""}
-                  {t.applyIncomeTax ? "Tax" : ""}
-                  {!t.applyNhi && !t.applySsb && !t.applyIncomeTax ? "none" : ""}
+                  {!t.applyNhi && !t.applySsb ? "none" : ""}
                 </p>
               </div>
               <div className="flex gap-3">

@@ -143,10 +143,6 @@ export default function NewDepositPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">New deposit</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Pick a bank account and select the undeposited customer payments to bundle. Saving
-          creates a draft; posting it stamps each payment as deposited.
-        </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">

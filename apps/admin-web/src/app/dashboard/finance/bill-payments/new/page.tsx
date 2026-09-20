@@ -167,9 +167,6 @@ export default function PayBillsPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Pay bills</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Record a disbursement to a supplier and apply it to one or more open bills.
-        </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">

@@ -27,10 +27,8 @@ export default function EditTemplatePage() {
   const [name, setName] = useState("");
   const [nhiRate, setNhiRate] = useState("0");
   const [ssbRate, setSsbRate] = useState("0");
-  const [incomeTaxRate, setIncomeTaxRate] = useState("0");
   const [applyNhi, setApplyNhi] = useState(true);
   const [applySsb, setApplySsb] = useState(true);
-  const [applyIncomeTax, setApplyIncomeTax] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +44,8 @@ export default function EditTemplatePage() {
           setName(row.name);
           setNhiRate(String(row.nhiRate));
           setSsbRate(String(row.ssbRate));
-          setIncomeTaxRate(String(row.incomeTaxRate));
           setApplyNhi(row.applyNhi);
           setApplySsb(row.applySsb);
-          setApplyIncomeTax(row.applyIncomeTax);
           setError(null);
         }
       } catch {
@@ -79,10 +75,10 @@ export default function EditTemplatePage() {
           name,
           nhiRate: Number(nhiRate),
           ssbRate: Number(ssbRate),
-          incomeTaxRate: Number(incomeTaxRate),
+          incomeTaxRate: 0,
           applyNhi,
           applySsb,
-          applyIncomeTax
+          applyIncomeTax: false
         })
       });
       const data = (await res.json()) as { error?: string };
@@ -127,16 +123,6 @@ export default function EditTemplatePage() {
             <span className="text-slate-700">SSB rate</span>
             <input type="number" step="0.0001" value={ssbRate} onChange={(e) => setSsbRate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
           </label>
-          <label className="block text-sm">
-            <span className="text-slate-700">Income tax rate</span>
-            <input
-              type="number"
-              step="0.0001"
-              value={incomeTaxRate}
-              onChange={(e) => setIncomeTaxRate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-            />
-          </label>
         </div>
         <div className="space-y-2 text-sm">
           <label className="flex items-center gap-2">
@@ -146,10 +132,6 @@ export default function EditTemplatePage() {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={applySsb} onChange={(e) => setApplySsb(e.target.checked)} />
             Apply SSB
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={applyIncomeTax} onChange={(e) => setApplyIncomeTax(e.target.checked)} />
-            Apply income tax
           </label>
         </div>
         <button type="submit" disabled={saving} className="rounded-lg bg-brand px-4 py-2 font-semibold text-white disabled:opacity-50">

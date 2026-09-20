@@ -1,93 +1,109 @@
-/** Sidebar and Create menu — every `href` is a real route (or dedicated Coming Soon page). */
+/** Sidebar and Create menu - every `href` is a working route. */
 
 export type NavItem = {
   label: string;
   href: string;
-  /** Shown under the label in the sidebar (e.g. same destination, different intent). */
-  hint?: string;
-  /** Route exists but content is “coming soon”. */
-  comingSoon?: boolean;
+  icon?: string;
+  description?: string;
+  action?: "all-apps";
 };
 
-export type NavGroup = { id: string; title: string; items: NavItem[] };
+export type NavGroup = { id: string; title: string; icon: string; items: NavItem[] };
 
 export const NAV_GROUPS: NavGroup[] = [
   {
     id: "dashboard",
     title: "Dashboard",
-    items: [{ label: "Home", href: "/dashboard" }]
+    icon: "layout-dashboard",
+    items: [{ label: "Home", href: "/dashboard", icon: "home" }]
   },
   {
     id: "people",
     title: "People",
+    icon: "users",
     items: [
-      { label: "Employees", href: "/dashboard/people/employees" },
-      { label: "Staff requests", href: "/dashboard/people/requests" },
-      { label: "Deduction templates", href: "/dashboard/people/templates" },
-      { label: "Users & roles", href: "/dashboard/users" }
+      { label: "Employees", href: "/dashboard/people/employees", icon: "users", description: "Manage employee records and payroll setup." },
+      { label: "Staff requests", href: "/dashboard/people/requests", icon: "inbox", description: "Review employee requests and submissions." },
+      { label: "Deduction templates", href: "/dashboard/people/templates", icon: "file-text", description: "Configure deductions used in payroll." },
+      { label: "Leave balances", href: "/dashboard/people/leave", icon: "calendar", description: "Track annual, sick, and unpaid leave allowances and usage." }
     ]
   },
   {
     id: "time",
     title: "Time",
+    icon: "clock",
     items: [
-      { label: "Time entries", href: "/dashboard/time/entries" },
-      { label: "Approvals", href: "/dashboard/time/approvals" },
-      { label: "Work schedule", href: "/dashboard/schedule" },
-      { label: "Staff announcements", href: "/dashboard/announcements" }
+      { label: "Time entries", href: "/dashboard/time/entries", icon: "clock", description: "Review submitted work time." },
+      { label: "Approvals", href: "/dashboard/time/approvals", icon: "activity", description: "Approve pending time entries." },
+      { label: "Work schedule", href: "/dashboard/schedule", icon: "calendar", description: "Manage staff schedules." },
+      { label: "Staff announcements", href: "/dashboard/announcements", icon: "megaphone", description: "Share updates with staff." }
     ]
   },
   {
     id: "payroll",
     title: "Payroll",
+    icon: "dollar-sign",
     items: [
-      { label: "Pay periods", href: "/dashboard/payroll/periods" },
-      { label: "Pay runs", href: "/dashboard/payroll/runs" },
-      {
-        label: "Paystubs",
-        href: "/dashboard/payroll/runs",
-        hint: "Open a run, then a paystub from the line items"
-      },
-      {
-        label: "Payroll exports",
-        href: "/dashboard/payroll/runs",
-        hint: "Export CSV from a run’s detail page"
-      }
+      { label: "Pay periods", href: "/dashboard/payroll/periods", icon: "calendar", description: "Create and manage payroll periods." },
+      { label: "Pay runs", href: "/dashboard/payroll/runs", icon: "dollar-sign", description: "Build, review, and finalize payroll." },
+      { label: "Paystubs", href: "/dashboard/payroll/paystubs/preview", icon: "receipt", description: "View and print employee paystubs." },
+      { label: "Government forms", href: "/dashboard/payroll/forms", icon: "file-text", description: "Preview and download BVI NHI and SSB forms." },
+      { label: "YTD import", href: "/dashboard/payroll/ytd-import", icon: "receipt", description: "Import historical year-to-date payroll opening balances." },
+      { label: "Reports", href: "/dashboard/payroll/reports", icon: "file-text", description: "Payroll register, year summary, and reconciliation." }
     ]
   },
   {
     id: "finance",
     title: "Finance",
+    icon: "wallet",
     items: [
-      { label: "Chart of accounts", href: "/dashboard/finance/accounts" },
-      { label: "Customers", href: "/dashboard/finance/customers" },
-      { label: "Suppliers", href: "/dashboard/finance/suppliers" },
-      { label: "Products & services", href: "/dashboard/finance/products" },
-      { label: "Invoices", href: "/dashboard/finance/invoices" },
-      { label: "Bills", href: "/dashboard/finance/bills" },
-      { label: "Payments received", href: "/dashboard/finance/payments" },
-      { label: "Bill payments", href: "/dashboard/finance/bill-payments" },
-      { label: "Expenses", href: "/dashboard/finance/expenses" },
-      { label: "Deposits", href: "/dashboard/finance/deposits" }
+      { label: "Chart of accounts", href: "/dashboard/finance/accounts", icon: "building", description: "Manage accounting categories." },
+      { label: "Customers", href: "/dashboard/finance/customers", icon: "users", description: "Manage customer records." },
+      { label: "Suppliers", href: "/dashboard/finance/suppliers", icon: "building", description: "Manage vendor and supplier records." },
+      { label: "Products & services", href: "/dashboard/finance/products", icon: "package", description: "Manage sale items and services." },
+      { label: "Invoices", href: "/dashboard/finance/invoices", icon: "invoice", description: "Create and review invoices." },
+      { label: "Bills", href: "/dashboard/finance/bills", icon: "receipt", description: "Track bills owed." },
+      { label: "Payments received", href: "/dashboard/finance/payments", icon: "credit-card", description: "Record customer payments." },
+      { label: "Bill payments", href: "/dashboard/finance/bill-payments", icon: "arrow-down-left", description: "Record vendor payments." },
+      { label: "Expenses", href: "/dashboard/finance/expenses", icon: "receipt", description: "Track business expenses." },
+      { label: "Deposits", href: "/dashboard/finance/deposits", icon: "wallet", description: "Record deposits." }
     ]
   },
   {
     id: "reports",
     title: "Reports",
+    icon: "bar-chart",
     items: [
-      { label: "Reports home", href: "/dashboard/reports" },
-      { label: "Audit reports", href: "/dashboard/audit" }
+      { label: "Reports home", href: "/dashboard/reports", icon: "bar-chart", description: "View business reports." },
+      { label: "Audit reports", href: "/dashboard/audit", icon: "scroll", description: "Review system and payroll audit history." }
     ]
   },
   {
     id: "admin",
     title: "Admin",
+    icon: "shield",
     items: [
-      { label: "Users & roles", href: "/dashboard/users" },
-      { label: "Audit log", href: "/dashboard/audit" },
-      { label: "Settings", href: "/dashboard/settings", comingSoon: true }
+      { label: "Users & roles", href: "/dashboard/users", icon: "user-check", description: "Manage access and permissions." },
+      { label: "Accounting import", href: "/dashboard/imports/accounting", icon: "cloud-upload", description: "Import accounting data from file exports." },
+      { label: "Settings", href: "/dashboard/settings", icon: "settings", description: "Configure workspace settings." }
     ]
   }
+];
+
+export const PRIMARY_NAV: NavItem[] = [
+  { label: "Home", href: "/dashboard", icon: "home" },
+  { label: "Activity", href: "/dashboard/audit", icon: "activity" },
+  { label: "Reports", href: "/dashboard/reports", icon: "bar-chart" },
+  { label: "All apps", href: "#all-apps", icon: "grid", action: "all-apps" }
+];
+
+export const PINNED_SHORTCUTS: NavItem[] = [
+  { label: "Accounting", href: "/dashboard/finance/accounts", icon: "calculator" },
+  { label: "Expenses", href: "/dashboard/finance/expenses", icon: "receipt" },
+  { label: "Sales", href: "/dashboard/finance/invoices", icon: "invoice" },
+  { label: "Payroll", href: "/dashboard/payroll/runs", icon: "dollar-sign" },
+  { label: "Time", href: "/dashboard/time/entries", icon: "clock" },
+  { label: "Employees", href: "/dashboard/people/employees", icon: "users" }
 ];
 
 export type CreateAction = {

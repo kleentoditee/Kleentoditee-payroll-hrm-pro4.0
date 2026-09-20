@@ -103,10 +103,6 @@ export default function PayrollPeriodsPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Payroll</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Pay periods</h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">
-          Create monthly, weekly, or biweekly periods. Each period can produce one immutable pay run with
-          printable paystubs and a general payroll CSV export.
-        </p>
       </div>
 
       {error ? (

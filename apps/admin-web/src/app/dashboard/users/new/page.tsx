@@ -118,10 +118,6 @@ export default function InviteUserPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Access</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Invite user</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Sends a one-time invitation (email delivery is not wired yet). The invited person sets their password on the
-          accept-invite page.
-        </p>
       </div>
       {error ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>

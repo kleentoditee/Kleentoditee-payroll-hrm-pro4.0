@@ -60,10 +60,6 @@ export default function DepositsListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Deposits</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Group undeposited customer payments into a single bank deposit. Posting a deposit
-            stamps each linked payment so it can&rsquo;t be modified.
-          </p>
         </div>
         <Link
           href="/dashboard/finance/deposits/new"

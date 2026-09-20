@@ -134,10 +134,6 @@ export default function NewExpensePage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">New expense</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Record a direct disbursement. Pick a supplier or just enter a payee name. Saving creates
-          a draft; posting it puts it on the books.
-        </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">

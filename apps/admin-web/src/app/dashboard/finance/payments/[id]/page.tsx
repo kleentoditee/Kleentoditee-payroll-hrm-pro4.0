@@ -138,8 +138,58 @@ export default function PaymentDetailPage() {
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="space-y-3 p-3 md:hidden">
+          {payment.applications.length === 0 ? (
+            <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              Unapplied — no invoices linked yet.
+            </p>
+          ) : (
+            payment.applications.map((app) => (
+              <article key={app.id} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Invoice</p>
+                    <Link
+                      href={`/dashboard/finance/invoices/${app.invoice.id}`}
+                      className="mt-1 block font-bold text-slate-950 outline-none ring-[#006D77] hover:text-brand focus-visible:ring-2"
+                    >
+                      {app.invoice.number}
+                    </Link>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold capitalize text-slate-700">
+                    {app.invoice.status}
+                  </span>
+                </div>
+                <dl className="mt-3 grid gap-2 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Invoice total</dt>
+                    <dd className="font-semibold text-slate-900">${app.invoice.total.toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">New balance</dt>
+                    <dd className="font-semibold text-slate-900">${app.invoice.balance.toFixed(2)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500">Applied</dt>
+                    <dd className="font-semibold text-slate-900">${app.amount.toFixed(2)}</dd>
+                  </div>
+                </dl>
+                <button
+                  type="button"
+                  onClick={() => unapply(app.id)}
+                  disabled={busy || !!payment.depositedAt}
+                  title={payment.depositedAt ? "Reverse the deposit first" : undefined}
+                  className="mt-3 min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Unapply
+                </button>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
+        <table className="min-w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2">Invoice</th>
@@ -163,7 +213,7 @@ export default function PaymentDetailPage() {
                   <td className="px-4 py-2">
                     <Link
                       href={`/dashboard/finance/invoices/${app.invoice.id}`}
-                      className="font-medium text-slate-900 hover:text-brand"
+                      className="font-medium text-slate-900 outline-none ring-[#006D77] hover:text-brand focus-visible:ring-2"
                     >
                       {app.invoice.number}
                     </Link>
@@ -178,7 +228,7 @@ export default function PaymentDetailPage() {
                       onClick={() => unapply(app.id)}
                       disabled={busy || !!payment.depositedAt}
                       title={payment.depositedAt ? "Reverse the deposit first" : undefined}
-                      className="text-xs font-semibold text-slate-500 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="text-xs font-semibold text-slate-500 outline-none ring-[#006D77] hover:text-rose-700 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Unapply
                     </button>
@@ -188,6 +238,7 @@ export default function PaymentDetailPage() {
             )}
           </tbody>
         </table>
+        </div>
       </section>
 
       {actionError ? (
@@ -197,7 +248,7 @@ export default function PaymentDetailPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/finance/payments"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
         >
           Back
         </Link>
@@ -206,7 +257,7 @@ export default function PaymentDetailPage() {
           onClick={deletePayment}
           disabled={busy || !!payment.depositedAt}
           title={payment.depositedAt ? "Reverse the deposit first" : undefined}
-          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 outline-none ring-[#006D77] hover:bg-red-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Delete payment
         </button>

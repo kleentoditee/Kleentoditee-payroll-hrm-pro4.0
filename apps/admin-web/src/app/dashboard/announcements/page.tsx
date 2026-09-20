@@ -116,7 +116,6 @@ export default function StaffAnnouncementsPage() {
         <span className="text-slate-800">Staff announcements</span>
       </div>
       <h1 className="text-2xl font-semibold text-slate-900">Announcements</h1>
-      <p className="mt-1 text-sm text-slate-600">Visible in the employee tracker (in-app; no auto email).</p>
       {err ? (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{err}</p>
       ) : null}

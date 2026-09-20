@@ -136,6 +136,28 @@ export default function PayrollPeriodDetailPage() {
     }
   }
 
+  async function onDeletePeriod() {
+    if (!window.confirm("Delete this pay period? This cannot be undone.")) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase()}/payroll/periods/${id}`, {
+        method: "DELETE",
+        headers: { ...authHeaders() }
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Delete failed");
+      }
+      router.push("/dashboard/payroll/periods");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-600">Loading...</p>;
   }
@@ -226,22 +248,32 @@ export default function PayrollPeriodDetailPage() {
           </button>
           <button
             type="button"
-            disabled={creatingRun || period.runs.length > 0}
+            disabled={creatingRun || period.runs.some((run) => run.status !== "void")}
             onClick={onCreateRun}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
           >
-            {creatingRun ? "Building..." : period.runs.length > 0 ? "Run already exists" : "Create pay run"}
+            {creatingRun
+              ? "Building..."
+              : period.runs.some((run) => run.status !== "void")
+                ? "Run already exists"
+                : "Create pay run"}
           </button>
+          {period.runs.every((run) => run.status === "draft") ? (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onDeletePeriod}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-50"
+            >
+              Delete period
+            </button>
+          ) : null}
         </div>
       </form>
 
       <section className="space-y-4">
         <div>
           <h3 className="font-serif text-xl text-slate-900">Runs for this period</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            A period can produce one draft run, which then becomes the immutable payroll snapshot for export and
-            paystubs.
-          </p>
         </div>
         {period.runs.length === 0 ? (
           <p className="text-sm text-slate-600">No run yet for this period.</p>

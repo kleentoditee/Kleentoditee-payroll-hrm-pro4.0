@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type Template = { id: string; name: string };
+type LocationLine = { id: number; site: string; startTime: string; endTime: string; breakMinutes: string };
 
 type Entry = {
   id: string;
@@ -15,6 +16,9 @@ type Entry = {
   periodStart: string | null;
   periodEnd: string | null;
   site: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
   status: string;
   daysWorked: number;
   hoursWorked: number;
@@ -33,6 +37,16 @@ type Entry = {
   notes: string;
 };
 
+function calculateShiftHours(start: string, end: string, breakValue: string): number {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let minutes = eh * 60 + em - (sh * 60 + sm);
+  if (minutes < 0) minutes += 24 * 60;
+  minutes -= Math.max(0, Number(breakValue) || 0);
+  return Math.max(0, Math.round((minutes / 60 + Number.EPSILON) * 100) / 100);
+}
+
 export default function EditTimeEntryPage() {
   const params = useParams();
   const id = String(params.id ?? "");
@@ -49,7 +63,11 @@ export default function EditTimeEntryPage() {
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
   const [site, setSite] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [breakMinutes, setBreakMinutes] = useState("0");
   const [status, setStatus] = useState("draft");
+  const [originalStatus, setOriginalStatus] = useState("draft");
   const [daysWorked, setDaysWorked] = useState("0");
   const [hoursWorked, setHoursWorked] = useState("0");
   const [overtimeHours, setOvertimeHours] = useState("0");
@@ -63,9 +81,9 @@ export default function EditTimeEntryPage() {
   const [templateId, setTemplateId] = useState("");
   const [applyNhi, setApplyNhi] = useState(true);
   const [applySsb, setApplySsb] = useState(true);
-  const [applyIncomeTax, setApplyIncomeTax] = useState(false);
   const [notes, setNotes] = useState("");
   const [employeeName, setEmployeeName] = useState("");
+  const [additionalLocations, setAdditionalLocations] = useState<LocationLine[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,9 +107,13 @@ export default function EditTimeEntryPage() {
         setEmployeeName(entry.employee.fullName);
         setMonth(entry.month);
         setPeriodStart(entry.periodStart ? entry.periodStart.slice(0, 10) : "");
-        setPeriodEnd(entry.periodEnd ? entry.periodEnd.slice(0, 10) : "");
+        setPeriodEnd(entry.periodStart ? entry.periodStart.slice(0, 10) : "");
         setSite(entry.site);
+        setStartTime(entry.startTime);
+        setEndTime(entry.endTime);
+        setBreakMinutes(String(entry.breakMinutes));
         setStatus(entry.status);
+        setOriginalStatus(entry.status);
         setDaysWorked(String(entry.daysWorked));
         setHoursWorked(String(entry.hoursWorked));
         setOvertimeHours(String(entry.overtimeHours));
@@ -105,7 +127,6 @@ export default function EditTimeEntryPage() {
         setTemplateId(entry.templateId);
         setApplyNhi(entry.applyNhi);
         setApplySsb(entry.applySsb);
-        setApplyIncomeTax(entry.applyIncomeTax);
         setNotes(entry.notes);
         setError(null);
       } catch {
@@ -146,7 +167,7 @@ export default function EditTimeEntryPage() {
           otherDeduction: Number(otherDeduction),
           applyNhi,
           applySsb,
-          applyIncomeTax
+          applyIncomeTax: false
         })
       });
       if (!res.ok) {
@@ -171,8 +192,7 @@ export default function EditTimeEntryPage() {
     loanDeduction,
     otherDeduction,
     applyNhi,
-    applySsb,
-    applyIncomeTax
+    applySsb
   ]);
 
   useEffect(() => {
@@ -180,19 +200,36 @@ export default function EditTimeEntryPage() {
     return () => clearTimeout(t);
   }, [runPreview]);
 
+  useEffect(() => {
+    if (!startTime || !endTime) return;
+    const calculated = calculateShiftHours(startTime, endTime, breakMinutes);
+    setHoursWorked(String(calculated));
+    setDaysWorked(calculated > 0 ? "1" : "0");
+  }, [startTime, endTime, breakMinutes]);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase()}/time/entries/${id}`, {
-        method: "PATCH",
+      const res = await fetch(`${apiBase()}/time/entries/${id}/locations`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           month,
           periodStart: periodStart || null,
           periodEnd: periodEnd || null,
           site,
+          startTime,
+          endTime,
+          breakMinutes: Number(breakMinutes),
+          locations: [
+            { site, startTime, endTime, breakMinutes: Number(breakMinutes) },
+            ...additionalLocations.map((location) => ({
+              site: location.site, startTime: location.startTime, endTime: location.endTime,
+              breakMinutes: Number(location.breakMinutes)
+            }))
+          ],
           status,
           daysWorked: Number(daysWorked),
           hoursWorked: Number(hoursWorked),
@@ -207,7 +244,7 @@ export default function EditTimeEntryPage() {
           templateId,
           applyNhi,
           applySsb,
-          applyIncomeTax,
+          applyIncomeTax: false,
           notes
         })
       });
@@ -239,15 +276,32 @@ export default function EditTimeEntryPage() {
     router.replace("/dashboard/time/entries");
   }
 
+  function updateAdditionalLocation(id: number, field: keyof Omit<LocationLine, "id">, value: string) {
+    setAdditionalLocations((current) => current.map((location) => location.id === id ? { ...location, [field]: value } : location));
+  }
+
+  function addLocation() {
+    setAdditionalLocations((current) => [
+      ...current,
+      { id: (current.at(-1)?.id ?? 1) + 1, site: "", startTime: "", endTime: "", breakMinutes: "0" }
+    ]);
+  }
+
+  function removeLocation(id: number) {
+    setAdditionalLocations((current) => current.filter((location) => location.id !== id));
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-600">Loading...</p>;
   }
+
+  const locked = originalStatus === "approved" || originalStatus === "paid";
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-serif text-xl text-slate-900">Edit timesheet</h2>
+          <h2 className="font-serif text-xl text-slate-900">Edit work time</h2>
           <p className="text-sm text-slate-600">{employeeName}</p>
         </div>
         <Link href="/dashboard/time/entries" className="text-sm font-semibold text-brand hover:underline">
@@ -259,19 +313,28 @@ export default function EditTimeEntryPage() {
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
       ) : null}
 
+      {locked ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This timesheet is {originalStatus} and is locked. Amounts and status can no longer be edited; reverse
+          the pay run if changes are required.
+        </p>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-[1fr,280px]">
         <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-xs text-slate-500">
-            Employee is fixed on this row. Create a new timesheet if you need a different employee.
-          </p>
+          <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="text-slate-700">Month</span>
+              <span className="text-slate-700">Work date</span>
               <input
-                type="month"
+                type="date"
                 required
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
+                value={periodStart}
+                onChange={(e) => {
+                  setPeriodStart(e.target.value);
+                  setPeriodEnd(e.target.value);
+                  setMonth(e.target.value.slice(0, 7));
+                }}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
               />
             </label>
@@ -289,65 +352,76 @@ export default function EditTimeEntryPage() {
               </select>
             </label>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="text-slate-700">Work location</span>
+            <input
+              value={site}
+              onChange={(e) => setSite(e.target.value)}
+              placeholder="Customer, property, or job site"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+            />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-3">
             <label className="block text-sm">
-              <span className="text-slate-700">Period start</span>
+              <span className="text-slate-700">Start time</span>
               <input
-                type="date"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
               />
             </label>
             <label className="block text-sm">
-              <span className="text-slate-700">Period end</span>
+              <span className="text-slate-700">Finish time</span>
               <input
-                type="date"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-slate-700">Break minutes</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={breakMinutes}
+                onChange={(e) => setBreakMinutes(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
               />
             </label>
           </div>
+          {additionalLocations.map((location, index) => (
+            <div key={location.id} className="space-y-3 border-t border-slate-200 pt-4">
+              <div className="flex items-center justify-between"><p className="text-sm font-semibold text-slate-800">Location {index + 2}</p><button type="button" onClick={() => removeLocation(location.id)} className="text-sm font-semibold text-red-700 hover:underline">Remove</button></div>
+              <label className="block text-sm"><span className="text-slate-700">Work location</span><input required value={location.site} onChange={(event) => updateAdditionalLocation(location.id, "site", event.target.value)} placeholder="Customer, property, or job site" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" /></label>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <label className="text-sm"><span className="text-slate-700">Start time</span><input type="time" required value={location.startTime} onChange={(event) => updateAdditionalLocation(location.id, "startTime", event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" /></label>
+                <label className="text-sm"><span className="text-slate-700">Finish time</span><input type="time" required value={location.endTime} onChange={(event) => updateAdditionalLocation(location.id, "endTime", event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" /></label>
+                <label className="text-sm"><span className="text-slate-700">Break minutes</span><input type="number" min="0" step="1" value={location.breakMinutes} onChange={(event) => updateAdditionalLocation(location.id, "breakMinutes", event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" /></label>
+                <label className="text-sm"><span className="text-slate-700">Hours</span><output className="mt-1 block rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-semibold">{calculateShiftHours(location.startTime, location.endTime, location.breakMinutes).toFixed(2)}</output></label>
+              </div>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button type="button" onClick={addLocation} className="rounded-lg border border-brand px-3 py-2 text-sm font-semibold text-brand hover:bg-slate-50">+ Add location</button>
+            <p className="text-sm font-semibold text-slate-800">Total hours: {(Number(hoursWorked) + additionalLocations.reduce((total, location) => total + calculateShiftHours(location.startTime, location.endTime, location.breakMinutes), 0)).toFixed(2)}</p>
+          </div>
           <label className="block text-sm">
-            <span className="text-slate-700">Site</span>
-            <input
-              value={site}
-              onChange={(e) => setSite(e.target.value)}
+            <span className="text-slate-700">Notes</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
             />
           </label>
-          <div className="grid gap-4 sm:grid-cols-4">
-            <label className="block text-sm">
-              <span className="text-slate-700">Days</span>
-              <input
-                type="number"
-                step="0.5"
-                value={daysWorked}
-                onChange={(e) => setDaysWorked(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-700">Hours</span>
-              <input
-                type="number"
-                step="0.5"
-                value={hoursWorked}
-                onChange={(e) => setHoursWorked(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-slate-700">OT hours</span>
-              <input
-                type="number"
-                step="0.5"
-                value={overtimeHours}
-                onChange={(e) => setOvertimeHours(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-              />
-            </label>
+          <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <summary className="cursor-pointer font-semibold text-slate-800">Payroll adjustments</summary>
+            <div className="mt-4 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm"><span className="text-slate-700">OT hours</span><input type="number" step="0.5" value={overtimeHours} onChange={(e) => setOvertimeHours(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" /></label>
             <label className="block text-sm">
               <span className="text-slate-700">Flat gross</span>
               <input
@@ -447,28 +521,14 @@ export default function EditTimeEntryPage() {
               <input type="checkbox" checked={applySsb} onChange={(e) => setApplySsb(e.target.checked)} />
               SSB
             </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={applyIncomeTax}
-                onChange={(e) => setApplyIncomeTax(e.target.checked)}
-              />
-              Income tax
-            </label>
           </div>
-          <label className="block text-sm">
-            <span className="text-slate-700">Notes</span>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
-            />
-          </label>
+            </div>
+          </details>
+          </fieldset>
           <div className="flex flex-wrap gap-3">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || locked}
               className="rounded-lg bg-brand px-4 py-2 font-semibold text-white disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save"}

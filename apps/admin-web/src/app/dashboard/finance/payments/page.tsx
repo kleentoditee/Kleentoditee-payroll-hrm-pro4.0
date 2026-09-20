@@ -61,10 +61,6 @@ export default function PaymentsListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Customer payments</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Payments received from customers. Record a payment and apply it to one or more open
-            invoices. Any leftover stays as unapplied credit on the customer.
-          </p>
         </div>
         <Link
           href="/dashboard/finance/payments/new"

@@ -30,8 +30,8 @@ function AcceptInviteForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password.length < INVITE_PASSWORD_MIN) {
-      setError(`Password must be at least ${INVITE_PASSWORD_MIN} characters.`);
+    if (password.length < INVITE_PASSWORD_MIN || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setError(`Password must be at least ${INVITE_PASSWORD_MIN} characters and include a letter and a number.`);
       return;
     }
     setLoading(true);
