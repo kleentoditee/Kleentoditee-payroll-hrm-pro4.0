@@ -36,7 +36,15 @@ const SOURCE_LABEL: Record<string, string> = {
   expense: "Expense posted",
   expense_reversal: "Expense void reversal",
   payroll_run: "Payroll accrual",
-  payroll_run_reversal: "Payroll void reversal"
+  payroll_run_reversal: "Payroll void reversal",
+  payroll_run_paid: "Payroll settlement",
+  payroll_run_paid_reversal: "Payroll settlement reversal",
+  payroll_statutory_remittance: "Statutory remittance",
+  payroll_statutory_remittance_reversal: "Statutory remittance reversal",
+  deposit_posted: "Deposit posted",
+  deposit_posted_reversal: "Deposit void reversal",
+  manual_journal: "Manual journal",
+  manual_journal_reversal: "Manual journal reversal"
 };
 
 const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

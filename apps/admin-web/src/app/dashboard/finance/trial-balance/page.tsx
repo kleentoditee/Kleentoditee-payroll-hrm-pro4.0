@@ -23,10 +23,27 @@ type TrialBalance = {
   asOf: string;
 };
 
+type ControlRow = {
+  code: string;
+  name: string;
+  accountPresent: boolean;
+  glBalance: number;
+  subledgerBalance: number;
+  difference: number;
+  status: "ok" | "mismatch";
+};
+
+type ControlReconciliation = {
+  rows: ControlRow[];
+  allOk: boolean;
+};
+
 const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function TrialBalancePage() {
   const [data, setData] = useState<TrialBalance | null>(null);
+  const [recon, setRecon] = useState<ControlReconciliation | null>(null);
+  const [reconError, setReconError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asOf, setAsOf] = useState("");
 
@@ -54,6 +71,30 @@ export default function TrialBalancePage() {
       cancelled = true;
     };
   }, [asOf]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/finance/reports/control-reconciliation`, {
+          headers: { ...authHeaders() }
+        });
+        const json = await readApiData<ControlReconciliation>(res);
+        if (!cancelled) {
+          setRecon(json);
+          setReconError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setReconError(e instanceof Error ? e.message : "Failed to load control reconciliation");
+          setRecon(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <section className="space-y-4">
@@ -134,6 +175,81 @@ export default function TrialBalancePage() {
           <p className="text-xs text-slate-500">As of {data.asOf.slice(0, 10)} · management-prepared, unaudited.</p>
         </>
       ) : null}
+
+      <div className="space-y-3 border-t border-slate-200 pt-4">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">Control account reconciliation</h3>
+          <p className="text-sm text-slate-600">
+            Posted GL control balances vs the operational subledgers (open documents and pay runs).
+          </p>
+        </div>
+        {reconError ? (
+          <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{reconError}</p>
+        ) : null}
+        {recon === null && !reconError ? <p className="text-sm text-slate-500">Loading…</p> : null}
+        {recon ? (
+          <>
+            <p
+              className={`rounded-md px-3 py-2 text-sm font-medium ${
+                recon.allOk ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"
+              }`}
+            >
+              {recon.allOk
+                ? "All control accounts reconcile to their subledgers."
+                : "One or more control accounts differ from the subledger — review the rows below."}
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2">Code</th>
+                    <th className="px-3 py-2">Control account</th>
+                    <th className="px-3 py-2 text-right">GL balance</th>
+                    <th className="px-3 py-2 text-right">Subledger</th>
+                    <th className="px-3 py-2 text-right">Difference</th>
+                    <th className="px-3 py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recon.rows.map((row) => (
+                    <tr key={row.code} className="border-b border-slate-100">
+                      <td className="px-3 py-2 font-mono text-xs text-slate-500">{row.code}</td>
+                      <td className="px-3 py-2">
+                        {row.name}
+                        {!row.accountPresent ? (
+                          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                            not in chart
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">${money(row.glBalance)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">${money(row.subledgerBalance)}</td>
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          row.status === "mismatch" ? "font-medium text-rose-600" : ""
+                        }`}
+                      >
+                        ${money(row.difference)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                            row.status === "ok"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-rose-100 text-rose-800"
+                          }`}
+                        >
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
+      </div>
     </section>
   );
 }

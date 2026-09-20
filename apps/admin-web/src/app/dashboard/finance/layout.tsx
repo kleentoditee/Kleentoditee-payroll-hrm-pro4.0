@@ -15,6 +15,8 @@ const links = [
   { href: "/dashboard/finance/expenses", label: "Expenses" },
   { href: "/dashboard/finance/deposits", label: "Deposits" },
   { href: "/dashboard/finance/journal", label: "Journal" },
+  { href: "/dashboard/finance/journals", label: "Manual journals" },
+  { href: "/dashboard/finance/periods", label: "Fiscal periods" },
   { href: "/dashboard/finance/trial-balance", label: "Trial balance" },
   { href: "/dashboard/reports", label: "Reports" }
 ] as const;
