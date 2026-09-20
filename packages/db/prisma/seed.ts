@@ -57,11 +57,20 @@ async function main() {
   await prisma.supplier.deleteMany();
   await prisma.account.deleteMany();
   await prisma.userInvitation.deleteMany();
+  await prisma.organizationMembership.deleteMany();
   await prisma.userRole.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.organization.deleteMany();
+
+  // Single default tenant (Batch 12).
+  const ORG_ID = "org_kleentoditee";
+  await prisma.organization.create({
+    data: { id: ORG_ID, name: "KleenToDiTee", slug: "kleentoditee" }
+  });
 
   const standardTemplate = await prisma.deductionTemplate.create({
     data: {
+      orgId: ORG_ID,
       name: "Standard deductions",
       nhiRate: 0.0375,
       ssbRate: 0.04,
@@ -77,6 +86,7 @@ async function main() {
   // statutory config, never from template incomeTaxRate (which calc forces to 0).
   const taxedTemplate = await prisma.deductionTemplate.create({
     data: {
+      orgId: ORG_ID,
       name: "NHI + SSB (full statutory)",
       nhiRate: 0.0375,
       ssbRate: 0.04,
@@ -89,6 +99,7 @@ async function main() {
 
   const manualTemplate = await prisma.deductionTemplate.create({
     data: {
+      orgId: ORG_ID,
       name: "Manual deductions only",
       nhiRate: 0,
       ssbRate: 0,
@@ -99,7 +110,7 @@ async function main() {
     }
   });
 
-  await prisma.user.create({
+  const adminUser = await prisma.user.create({
     data: {
       email,
       emailCanonical: email,
@@ -112,12 +123,14 @@ async function main() {
           { role: Role.payroll_admin },
           { role: Role.hr_admin }
         ]
-      }
+      },
+      memberships: { create: [{ orgId: ORG_ID }] }
     }
   });
 
   const monthlyEmployee = await prisma.employee.create({
     data: {
+      orgId: ORG_ID,
       fullName: "Maria Monthly",
       role: "Lead cleaner",
       defaultSite: "Road Town",
@@ -147,7 +160,8 @@ async function main() {
       name: "Maria Monthly",
       employeeId: monthlyEmployee.id,
       status: UserStatus.active,
-      roles: { create: [{ role: Role.employee_tracker_user }] }
+      roles: { create: [{ role: Role.employee_tracker_user }] },
+      memberships: { create: [{ orgId: ORG_ID }] }
     }
   });
 
@@ -155,6 +169,7 @@ async function main() {
   const todayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
   await prisma.workAssignment.create({
     data: {
+      orgId: ORG_ID,
       employeeId: monthlyEmployee.id,
       date: todayUtc,
       startTime: "08:00",
@@ -168,6 +183,7 @@ async function main() {
   });
   await prisma.staffAnnouncement.create({
     data: {
+      orgId: ORG_ID,
       title: "Welcome to Staff Hub",
       body: "Check Today for your work location.",
       category: StaffAnnouncementCategory.GENERAL,
@@ -178,6 +194,7 @@ async function main() {
   });
   await prisma.staffQuizQuestion.create({
     data: {
+      orgId: ORG_ID,
       question: "What should you do before starting a shift?",
       choices: ["Skip the safety checklist", "Review site hazards and PPE", "Ignore posted procedures"],
       correctIndex: 1,
@@ -188,6 +205,7 @@ async function main() {
 
   const weeklyEmployee = await prisma.employee.create({
     data: {
+      orgId: ORG_ID,
       fullName: "Wendy Weekly",
       role: "Site supervisor",
       defaultSite: "Virgin Gorda",
@@ -208,6 +226,7 @@ async function main() {
 
   const biweeklyEmployee = await prisma.employee.create({
     data: {
+      orgId: ORG_ID,
       fullName: "Bianca Biweekly",
       role: "Office support",
       defaultSite: "Ladyville",
@@ -229,6 +248,7 @@ async function main() {
   await prisma.timeEntry.createMany({
     data: [
       {
+        orgId: ORG_ID,
         employeeId: monthlyEmployee.id,
         month: "2026-04",
         periodStart: new Date("2026-04-01T00:00:00.000Z"),
@@ -247,6 +267,7 @@ async function main() {
         notes: ""
       },
       {
+        orgId: ORG_ID,
         employeeId: weeklyEmployee.id,
         month: "2026-04",
         periodStart: new Date("2026-04-06T00:00:00.000Z"),
@@ -265,6 +286,7 @@ async function main() {
         notes: ""
       },
       {
+        orgId: ORG_ID,
         employeeId: biweeklyEmployee.id,
         month: "2026-04",
         periodStart: new Date("2026-04-01T00:00:00.000Z"),
@@ -290,6 +312,7 @@ async function main() {
   await prisma.staffRequest.createMany({
     data: [
       {
+        orgId: ORG_ID,
         employeeId: monthlyEmployee.id,
         type: StaffRequestType.TIME_OFF,
         status: StaffRequestStatus.SUBMITTED,
@@ -300,6 +323,7 @@ async function main() {
         details: "Three working days requested. Coverage arranged with team lead."
       },
       {
+        orgId: ORG_ID,
         employeeId: weeklyEmployee.id,
         type: StaffRequestType.JOB_LETTER,
         status: StaffRequestStatus.UNDER_REVIEW,
@@ -308,6 +332,7 @@ async function main() {
         details: "Need salary, role, and start date addressed to the visa office."
       },
       {
+        orgId: ORG_ID,
         employeeId: biweeklyEmployee.id,
         type: StaffRequestType.SUPPLIES_REQUEST,
         status: StaffRequestStatus.SUBMITTED,
@@ -320,6 +345,7 @@ async function main() {
   // One pay period for the dashboard.
   await prisma.payPeriod.create({
     data: {
+      orgId: ORG_ID,
       label: "April 2026 (monthly)",
       schedule: PaySchedule.monthly,
       startDate: new Date("2026-04-01T00:00:00.000Z"),
@@ -332,6 +358,7 @@ async function main() {
   const [cash, ar, ap, salesRevenue, cogs, officeExpense] = await Promise.all([
     prisma.account.create({
       data: {
+        orgId: ORG_ID,
         code: "1000",
         name: "Cash",
         type: AccountType.asset,
@@ -341,6 +368,7 @@ async function main() {
     }),
     prisma.account.create({
       data: {
+        orgId: ORG_ID,
         code: "1100",
         name: "Accounts Receivable",
         type: AccountType.asset,
@@ -350,6 +378,7 @@ async function main() {
     }),
     prisma.account.create({
       data: {
+        orgId: ORG_ID,
         code: "2000",
         name: "Accounts Payable",
         type: AccountType.liability,
@@ -359,6 +388,7 @@ async function main() {
     }),
     prisma.account.create({
       data: {
+        orgId: ORG_ID,
         code: "4000",
         name: "Sales Revenue",
         type: AccountType.revenue,
@@ -368,6 +398,7 @@ async function main() {
     }),
     prisma.account.create({
       data: {
+        orgId: ORG_ID,
         code: "5000",
         name: "Cost of Goods Sold",
         type: AccountType.expense,
@@ -377,6 +408,7 @@ async function main() {
     }),
     prisma.account.create({
       data: {
+        orgId: ORG_ID,
         code: "6000",
         name: "Office Expenses",
         type: AccountType.expense,
@@ -406,14 +438,15 @@ async function main() {
   ];
   for (const account of controlAccounts) {
     await prisma.account.upsert({
-      where: { code: account.code },
+      where: { orgId_code: { orgId: ORG_ID, code: account.code } },
       update: {},
-      create: { ...account, description: "GL control account" }
+      create: { orgId: ORG_ID, ...account, description: "GL control account" }
     });
   }
 
   const sampleCustomer = await prisma.customer.create({
     data: {
+      orgId: ORG_ID,
       displayName: "Tortola Bay Resort",
       companyName: "Tortola Bay Resort Ltd.",
       primaryContact: "Sandra Torres",
@@ -426,6 +459,7 @@ async function main() {
 
   const sampleSupplier = await prisma.supplier.create({
     data: {
+      orgId: ORG_ID,
       displayName: "Caribbean Cleaning Supply",
       companyName: "Caribbean Cleaning Supply Co.",
       primaryContact: "Miguel Ramos",
@@ -438,6 +472,7 @@ async function main() {
 
   const sampleProduct = await prisma.product.create({
     data: {
+      orgId: ORG_ID,
       sku: "SVC-CLEAN-STD",
       name: "Standard cleaning service",
       kind: ProductKind.service,
@@ -453,6 +488,7 @@ async function main() {
   const year = new Date().getFullYear();
   await prisma.invoice.create({
     data: {
+      orgId: ORG_ID,
       number: `INV-${year}-0001`,
       customerId: sampleCustomer.id,
       issueDate: new Date(`${year}-04-15T00:00:00.000Z`),
@@ -467,6 +503,7 @@ async function main() {
         create: [
           {
             position: 1,
+            orgId: ORG_ID,
             productId: sampleProduct.id,
             description: "Weekly housekeeping - 2 visits",
             quantity: 2,
@@ -481,6 +518,7 @@ async function main() {
 
   await prisma.bill.create({
     data: {
+      orgId: ORG_ID,
       number: `BILL-${year}-0001`,
       supplierId: sampleSupplier.id,
       billDate: new Date(`${year}-04-18T00:00:00.000Z`),
@@ -494,6 +532,7 @@ async function main() {
       lines: {
         create: [
           {
+            orgId: ORG_ID,
             position: 1,
             description: "Consumables box",
             quantity: 1,
@@ -525,6 +564,7 @@ async function main() {
   if (!existingVersion) {
     await prisma.statutoryRateVersion.create({
       data: {
+        orgId: ORG_ID,
         effectiveYear: statutoryYear,
         ssbEmployeeRate: 0.04,
         ssbEmployerRate: 0.045,
@@ -554,8 +594,8 @@ async function main() {
   ];
   for (const policy of defaultLeavePolicies) {
     await prisma.leavePolicy.upsert({
-      where: { code: policy.code },
-      create: policy,
+      where: { orgId_code: { orgId: ORG_ID, code: policy.code } },
+      create: { orgId: ORG_ID, ...policy },
       update: {}
     });
   }

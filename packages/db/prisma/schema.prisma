@@ -28,32 +28,65 @@ enum UserStatus {
 }
 
 model User {
-  id             String     @id @default(cuid())
-  email          String     @unique
+  id                        String                   @id @default(cuid())
+  email                     String                   @unique
   /// Lowercased, trimmed; used for uniqueness and invite matching (nullable only before backfill).
-  emailCanonical String?    @unique
-  passwordHash   String
-  name           String
+  emailCanonical            String?                  @unique
+  passwordHash              String
+  name                      String
   /// Only `active` can sign in. Managed by platform_owner via admin API.
-  status         UserStatus @default(active)
+  status                    UserStatus               @default(active)
   /// Bumped to invalidate all JWTs (password / privilege / deactivation, etc.).
-  tokenVersion   Int        @default(0)
+  tokenVersion              Int                      @default(0)
   /// When set, this login is the employee-tracker (mobile) account for that employee.
-  employeeId     String?    @unique
-  employee       Employee?  @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  roles          UserRole[]
-  auditLogs      AuditLog[] @relation("AuditActor")
-  invitations    UserInvitation[]
-  passwordResetTokens PasswordResetToken[]
-  documentsUploaded EmployeeDocument[] @relation("DocumentUploader")
-  staffRequestsReviewed       StaffRequest[]         @relation("StaffRequestReviewer")
-  workAssignmentsCreated      WorkAssignment[]        @relation("WorkAssignmentCreator")
-  staffAnnouncementsCreated   StaffAnnouncement[]     @relation("StaffAnnouncementCreator")
-  notificationLogsReceived   NotificationLog[]        @relation("NotificationRecipientUser")
+  employeeId                String?                  @unique
+  employee                  Employee?                @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+  roles                     UserRole[]
+  auditLogs                 AuditLog[]               @relation("AuditActor")
+  invitations               UserInvitation[]
+  passwordResetTokens       PasswordResetToken[]
+  documentsUploaded         EmployeeDocument[]       @relation("DocumentUploader")
+  staffRequestsReviewed     StaffRequest[]           @relation("StaffRequestReviewer")
+  workAssignmentsCreated    WorkAssignment[]         @relation("WorkAssignmentCreator")
+  staffAnnouncementsCreated StaffAnnouncement[]      @relation("StaffAnnouncementCreator")
+  notificationLogsReceived  NotificationLog[]        @relation("NotificationRecipientUser")
+  /// Cross-org break-glass support access; every use is audit-logged (Batch 12).
+  isPlatformSupport         Boolean                  @default(false)
+  memberships               OrganizationMembership[]
 
   @@index([status])
+}
+
+enum OrganizationStatus {
+  active
+  suspended
+}
+
+/// A tenant company. All business data carries an orgId pointing here (scalar
+/// only for Batch 12; FK hardening is a follow-up).
+model Organization {
+  id        String             @id @default(cuid())
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  name      String
+  slug      String             @unique
+  status    OrganizationStatus @default(active)
+
+  memberships OrganizationMembership[]
+}
+
+model OrganizationMembership {
+  id           String       @id @default(cuid())
+  createdAt    DateTime     @default(now())
+  orgId        String
+  userId       String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([userId])
 }
 
 /// One-time expiring invite; `tokenHash` is bcrypt of the full raw token (id:secret) shown once in dev.
@@ -63,10 +96,13 @@ model UserInvitation {
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash  String
+  /// Org the invited user will join on acceptance (Batch 12).
+  orgId      String
   expiresAt  DateTime
   acceptedAt DateTime?
   revokedAt  DateTime?
 
+  @@index([orgId])
   @@index([userId])
   @@index([expiresAt])
 }
@@ -105,11 +141,14 @@ model AuditLog {
   before      Json?
   after       Json?
   metadata    Json?
+  /// Owning organization (Batch 12).
+  orgId       String?
 
   actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([entityType, entityId])
+  @@index([orgId])
 }
 
 /// Payroll pay basis (matches legacy browser app).
@@ -153,6 +192,10 @@ model DeductionTemplate {
   applyIncomeTax Boolean     @default(false)
   employees      Employee[]
   timeEntries    TimeEntry[]
+  /// Owning organization (Batch 12).
+  orgId          String
+
+  @@index([orgId])
 }
 
 /// HR / payroll document attachment (soft-delete only).
@@ -180,59 +223,62 @@ enum WorkAuthorizationStatus {
 }
 
 model Employee {
-  id            String            @id @default(cuid())
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  fullName      String
-  sex           String            @default("")
-  role          String            @default("")
-  defaultSite   String            @default("")
-  phone         String            @default("")
-  email         String            @default("")
+  id                            String                  @id @default(cuid())
+  createdAt                     DateTime                @default(now())
+  updatedAt                     DateTime                @updatedAt
+  fullName                      String
+  sex                           String                  @default("")
+  role                          String                  @default("")
+  defaultSite                   String                  @default("")
+  phone                         String                  @default("")
+  email                         String                  @default("")
   /// Storage object key for the current profile image, e.g. `employees/{id}/profile-{cuid}.jpg`.
-  profilePhotoPath String?
+  profilePhotoPath              String?
   /// Sensitive — not exposed in list APIs or employee-tracker; audit logs must redact.
-  socialSecurityNumber        String  @default("")
-  nationalHealthInsuranceNumber String @default("")
-  nhiUnemployedSpouse          Boolean @default(false)
-  inlandRevenueDepartmentNumber String @default("")
-  employmentStartDate  DateTime?
-  employmentEndDate    DateTime?
-  workAuthorizationStatus WorkAuthorizationStatus @default(NOT_SPECIFIED)
-  workPermitNumber     String  @default("")
-  workPermitExpiryDate DateTime?
-  basePayType   PayBasis          @default(daily)
-  dailyRate     Float             @default(0)
-  hourlyRate    Float             @default(0)
-  overtimeRate  Float             @default(0)
-  fixedPay      Float             @default(0)
-  standardDays  Float             @default(0)
-  standardHours Float             @default(0)
-  paySchedule   PaySchedule       @default(monthly)
-  active        Boolean           @default(true)
+  socialSecurityNumber          String                  @default("")
+  nationalHealthInsuranceNumber String                  @default("")
+  nhiUnemployedSpouse           Boolean                 @default(false)
+  inlandRevenueDepartmentNumber String                  @default("")
+  employmentStartDate           DateTime?
+  employmentEndDate             DateTime?
+  workAuthorizationStatus       WorkAuthorizationStatus @default(NOT_SPECIFIED)
+  workPermitNumber              String                  @default("")
+  workPermitExpiryDate          DateTime?
+  basePayType                   PayBasis                @default(daily)
+  dailyRate                     Float                   @default(0)
+  hourlyRate                    Float                   @default(0)
+  overtimeRate                  Float                   @default(0)
+  fixedPay                      Float                   @default(0)
+  standardDays                  Float                   @default(0)
+  standardHours                 Float                   @default(0)
+  paySchedule                   PaySchedule             @default(monthly)
+  active                        Boolean                 @default(true)
   /// Applies the employer's annual payroll-tax exemption to this employee.
-  payrollTaxExemptionEnabled Boolean @default(true)
-  notes         String            @default("")
-  templateId    String
-  template      DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  payrollTaxExemptionEnabled    Boolean                 @default(true)
+  notes                         String                  @default("")
+  templateId                    String
+  template                      DeductionTemplate       @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  /// Owning organization (Batch 12).
+  orgId                         String
 
-  timeEntries  TimeEntry[]
-  payRunItems  PayRunItem[]
+  timeEntries TimeEntry[]
+  payRunItems PayRunItem[]
 
   ytdOpeningBalances PayrollYtdOpeningBalance[]
-  linkedUser   User?
-  documents    EmployeeDocument[]
-  staffRequests    StaffRequest[]
-  workAssignments  WorkAssignment[]
-  staffQuizAttempts StaffQuizAttempt[]
-  rewardLedgers     RewardLedger[]
-  notificationLogs  NotificationLog[] @relation("NotificationLogEmployee")
+  linkedUser         User?
+  documents          EmployeeDocument[]
+  staffRequests      StaffRequest[]
+  workAssignments    WorkAssignment[]
+  staffQuizAttempts  StaffQuizAttempt[]
+  rewardLedgers      RewardLedger[]
+  notificationLogs   NotificationLog[]          @relation("NotificationLogEmployee")
 
   @@index([templateId])
   @@index([active])
   @@index([fullName])
   @@index([email])
   @@index([paySchedule, active])
+  @@index([orgId])
 }
 
 /// Phase 2 — Staff Hub request types submitted by employees.
@@ -263,90 +309,99 @@ enum StaffRequestStatus {
 /// must NEVER be stored in `requestedContactUpdate` or any other field of
 /// this model — those live on `Employee` and are managed by HR admins only.
 model StaffRequest {
-  id                       String              @id @default(cuid())
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  employeeId               String
-  employee                 Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  type                     StaffRequestType
-  status                   StaffRequestStatus  @default(SUBMITTED)
-  subject                  String?
-  startDate                DateTime?
-  endDate                  DateTime?
-  reason                   String?
-  details                  String?
+  id                     String             @id @default(cuid())
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  employeeId             String
+  employee               Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type                   StaffRequestType
+  status                 StaffRequestStatus @default(SUBMITTED)
+  subject                String?
+  startDate              DateTime?
+  endDate                DateTime?
+  reason                 String?
+  details                String?
   /// JSON payload for PROFILE_UPDATE only — restricted to non-sensitive
   /// contact fields (phone, address, emergency contact, uniform size).
-  requestedContactUpdate   Json?
-  reviewNote               String?
-  reviewedByUserId         String?
-  reviewedBy               User?               @relation("StaffRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
-  reviewedAt               DateTime?
-  cancelledAt              DateTime?
+  requestedContactUpdate Json?
+  reviewNote             String?
+  reviewedByUserId       String?
+  reviewedBy             User?              @relation("StaffRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewedAt             DateTime?
+  cancelledAt            DateTime?
+  /// Owning organization (Batch 12).
+  orgId                  String
 
   @@index([employeeId])
   @@index([status])
   @@index([type])
   @@index([createdAt])
   @@index([employeeId, status])
+  @@index([orgId])
 }
 
 model EmployeeDocument {
-  id               String   @id @default(cuid())
+  id               String               @id @default(cuid())
   employeeId       String
-  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee         Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   type             EmployeeDocumentType
   fileName         String
   mimeType         String
   sizeBytes        Int
   /// Storage object key resolved by the API document storage provider.
   storagePath      String
-  uploadedAt       DateTime @default(now())
+  uploadedAt       DateTime             @default(now())
   /// Soft delete — never hard-delete in normal flow.
   deletedAt        DateTime?
   uploadedByUserId String?
-  uploadedBy       User?    @relation("DocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  uploadedBy       User?                @relation("DocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  /// Owning organization (Batch 12).
+  orgId            String
 
   @@index([employeeId, deletedAt])
   @@index([type])
+  @@index([orgId])
 }
 
 /// Monthly timesheet line (legacy payroll app shape; multiple rows per employee/month allowed for different sites).
 model TimeEntry {
-  id                    String          @id @default(cuid())
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
-  employeeId            String
-  employee              Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  month                 String
-  periodStart           DateTime?
-  periodEnd             DateTime?
-  site                  String          @default("")
-  startTime             String          @default("")
-  endTime               String          @default("")
-  breakMinutes          Int             @default(0)
-  status                TimeEntryStatus @default(draft)
-  daysWorked            Float           @default(0)
-  hoursWorked           Float           @default(0)
-  overtimeHours         Float           @default(0)
-  flatGross             Float           @default(0)
-  bonus                 Float           @default(0)
-  allowance             Float           @default(0)
-  advanceDeduction      Float           @default(0)
-  withdrawalDeduction   Float           @default(0)
-  loanDeduction         Float           @default(0)
-  otherDeduction        Float           @default(0)
-  templateId            String
-  template              DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  applyNhi              Boolean         @default(true)
-  applySsb              Boolean         @default(true)
-  applyIncomeTax        Boolean         @default(false)
-  notes                 String          @default("")
+  id                  String            @id @default(cuid())
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  employeeId          String
+  employee            Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month               String
+  periodStart         DateTime?
+  periodEnd           DateTime?
+  site                String            @default("")
+  startTime           String            @default("")
+  endTime             String            @default("")
+  breakMinutes        Int               @default(0)
+  status              TimeEntryStatus   @default(draft)
+  daysWorked          Float             @default(0)
+  hoursWorked         Float             @default(0)
+  overtimeHours       Float             @default(0)
+  flatGross           Float             @default(0)
+  bonus               Float             @default(0)
+  allowance           Float             @default(0)
+  advanceDeduction    Float             @default(0)
+  withdrawalDeduction Float             @default(0)
+  loanDeduction       Float             @default(0)
+  otherDeduction      Float             @default(0)
+  templateId          String
+  template            DeductionTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  applyNhi            Boolean           @default(true)
+  applySsb            Boolean           @default(true)
+  applyIncomeTax      Boolean           @default(false)
+  notes               String            @default("")
+  /// Owning organization (Batch 12).
+  orgId               String
 
   @@index([employeeId, month])
   @@index([month])
   @@index([status])
   @@index([periodStart, periodEnd])
+  @@index([orgId])
 }
 
 model PayPeriod {
@@ -360,84 +415,93 @@ model PayPeriod {
   payDate   DateTime?
   notes     String      @default("")
   runs      PayRun[]
+  /// Owning organization (Batch 12).
+  orgId     String
 
-  @@unique([schedule, startDate, endDate])
+  @@unique([orgId, schedule, startDate, endDate])
   @@index([schedule, startDate])
   @@index([endDate])
+  @@index([orgId])
 }
 
 model PayRun {
-  id         String        @id @default(cuid())
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id                  String          @id @default(cuid())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
   // Not @unique: a period may have at most one ACTIVE (non-void) run, but a
   // voided run is kept for audit while a corrected run is created. The
   // "one active run per period" rule is enforced in the payroll service.
-  periodId   String
-  period     PayPeriod     @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  status     PayRunStatus  @default(draft)
-  notes      String        @default("")
-  finalizedAt DateTime?
-  exportedAt DateTime?
-  paidAt     DateTime?
-  voidedAt   DateTime?
+  periodId            String
+  period              PayPeriod       @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  status              PayRunStatus    @default(draft)
+  notes               String          @default("")
+  finalizedAt         DateTime?
+  exportedAt          DateTime?
+  paidAt              DateTime?
+  voidedAt            DateTime?
   /// Set when the run's NHI/SSB/payroll-tax liabilities were remitted (GL journal posted).
   statutoryRemittedAt DateTime?
   /// Immutable statutory/company settings used to calculate this run.
-  statutorySnapshot Json?
-  items      PayRunItem[]
-  exports    PayrollExport[]
+  statutorySnapshot   Json?
+  items               PayRunItem[]
+  exports             PayrollExport[]
+  /// Owning organization (Batch 12).
+  orgId               String
 
   @@index([status])
   @@index([periodId])
+  @@index([orgId])
 }
 
 model PayRunItem {
-  id                  String      @id @default(cuid())
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-  runId               String
-  run                 PayRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  employeeId          String
-  employee            Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  employeeName        String
-  employeeRole        String      @default("")
-  defaultSite         String      @default("")
-  paySchedule         PaySchedule
-  payBasis            PayBasis
-  templateName        String      @default("")
-  sourceEntryIds      Json?
-  sourceSummary       Json?
-  gross               Float       @default(0)
-  nhi                 Float       @default(0)
-  ssb                 Float       @default(0)
-  incomeTax           Float       @default(0)
-  payrollTax          Float       @default(0)
-  employerNhi         Float       @default(0)
-  employerSsb         Float       @default(0)
-  employerPayrollTax  Float       @default(0)
-  manualDeductions    Float       @default(0)
-  totalDeductions     Float       @default(0)
-  net                 Float       @default(0)
-  daysWorked          Float       @default(0)
-  hoursWorked         Float       @default(0)
-  overtimeHours       Float       @default(0)
-  bonus               Float       @default(0)
-  allowance           Float       @default(0)
-  flatGross           Float       @default(0)
-  advanceDeduction    Float       @default(0)
-  withdrawalDeduction Float       @default(0)
-  loanDeduction       Float       @default(0)
-  otherDeduction      Float       @default(0)
+  id                   String      @id @default(cuid())
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  runId                String
+  run                  PayRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  employeeName         String
+  employeeRole         String      @default("")
+  defaultSite          String      @default("")
+  paySchedule          PaySchedule
+  payBasis             PayBasis
+  templateName         String      @default("")
+  sourceEntryIds       Json?
+  sourceSummary        Json?
+  gross                Float       @default(0)
+  nhi                  Float       @default(0)
+  ssb                  Float       @default(0)
+  incomeTax            Float       @default(0)
+  payrollTax           Float       @default(0)
+  employerNhi          Float       @default(0)
+  employerSsb          Float       @default(0)
+  employerPayrollTax   Float       @default(0)
+  manualDeductions     Float       @default(0)
+  totalDeductions      Float       @default(0)
+  net                  Float       @default(0)
+  daysWorked           Float       @default(0)
+  hoursWorked          Float       @default(0)
+  overtimeHours        Float       @default(0)
+  bonus                Float       @default(0)
+  allowance            Float       @default(0)
+  flatGross            Float       @default(0)
+  advanceDeduction     Float       @default(0)
+  withdrawalDeduction  Float       @default(0)
+  loanDeduction        Float       @default(0)
+  otherDeduction       Float       @default(0)
   /// Approved unpaid-leave business days in this run's period and the pro-rated
   /// fixed-pay reduction already applied to `gross` (fixed-basis employees only;
   /// daily/hourly staff simply have no time entries on unpaid-leave days).
   unpaidLeaveDays      Float       @default(0)
   unpaidLeaveDeduction Float       @default(0)
-  paystub             Paystub?
+  paystub              Paystub?
+  /// Owning organization (Batch 12).
+  orgId                String
 
   @@unique([runId, employeeId])
   @@index([employeeId])
+  @@index([orgId])
 }
 
 model Paystub {
@@ -446,22 +510,30 @@ model Paystub {
   updatedAt    DateTime   @updatedAt
   payRunItemId String     @unique
   payRunItem   PayRunItem @relation(fields: [payRunItemId], references: [id], onDelete: Cascade)
-  stubNumber   String     @unique
+  stubNumber   String
   issuedAt     DateTime   @default(now())
   payload      Json?
+  /// Owning organization (Batch 12).
+  orgId        String
+
+  @@unique([orgId, stubNumber])
+  @@index([orgId])
 }
 
 model PayrollExport {
-  id        String    @id @default(cuid())
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   runId     String
-  run       PayRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run       PayRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
   format    String
   fileName  String
   contents  String
+  /// Owning organization (Batch 12).
+  orgId     String
 
   @@index([runId])
+  @@index([orgId])
 }
 
 /// Organization-level payroll configuration (single row, id "singleton").
@@ -469,15 +541,17 @@ model PayrollExport {
 /// settings instead of living as hardcoded placeholders in code.
 ///
 model OrgSettings {
-  id        String   @id @default("singleton")
+  id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /// Owning organization (Batch 12); one settings row per org.
+  orgId     String   @unique
 
   /// Legal company name printed on paystubs and exports.
-  companyLegalName String @default("")
-  companyAddress   String @default("")
-  ssbEmployerNumber String @default("")
-  nhiEmployerNumber String @default("")
+  companyLegalName          String @default("")
+  companyAddress            String @default("")
+  ssbEmployerNumber         String @default("")
+  nhiEmployerNumber         String @default("")
   /// PNG data URL used only on authenticated statutory-form exports.
   statutorySignatureDataUrl String @default("")
 
@@ -530,7 +604,7 @@ model Account {
   id          String      @id @default(cuid())
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  code        String      @unique
+  code        String
   name        String
   type        AccountType
   subtype     String      @default("")
@@ -539,12 +613,14 @@ model Account {
   parentId    String?
   parent      Account?    @relation("AccountTree", fields: [parentId], references: [id], onDelete: SetNull)
   children    Account[]   @relation("AccountTree")
+  /// Owning organization (Batch 12).
+  orgId       String
 
   productsAsIncome  Product[] @relation("ProductIncome")
   productsAsExpense Product[] @relation("ProductExpense")
 
-  invoiceLines      InvoiceLine[] @relation("InvoiceLineIncomeAccount")
-  billLines         BillLine[]    @relation("BillLineExpenseAccount")
+  invoiceLines       InvoiceLine[] @relation("InvoiceLineIncomeAccount")
+  billLines          BillLine[]    @relation("BillLineExpenseAccount")
   paymentDeposits    Payment[]     @relation("PaymentDepositAccount")
   billPaymentSources BillPayment[] @relation("BillPaymentSourceAccount")
   expensesAsPayment  Expense[]     @relation("ExpensePaymentAccount")
@@ -552,16 +628,18 @@ model Account {
   depositsAsBank     Deposit[]     @relation("DepositBankAccount")
   journalLines       JournalLine[]
 
+  @@unique([orgId, code])
   @@index([type, active])
   @@index([parentId])
   @@index([name])
+  @@index([orgId])
 }
 
 model Customer {
   id             String   @id @default(cuid())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  displayName    String   @unique
+  displayName    String
   companyName    String   @default("")
   primaryContact String   @default("")
   email          String   @default("")
@@ -570,19 +648,23 @@ model Customer {
   taxId          String   @default("")
   notes          String   @default("")
   active         Boolean  @default(true)
+  /// Owning organization (Batch 12).
+  orgId          String
 
   invoices Invoice[]
   payments Payment[]
 
+  @@unique([orgId, displayName])
   @@index([active])
   @@index([displayName])
+  @@index([orgId])
 }
 
 model Supplier {
   id             String   @id @default(cuid())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  displayName    String   @unique
+  displayName    String
   companyName    String   @default("")
   primaryContact String   @default("")
   email          String   @default("")
@@ -591,39 +673,47 @@ model Supplier {
   taxId          String   @default("")
   notes          String   @default("")
   active         Boolean  @default(true)
+  /// Owning organization (Batch 12).
+  orgId          String
 
   bills        Bill[]
   billPayments BillPayment[]
   expenses     Expense[]
 
+  @@unique([orgId, displayName])
   @@index([active])
   @@index([displayName])
+  @@index([orgId])
 }
 
 model Product {
-  id                String      @id @default(cuid())
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  sku               String      @unique
-  name              String
-  kind              ProductKind @default(service)
-  description       String      @default("")
-  salesPrice        Float       @default(0)
-  purchaseCost      Float       @default(0)
-  taxable           Boolean     @default(false)
-  active            Boolean     @default(true)
-  incomeAccountId   String
-  incomeAccount     Account     @relation("ProductIncome", fields: [incomeAccountId], references: [id], onDelete: Restrict)
-  expenseAccountId  String?
-  expenseAccount    Account?    @relation("ProductExpense", fields: [expenseAccountId], references: [id], onDelete: SetNull)
+  id               String      @id @default(cuid())
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  sku              String
+  name             String
+  kind             ProductKind @default(service)
+  description      String      @default("")
+  salesPrice       Float       @default(0)
+  purchaseCost     Float       @default(0)
+  taxable          Boolean     @default(false)
+  active           Boolean     @default(true)
+  incomeAccountId  String
+  incomeAccount    Account     @relation("ProductIncome", fields: [incomeAccountId], references: [id], onDelete: Restrict)
+  expenseAccountId String?
+  expenseAccount   Account?    @relation("ProductExpense", fields: [expenseAccountId], references: [id], onDelete: SetNull)
+  /// Owning organization (Batch 12).
+  orgId            String
 
   invoiceLines InvoiceLine[] @relation("InvoiceLineProduct")
   billLines    BillLine[]    @relation("BillLineProduct")
 
+  @@unique([orgId, sku])
   @@index([kind, active])
   @@index([incomeAccountId])
   @@index([expenseAccountId])
   @@index([name])
+  @@index([orgId])
 }
 
 /// Finance transactions (Phase 3 Task 10).
@@ -645,7 +735,7 @@ model Invoice {
   id           String               @id @default(cuid())
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
-  number       String               @unique
+  number       String
   customerId   String
   customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
   issueDate    DateTime
@@ -661,10 +751,14 @@ model Invoice {
   voidedAt     DateTime?
   lines        InvoiceLine[]
   applications PaymentApplication[]
+  /// Owning organization (Batch 12).
+  orgId        String
 
+  @@unique([orgId, number])
   @@index([customerId])
   @@index([status])
   @@index([issueDate])
+  @@index([orgId])
 }
 
 model InvoiceLine {
@@ -684,17 +778,20 @@ model InvoiceLine {
   taxable         Boolean  @default(false)
   taxAmount       Float    @default(0)
   amount          Float    @default(0)
+  /// Owning organization (Batch 12).
+  orgId           String
 
   @@index([invoiceId, position])
   @@index([productId])
   @@index([incomeAccountId])
+  @@index([orgId])
 }
 
 model Bill {
   id           String                   @id @default(cuid())
   createdAt    DateTime                 @default(now())
   updatedAt    DateTime                 @updatedAt
-  number       String                   @unique
+  number       String
   supplierId   String
   supplier     Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   billDate     DateTime
@@ -710,10 +807,14 @@ model Bill {
   voidedAt     DateTime?
   lines        BillLine[]
   applications BillPaymentApplication[]
+  /// Owning organization (Batch 12).
+  orgId        String
 
+  @@unique([orgId, number])
   @@index([supplierId])
   @@index([status])
   @@index([billDate])
+  @@index([orgId])
 }
 
 model BillLine {
@@ -733,10 +834,13 @@ model BillLine {
   taxable          Boolean  @default(false)
   taxAmount        Float    @default(0)
   amount           Float    @default(0)
+  /// Owning organization (Batch 12).
+  orgId            String
 
   @@index([billId, position])
   @@index([productId])
   @@index([expenseAccountId])
+  @@index([orgId])
 }
 
 /// Payment methods for customer payments and bill payments.
@@ -752,7 +856,7 @@ model Payment {
   id               String               @id @default(cuid())
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
-  number           String               @unique
+  number           String
   customerId       String
   customer         Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
   paymentDate      DateTime
@@ -767,10 +871,14 @@ model Payment {
   depositedAt      DateTime?
   applications     PaymentApplication[]
   depositLines     DepositLine[]        @relation("DepositLinePayment")
+  /// Owning organization (Batch 12).
+  orgId            String
 
+  @@unique([orgId, number])
   @@index([customerId])
   @@index([paymentDate])
   @@index([depositAccountId])
+  @@index([orgId])
 }
 
 model PaymentApplication {
@@ -781,17 +889,20 @@ model PaymentApplication {
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   amount    Float
+  /// Owning organization (Batch 12).
+  orgId     String
 
   @@unique([paymentId, invoiceId])
   @@index([paymentId])
   @@index([invoiceId])
+  @@index([orgId])
 }
 
 model BillPayment {
   id              String                   @id @default(cuid())
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
-  number          String                   @unique
+  number          String
   supplierId      String
   supplier        Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   paymentDate     DateTime
@@ -804,10 +915,14 @@ model BillPayment {
   sourceAccountId String
   sourceAccount   Account                  @relation("BillPaymentSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
   applications    BillPaymentApplication[]
+  /// Owning organization (Batch 12).
+  orgId           String
 
+  @@unique([orgId, number])
   @@index([supplierId])
   @@index([paymentDate])
   @@index([sourceAccountId])
+  @@index([orgId])
 }
 
 model BillPaymentApplication {
@@ -818,10 +933,13 @@ model BillPaymentApplication {
   billId        String
   bill          Bill        @relation(fields: [billId], references: [id], onDelete: Restrict)
   amount        Float
+  /// Owning organization (Batch 12).
+  orgId         String
 
   @@unique([billPaymentId, billId])
   @@index([billPaymentId])
   @@index([billId])
+  @@index([orgId])
 }
 
 /// Direct expenses (Phase 3 Task 10C).
@@ -832,7 +950,7 @@ model Expense {
   id               String            @id @default(cuid())
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
-  number           String            @unique
+  number           String
   expenseDate      DateTime
   method           PaymentMethod     @default(card)
   reference        String            @default("")
@@ -849,11 +967,15 @@ model Expense {
   postedAt         DateTime?
   voidedAt         DateTime?
   lines            ExpenseLine[]
+  /// Owning organization (Batch 12).
+  orgId            String
 
+  @@unique([orgId, number])
   @@index([expenseDate])
   @@index([supplierId])
   @@index([paymentAccountId])
   @@index([status])
+  @@index([orgId])
 }
 
 model ExpenseLine {
@@ -871,9 +993,12 @@ model ExpenseLine {
   taxable          Boolean  @default(false)
   taxAmount        Float    @default(0)
   amount           Float    @default(0)
+  /// Owning organization (Batch 12).
+  orgId            String
 
   @@index([expenseId, position])
   @@index([expenseAccountId])
+  @@index([orgId])
 }
 
 // --- Staff Hub Phase 3 (operational engagement; not payroll math) ---
@@ -885,23 +1010,26 @@ enum WorkAssignmentStatus {
 }
 
 model WorkAssignment {
-  id              String                @id @default(cuid())
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id              String               @id @default(cuid())
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
   employeeId      String
-  employee        Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee        Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   date            DateTime
   startTime       String?
   endTime         String?
   locationName    String
   locationAddress String?
   notes           String?
-  status          WorkAssignmentStatus  @default(SCHEDULED)
+  status          WorkAssignmentStatus @default(SCHEDULED)
   createdByUserId String?
-  createdBy       User?                 @relation("WorkAssignmentCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdBy       User?                @relation("WorkAssignmentCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  /// Owning organization (Batch 12).
+  orgId           String
 
   @@index([employeeId, date])
   @@index([date])
+  @@index([orgId])
 }
 
 enum StaffAnnouncementCategory {
@@ -921,18 +1049,22 @@ enum StaffAnnouncementAudience {
 }
 
 model StaffAnnouncement {
-  id                String                    @id @default(cuid())
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
-  title             String
-  body              String
-  category          StaffAnnouncementCategory
-  audience          StaffAnnouncementAudience
-  startsAt          DateTime?
-  endsAt            DateTime?
-  active            Boolean                   @default(true)
-  createdByUserId   String?
-  createdBy         User?                     @relation("StaffAnnouncementCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  id              String                    @id @default(cuid())
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  title           String
+  body            String
+  category        StaffAnnouncementCategory
+  audience        StaffAnnouncementAudience
+  startsAt        DateTime?
+  endsAt          DateTime?
+  active          Boolean                   @default(true)
+  createdByUserId String?
+  createdBy       User?                     @relation("StaffAnnouncementCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  /// Owning organization (Batch 12).
+  orgId           String
+
+  @@index([orgId])
 }
 
 enum NotificationChannel {
@@ -952,46 +1084,56 @@ enum NotificationStatus {
 
 /// Foundation for future queued/sent messages — no auto-send in Phase 3.
 model NotificationLog {
-  id                String                @id @default(cuid())
-  createdAt         DateTime              @default(now())
-  sentAt            DateTime?
-  channel           NotificationChannel
-  recipientUserId   String?
-  recipientUser     User?                 @relation("NotificationRecipientUser", fields: [recipientUserId], references: [id], onDelete: SetNull)
-  employeeId        String?
-  employee          Employee?             @relation("NotificationLogEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
-  subject           String
-  status            NotificationStatus    @default(DRAFT)
+  id              String              @id @default(cuid())
+  createdAt       DateTime            @default(now())
+  sentAt          DateTime?
+  channel         NotificationChannel
+  recipientUserId String?
+  recipientUser   User?               @relation("NotificationRecipientUser", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  employeeId      String?
+  employee        Employee?           @relation("NotificationLogEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  subject         String
+  status          NotificationStatus  @default(DRAFT)
+  /// Owning organization (Batch 12).
+  orgId           String
 
   @@index([createdAt])
   @@index([status])
+  @@index([orgId])
 }
 
 model StaffQuizQuestion {
-  id             String             @id @default(cuid())
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  question       String
-  choices        Json
-  correctIndex   Int
-  explanation    String             @default("")
-  active         Boolean            @default(true)
-  attempts       StaffQuizAttempt[]
+  id           String             @id @default(cuid())
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  question     String
+  choices      Json
+  correctIndex Int
+  explanation  String             @default("")
+  active       Boolean            @default(true)
+  attempts     StaffQuizAttempt[]
+  /// Owning organization (Batch 12).
+  orgId        String
+
+  @@index([orgId])
 }
 
 model StaffQuizAttempt {
-  id            String   @id @default(cuid())
-  createdAt     DateTime @default(now())
+  id            String            @id @default(cuid())
+  createdAt     DateTime          @default(now())
   employeeId    String
-  employee      Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee      Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   questionId    String
-  question      StaffQuizQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question      StaffQuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedIndex Int
   correct       Boolean
-  pointsAwarded Int                 @default(0)
+  pointsAwarded Int               @default(0)
+  /// Owning organization (Batch 12).
+  orgId         String
 
   @@index([employeeId, createdAt])
   @@index([questionId])
+  @@index([orgId])
 }
 
 model RewardLedger {
@@ -1001,8 +1143,11 @@ model RewardLedger {
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   points     Int
   reason     String
+  /// Owning organization (Batch 12).
+  orgId      String
 
   @@index([employeeId, createdAt])
+  @@index([orgId])
 }
 
 /// Bank deposits (Phase 3 Task 10C).
@@ -1013,7 +1158,7 @@ model Deposit {
   id            String            @id @default(cuid())
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
-  number        String            @unique
+  number        String
   depositDate   DateTime
   memo          String            @default("")
   bankAccountId String
@@ -1023,10 +1168,14 @@ model Deposit {
   postedAt      DateTime?
   voidedAt      DateTime?
   lines         DepositLine[]
+  /// Owning organization (Batch 12).
+  orgId         String
 
+  @@unique([orgId, number])
   @@index([depositDate])
   @@index([bankAccountId])
   @@index([status])
+  @@index([orgId])
 }
 
 model DepositLine {
@@ -1040,9 +1189,12 @@ model DepositLine {
   payment     Payment? @relation("DepositLinePayment", fields: [paymentId], references: [id], onDelete: Restrict)
   description String   @default("")
   amount      Float
+  /// Owning organization (Batch 12).
+  orgId       String
 
   @@index([depositId, position])
   @@index([paymentId])
+  @@index([orgId])
 }
 
 // --- General ledger (Batch 8, R7) ---
@@ -1065,17 +1217,21 @@ model JournalEntry {
   sourceType      String
   sourceId        String
   /// Unique idempotency key: `${sourceType}:${sourceId}`.
-  sourceKey       String             @unique
+  sourceKey       String
   status          JournalEntryStatus @default(posted)
   reversalOfId    String?
   reversalOf      JournalEntry?      @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
   reversals       JournalEntry[]     @relation("JournalReversal")
   createdByUserId String?
   lines           JournalLine[]
+  /// Owning organization (Batch 12).
+  orgId           String
 
+  @@unique([orgId, sourceKey])
   @@index([date])
   @@index([sourceType, sourceId])
   @@index([status])
+  @@index([orgId])
 }
 
 model JournalLine {
@@ -1090,9 +1246,12 @@ model JournalLine {
   debit     Decimal      @default(0) @db.Decimal(14, 2)
   credit    Decimal      @default(0) @db.Decimal(14, 2)
   memo      String       @default("")
+  /// Owning organization (Batch 12).
+  orgId     String
 
   @@index([entryId, position])
   @@index([accountId])
+  @@index([orgId])
 }
 
 /// Versioned BVI statutory rate record. One row per effective tax year.
@@ -1104,6 +1263,8 @@ model StatutoryRateVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /// Owning organization (Batch 12).
+  orgId     String
 
   /// Tax year the rates apply to (e.g. 2026).
   effectiveYear Int
@@ -1130,15 +1291,17 @@ model StatutoryRateVersion {
   payrollTaxEnabled         Boolean         @default(true)
 
   /// Official source the values were checked against (laws.gov.vg, bvissb.vg, vinhi.vg, IRD).
-  sourceUrl String @default("")
+  sourceUrl  String    @default("")
   /// When the values were last compared against the official source.
   verifiedAt DateTime?
-  verifiedBy String @default("")
+  verifiedBy String    @default("")
   /// Owner / qualified BVI payroll-professional sign-off before live use.
   approvedAt DateTime?
-  approvedBy String @default("")
+  approvedBy String    @default("")
 
+  @@unique([orgId, effectiveYear])
   @@index([effectiveYear])
+  @@index([orgId])
 }
 
 /// Database-backed rate limiting for authentication endpoints
@@ -1146,10 +1309,10 @@ model StatutoryRateVersion {
 /// Replaces the previous in-memory maps so limits survive restarts and
 /// work when more than one API process is running.
 model AuthRateLimit {
-  id     String   @id @default(cuid())
+  id      String   @id @default(cuid())
   /// Unique bucket key, e.g. "login:192.168.1.1:user@example.com" or "reset:user@example.com".
-  key    String   @unique
-  count  Int      @default(0)
+  key     String   @unique
+  count   Int      @default(0)
   /// Attempts after this instant start a new window.
   resetAt DateTime
 
@@ -1162,46 +1325,55 @@ model AuthRateLimit {
 /// migrations tax the remainder of the year correctly; the other components
 /// are kept for audit and future register/reconciliation reports.
 model PayrollYtdOpeningBalance {
-  id         String   @id @default(cuid())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  employeeId         String
+  employee           Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   /// Calendar year these opening balances apply to.
-  year       Int
-  gross      Float    @default(0)
-  nhi        Float    @default(0)
-  ssb        Float    @default(0)
-  incomeTax  Float    @default(0)
-  payrollTax Float    @default(0)
-  employerNhi         Float @default(0)
-  employerSsb         Float @default(0)
-  employerPayrollTax  Float @default(0)
-  net        Float    @default(0)
+  year               Int
+  gross              Float    @default(0)
+  nhi                Float    @default(0)
+  ssb                Float    @default(0)
+  incomeTax          Float    @default(0)
+  payrollTax         Float    @default(0)
+  employerNhi        Float    @default(0)
+  employerSsb        Float    @default(0)
+  employerPayrollTax Float    @default(0)
+  net                Float    @default(0)
   /// How the balance was recorded, e.g. "csv-import" or "manual".
-  source     String   @default("csv-import")
-  notes      String   @default("")
-  importedBy String   @default("")
+  source             String   @default("csv-import")
+  notes              String   @default("")
+  importedBy         String   @default("")
+  /// Owning organization (Batch 12).
+  orgId              String
 
   @@unique([employeeId, year])
   @@index([year])
+  @@index([orgId])
 }
 
 /// Leave policy: maps a staff-request type to a paid/unpaid leave scheme with
 /// an optional annual allowance (0 = untracked). Approved requests consume
 /// the allowance; unpaid-policy requests reduce fixed-basis pay pro-rata.
 model LeavePolicy {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String           @id @default(cuid())
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
   /// Stable machine code, e.g. ANNUAL, SICK, UNPAID.
-  code      String   @unique
-  name      String
+  code                String
+  name                String
   /// Staff-request type whose approved requests count against this policy.
-  requestType StaffRequestType @unique
-  paid      Boolean  @default(true)
+  requestType         StaffRequestType
+  paid                Boolean          @default(true)
   /// Business days per calendar year per employee; 0 means untracked/unlimited.
-  annualAllowanceDays Float @default(0)
-  active    Boolean  @default(true)
-  sortOrder Int      @default(0)
+  annualAllowanceDays Float            @default(0)
+  active              Boolean          @default(true)
+  sortOrder           Int              @default(0)
+  /// Owning organization (Batch 12).
+  orgId               String
+
+  @@unique([orgId, code])
+  @@unique([orgId, requestType])
+  @@index([orgId])
 }
