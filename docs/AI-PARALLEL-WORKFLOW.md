@@ -9,10 +9,10 @@ Git worktrees let one repository have multiple checked-out branches in separate 
 Recommended local worktree root:
 
 ```text
-C:\dev\kleentoditee-worktrees
+C:\Kleentoditee Payroll HRM
 ```
 
-This keeps active Node and Prisma work outside OneDrive, which reduces the `EPERM` file-lock problems this project has already seen.
+This keeps active Node and Prisma work inside the approved workspace, which reduces the `EPERM` file-lock problems this project has already seen.
 
 ## Create A Worktree
 
@@ -27,9 +27,9 @@ From the canonical repo:
 Then open the matching folder in the tool:
 
 ```text
-C:\dev\kleentoditee-worktrees\claude-finance-core
-C:\dev\kleentoditee-worktrees\cursor-employee-tracker
-C:\dev\kleentoditee-worktrees\codex-integration-qa
+C:\Kleentoditee Payroll HRM\claude-finance-core
+C:\Kleentoditee Payroll HRM\cursor-employee-tracker
+C:\Kleentoditee Payroll HRM\codex-integration-qa
 ```
 
 ## Check For Overlap

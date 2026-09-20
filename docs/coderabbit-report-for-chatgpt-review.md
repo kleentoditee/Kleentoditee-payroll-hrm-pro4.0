@@ -69,8 +69,8 @@
 - **File:** `.claude/settings.local.json` (CodeRabbit cited ~lines **13–18**; see snapshot for exact strings).
 - **Problem:** Entries like:
   - `Bash(node /c/dev/kleentoditee-worktrees/claude-finance-core/scripts/smoke-finance-a.mjs)`
-  - `Bash(git -C /c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0 status -sb)`
-  - `Bash(git -C /c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0 log --oneline -3)`
+  - `Bash(git -C /c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0 status -sb)`
+  - `Bash(git -C /c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0 log --oneline -3)`
 - **Recommended fix (CodeRabbit):** Use **repository-relative** commands from the project root, e.g.:
   - `Bash(node scripts/smoke-finance-a.mjs)` (if that script exists in *this* repo; otherwise the permission belongs in a different worktree’s local file only),
   - `Bash(git status -sb)`,
@@ -111,7 +111,7 @@ Use this as the user message (adjust tone if needed):
 From Windows with WSL (after `coderabbit` is installed in the Linux environment the doc references):
 
 ```bash
-wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"
+wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"
 ```
 
 ---

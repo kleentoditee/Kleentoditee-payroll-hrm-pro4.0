@@ -10,7 +10,7 @@
 
 | Field | Purpose |
 |-------|--------|
-| `profilePhotoPath` | Relative path to current profile image under the API `UPLOADS_DIR` (see [Storage](#storage)). |
+| `profilePhotoPath` | Storage object key for the current profile image (see [Storage](#storage)). |
 | `socialSecurityNumber` | SSN (sensitive; API masking + audit redaction). |
 | `nationalHealthInsuranceNumber` | NHI (sensitive). |
 | `inlandRevenueDepartmentNumber` | IRD / tax ID (sensitive). |
@@ -23,7 +23,7 @@
 | Field | Notes |
 |-------|--------|
 | `type` | `PHOTO` \| `WORK_PERMIT_CARD` \| `NHI_CARD` \| `ID_CARD` \| `CONTRACT` \| `OTHER` |
-| `storagePath` | Relative to `UPLOADS_DIR`. |
+| `storagePath` | Storage object key resolved by the API document storage provider. |
 | `deletedAt` | Set on “delete” — **no hard delete** in normal flow. |
 | `uploadedByUserId` | Uploader; nullable on user removal. |
 
@@ -31,9 +31,10 @@ Uploading a **PHOTO** also updates `profilePhotoPath`. Soft-deleting a PHOTO doc
 
 ## Storage
 
-- Default directory: `apps/api/uploads/hr` (or `UPLOADS_DIR` env) **relative to the API process CWD** when the API is started from `apps/api`.
+- Local/default provider: filesystem storage under `apps/api/uploads/hr` (or `UPLOADS_DIR` env) **relative to the API process CWD** when the API is started from `apps/api`.
 - The repo **ignores** `uploads/` and `apps/api/uploads/` in `.gitignore`.
-- **Production** should set `UPLOADS_DIR` to durable storage (S3, disk volume) and use backups; that wiring is not included here.
+- The API now resolves files through a document storage service. `OBJECT_STORAGE_PROVIDER=local` preserves current local behavior; `s3` and `r2` are explicit future placeholders and fail closed until an S3-compatible client is implemented.
+- Production target: encrypted private bucket, short-lived signed URLs, malware scan hook before trust, retention/legal-hold controls, and audit logging around upload/download/delete/restore activity.
 
 ## API
 
@@ -74,7 +75,7 @@ Returns a **redacted** JSON payload. When the caller has one of `platform_owner`
 
 ## Limitations
 
-- **No** cloud object storage integration; local/dev disk only unless `UPLOADS_DIR` is pointed at shared storage.
+- **No** cloud object storage client yet; the S3/R2 provider path is a fail-closed placeholder behind the document storage abstraction.
 - **Email/Slack** notifications are not implemented; administrators share links and credentials out of band.
 - **20MB** upload limit per file; not configurable in-app.
 - PII in **ID document images** is still present in the file for users who can download those types — the JSON masking does not redact the pixel content.

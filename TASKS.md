@@ -12,9 +12,9 @@ Use this file as the live coordination board for Codex, Claude, Cursor, and the 
 
 | Lane | Agent | Branch Pattern | Worktree Path | Owned Areas | Status |
 | --- | --- | --- | --- | --- | --- |
-| Integration QA | Codex | `agent/codex/integration-qa` | `C:\dev\kleentoditee-worktrees\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Finance Tasks 9 + 10, tracker, and CodeRabbit fix pass pushed; CodeRabbit rerun waits on service rate limit |
-| Finance Core | Claude | `agent/claude/finance-core` | `C:\dev\kleentoditee-worktrees\claude-finance-core` | finance API/UI, finance models, export/report logic | Tasks 9 + 10 merged; pull `codex/consolidate-live-build` before next slice |
-| Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\dev\kleentoditee-worktrees\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | On `codex/consolidate-live-build`; pull to refresh worktree |
+| Integration QA | Codex | `agent/codex/integration-qa` | `C:\Kleentoditee Payroll HRM\codex-integration-qa` | docs, scripts, auth/shell polish, CodeRabbit fixes, final verification | Finance Tasks 9 + 10, tracker, and CodeRabbit fix pass pushed; CodeRabbit rerun waits on service rate limit |
+| Finance Core | Claude | `agent/claude/finance-core` | `C:\Kleentoditee Payroll HRM\claude-finance-core` | finance API/UI, finance models, export/report logic | Tasks 9 + 10 merged; pull `codex/consolidate-live-build` before next slice |
+| Employee Tracker | Cursor | `agent/cursor/employee-tracker` | `C:\Kleentoditee Payroll HRM\cursor-employee-tracker` | `apps/employee-tracker/**`, tracker UX, mobile employee flows | On `codex/consolidate-live-build`; pull to refresh worktree |
 
 ## Shared File Locks
 
@@ -24,7 +24,14 @@ Only one lane should edit these at a time. Add a row before touching a shared fi
 | --- | --- | --- | --- |
 | `packages/db/prisma/schema.prisma` | None | Shared data model | Free |
 | `package.json` / `package-lock.json` | None | Dependencies/scripts | Free |
+| `package.json` / `package-lock.json` | Cursor | Upgrade admin-web Next.js dependency | Done; admin-web typecheck/build passed |
 | `apps/api/src/app.ts` | None | Route mounting | Free |
+| `package.json` / `package-lock.json` | Kimi (main checkout) | Batch 6 R12: deepmerge-ts override attempt (reverted) | Done; both files back to pre-batch state |
+| `packages/db/package.json` + `package-lock.json` + `packages/db/prisma/schema*.prisma` | Kimi (main checkout) | Batch 7 R12b: Prisma 7 upgrade | Done; Prisma 7.10.0 live-verified |
+| `packages/db/prisma/schema.prisma` | Kimi (main checkout) | Batch 8 R7: general ledger models | Done; GL live-verified |
+
+
+
 
 ## Lane Start Checklist
 
@@ -42,13 +49,13 @@ Only one lane should edit these at a time. Add a row before touching a shared fi
 ```powershell
 npm.cmd run typecheck
 npm.cmd run lint
-npm.cmd run test --workspace api
+npm.cmd run test:api
 ```
 
 3. Run CodeRabbit when available:
 
 ```powershell
-wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"
+wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"
 ```
 
 4. Commit with a clear message.
@@ -62,3 +69,151 @@ wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-pay
 | Paystubs and export polish (no banking) | Claude | User priority is payroll output and exports, not banking workflows |
 | Admin/tracker readability fixes | Cursor | Left rail widgets and top action buttons need larger, clearer UI |
 | Cross-app QA, CodeRabbit pass, and merge cleanup | Codex | Integration and verification lane |
+
+
+---
+
+## Kimi Lane — Release-Truth Batch (2026-09-18)
+
+- Agent: Kimi (owner-directed session)
+- Branch: working in main checkout `cleanup/project-workflow-audit` (owner has large uncommitted WIP; no branch switch, no commit sweep)
+- Basis: `docs/DEEP-RESEARCH-2026-09-18.md` Batch 1
+- Owned files this batch:
+  - `apps/admin-web/src/lib/dashboard-nav.ts`
+  - `apps/admin-web/src/components/app-shell.tsx`
+  - `packages/db/prisma/schema.prisma` (shared — lock below)
+  - `packages/db/prisma/seed.ts`
+  - `apps/api/src/routes/settings.ts`
+  - `apps/admin-web/src/app/dashboard/settings/page.tsx`
+  - `apps/admin-web/src/app/dashboard/payroll/runs/page.tsx` (warning banner only, if touched)
+- Shared File Locks:
+  - `packages/db/prisma/schema.prisma` | Kimi | Add StatutoryRateVersion model | Active
+- Status: nav fixes done; statutory versioning in progress
+
+### Batch 1 results (2026-09-18)
+
+- Navigation fixes shipped in working tree:
+  - "Paystubs" now points to `/dashboard/payroll/paystubs/preview` (was pay runs list); "Payroll exports" label removed; "Government forms" added under Payroll; primary-nav "Bookmarks" removed; duplicate "Users & roles" (People group) and "Activity log" (Admin group) removed.
+  - Payroll section tab bar (`payroll/layout.tsx`) now includes Paystubs alongside Pay periods / Pay runs / Government forms.
+- Statutory versioning:
+  - New `StatutoryRateVersion` model in `schema.prisma` (pushed to local PostgreSQL, Prisma client regenerated). Payroll still reads OrgSettings; this is the verification/audit table.
+  - `GET /settings/org` now returns `statutoryVerification` (hasVersion / verified / approved / source / dates).
+  - Seed adds a current-year UNVERIFIED version row (only when seed runs; not re-seeded this session to avoid resetting owner data).
+  - Settings page shows a dynamic banner: green when verified+approved, amber warning otherwise. Pay runs page shows an amber warning with a Settings link until rates are verified and approved.
+- Verification: typecheck PASS, lint PASS (1 pre-existing `<img>` warning in `payroll/forms/page.tsx`), test:api 72/72 PASS. Browser-verified in-app: settings banner, pay runs banner, 4-tab payroll nav, government forms page all render correctly.
+- Notes: API process was restarted to unblock Prisma generate (EPERM on query engine DLL). No commit made — main checkout has extensive owner WIP; integration lane should commit deliberately.
+- Next batch: Batch 2 = cookie-session auth + CSRF + DB-backed throttle (research R3/R4).
+
+| `apps/api/package.json` | Kimi | Add auth-cookies.test.ts to API test list | Active |
+
+### Batch 2 results (2026-09-19) — cookie sessions + CSRF + DB throttle
+
+- Security model changed from `sessionStorage` bearer tokens to server-managed cookies:
+  - Sign-in (login / first-user register / dev-emergency) now sets `kt_session` (HttpOnly, SameSite=Lax, Secure in production, 12h) + `kt_csrf` (readable double-submit token). New files: `apps/api/src/lib/auth-cookies.ts`, `apps/api/src/lib/rate-limit.ts`; middleware rewritten in `apps/api/src/middleware/auth.ts`.
+  - CSRF enforced on all cookie-authenticated mutations: `x-kt-csrf` header must match the `kt_csrf` cookie (constant-time compare). Bearer-auth requests are exempt (transitional compatibility) — bearer tokens are still returned in login responses for scripts/migration; removal is a later batch.
+  - New `POST /auth/logout` revokes the session server-side (bumps `tokenVersion`, expires both cookies); admin shell and tracker home call it on sign-out.
+  - Login throttling + password-reset interval throttle moved from in-memory Maps to new `AuthRateLimit` Prisma table (survives restarts, multi-process safe).
+  - Frontends: `setToken` no longer stores tokens; a global fetch guard (`installCsrfFetchGuard` in both `lib/api.ts`, bootstrapped by new `components/csrf-guard.tsx` in both root layouts) attaches the CSRF header to API mutations automatically. `getToken()` returns a sentinel for legacy page guards while the cookie exists.
+  - Protected layouts are cookie-first (admin `dashboard/layout.tsx`, tracker home): no stored token required; 401 from `/auth/me` redirects to login.
+- Schema: added `AuthRateLimit` model (db push + generate done).
+- Verification: typecheck PASS; lint PASS (1 pre-existing `<img>` warning); test:api **81/81 PASS** (9 new cookie/CSRF tests in `auth-cookies.test.ts`, added to the api test script); full `build` PASS (admin, tracker, api); `check:tracker-login` PASS.
+  - curl-level proof: cookie GET 200; cookie POST without CSRF header → 403; with header → 200; after logout → 401; bearer fallback → 200.
+  - Browser proof (in-app): admin sign-in leaves storage empty, `kt_session` invisible to scripts, settings save (PUT) succeeds through the guard; tracker (Maria) Staff Hub loads cookie-only.
+- Data note: `maria.tracker@kleentoditee.local` user was **suspended** in the local DB (pre-existing state, created 2026-09-17). Reactivated via `/admin/users/:id/reactivate` to verify the tracker flow — flag to owner if that suspension was intentional.
+- Still open (later batches): MFA, session/device management UI, remove bearer fallback, security headers review, `npm audit` triage.
+
+### Batch 3 results (2026-09-19) — historical/YTD payroll opening-balance import (R5)
+
+- New `PayrollYtdOpeningBalance` model (`packages/db/prisma/schema.prisma`): one row per employee per calendar year (`@@unique([employeeId, year])`) holding opening gross + NHI/SSB/income-tax/payroll-tax (employee + employer) + net, with source/notes/importedBy audit fields. Pushed to local PostgreSQL; Prisma client regenerated.
+- Payroll-tax correctness fix: `payroll-service.ts` now merges opening-balance gross into `yearToDateGrossByEmployee` before building run items, so the BVI annual exemption ($10,000 default) accounts for pay earned under a previous system. Unit-proven: $2,000 fixed month yields $0 payroll tax without history vs $80 with a $9,000 opening balance (8% of the $1,000 over the exemption).
+- New lib `apps/api/src/lib/payroll-ytd-import.ts`: quote-aware CSV parser (fixed template: email, employee_name, gross, nhi, ssb, income_tax, payroll_tax, employer_nhi, employer_ssb, employer_payroll_tax, net, notes), validation (non-negative amounts, gross required), employee matching (case-insensitive email, exact-name fallback, ambiguous names rejected), duplicate-employee detection per file, all-or-nothing upsert commit.
+- Routes in `apps/api/src/routes/payroll.ts` (no app.ts change): `GET /payroll/ytd-opening-balances?year=` (CAN_VIEW), `POST .../preview` and `.../commit` (CAN_EDIT), `DELETE .../:id` (CAN_EDIT). Commits and deletes write audit log entries.
+- Admin UI: new `/dashboard/payroll/ytd-import` page (year picker, CSV template download, file/paste input, preview table with New/Overwrites badges and row errors, commit, recorded-balances table with delete, employees-without-balance hint). Added "YTD import" tab to `payroll/layout.tsx` and sidebar entry in `dashboard-nav.ts`.
+- Verification: typecheck PASS; lint PASS (same 1 pre-existing `<img>` warning); test:api **91/91 PASS** (10 new in `payroll-ytd-import.test.ts`, added to api test script); full `build` PASS.
+  - curl proof: bad-row commit 400; CSRF-less commit 403; clean commit created/updated counts correct; duplicate-row file 400; delete 200 then 404; list reflects state.
+  - Browser proof (in-app): sign-in, 5-tab payroll nav, preview (1 ready / 0 rejected, matched employee, formatted amounts), commit success banner, recorded table row, UI delete → clean state. Test rows fully removed afterwards; owner data untouched (0 balances remain).
+- Ops note: killing the API to unblock Prisma generate also stopped the shared `dev-all` process group; API, admin, and tracker were all restarted and confirmed healthy (8787/3000/3001). Restart helpers saved at `tmp/restart-api.ps1` and `tmp/restart-frontends.ps1`.
+- Next batch: Batch 4 = payroll register + reconciliation reports (R9) — the opening-balance statutory components stored here feed those reports.
+
+### Batch 4 results (2026-09-19) — payroll register + year summary + reconciliation (R9)
+
+- New lib `apps/api/src/lib/payroll-reports.ts` (pure aggregation separated from DB loading):
+  - **Payroll register** per run: frozen per-employee lines (days/hours/OT, gross, NHI/SSB/income-tax/payroll-tax, manual + total deductions, net, employer NHI/SSB/payroll-tax + employer cost), totals row, CSV export with period header block and quoted-field escaping. Void runs rejected; drafts allowed but flagged.
+  - **Year summary** per calendar year: per-employee Opening YTD (Batch 3 balances) + posted-runs gross = YTD gross, plus all deduction/employer components, grand totals, posted-run list; run lines belonging to deleted employees are kept as inactive rows rather than dropped.
+  - **Reconciliation checks** on every frozen line: `gross = net + totalDeductions`, `totalDeductions = nhi+ssb+incomeTax+payrollTax+manual`, non-negative net, and per-employee `opening + runs = YTD gross`; draft/void runs in the year surface as exclusion warnings.
+- Routes in `payroll.ts` (CAN_VIEW): `GET /payroll/reports/register?runId=&format=csv` (CSV download via Content-Disposition) and `GET /payroll/reports/year-summary?year=`.
+- Admin UI: new `/dashboard/payroll/reports` page — run picker + register table + CSV download + draft banner; year picker + per-employee YTD table (opening vs runs vs YTD columns) + posted-run listing; green/amber/rose reconciliation banners. Added "Reports" tab (6th) to `payroll/layout.tsx` and sidebar entry in `dashboard-nav.ts`.
+- Verification: typecheck PASS; lint PASS (same 1 pre-existing `<img>` warning); test:api **98/98 PASS** (7 new in `payroll-reports.test.ts`); full `build` PASS.
+  - curl proof on a labeled draft run over the owner's September period: register JSON reconciles (gross 6800 = net 6295 + deductions 505), CSV downloads with correct headers/filename, year summary excludes the draft with a warning and reports zero posted activity.
+  - Browser proof (in-app): page renders register lines + totals, reconciliation-passed banner, year summary with draft-exclusion warning.
+  - Cleanup: draft run deleted afterwards; owner data restored (0 runs, 2 original periods, 0 opening balances). Only audit-log entries remain from the verification.
+- No commit made — owner WIP in checkout; integration lane commits deliberately.
+- Still open from research: R6 document storage hosting, R7 finance ledger scope, R8 leave/time-off, R10 scheduling, R11 ops, R12 npm audit + Prisma 7 deprecation, R13 e2e/visual tests.
+### Batch 5 results (2026-09-19) — leave/time-off domain (R8)
+
+- Schema (`packages/db/prisma/schema.prisma`, pushed + client regenerated): new `UNPAID_LEAVE` value on `StaffRequestType`; new `LeavePolicy` model (`code`/`requestType` unique, `paid`, `annualAllowanceDays` with 0 = untracked, `active`, `sortOrder`); `PayRunItem` gained `unpaidLeaveDays` + `unpaidLeaveDeduction` so the pay-run line freezes the leave impact.
+- New pure lib `apps/api/src/lib/leave-days.ts`: business-day counting, range overlap, and fixed-basis pro-rata deduction (`fixedPay x days / standardDays`, period-business-days fallback, capped at fixedPay). `apps/api/src/lib/leave.ts` adds `DEFAULT_LEAVE_POLICIES` (ANNUAL 15d paid, SICK 10d paid, UNPAID untracked unpaid), `computeLeaveBalances` (used = APPROVED+COMPLETED, pending = SUBMITTED+UNDER_REVIEW), `ensureDefaultLeavePolicies`, `listLeaveBalances`, `loadUnpaidLeaveDaysByEmployee`, `isLeaveRequestType`.
+- Payroll integration: `payroll-run-builder.ts` accepts `unpaidLeaveDaysByEmployee` + `standardDays`, routes `fixedPay - deduction` through `computeEmployeeRunLine` so gross AND statutory (NHI/SSB) both drop; `payroll-service.ts` loads approved unpaid-leave overlap per period automatically. Unit-proven: $2,200 fixed with 11/22 unpaid days -> $1,100 gross and NHI follows the reduced gross.
+- Routes in `apps/api/src/routes/staff-requests.ts` (mounted at `/`, no app.ts change): `GET /leave/policies`, `POST /leave/policies/seed-defaults`, `PUT /leave/policies/:id` (owner/hr), `GET /leave/balances?year=&employeeId=`, `GET /staff/self/leave-balances?year=`. `UNPAID_LEAVE` wired into request types, payroll visibility, and date-required validation. `seed.ts` upserts the 3 default policies.
+- Admin UI: new `/dashboard/people/leave` page (editable policy table + per-employee balances grid with used/pending/remaining), "Leave balances" tab in `people/layout.tsx` + sidebar entry. Tracker UI: `UNPAID_LEAVE` type + label, date-range handling, "My leave balances" card on `/requests`.
+- Bug found + fixed during browser verification (Batch 2 follow-up): `hasSessionCookie()` in both `apps/*/src/lib/auth-storage.ts` checked `document.cookie` for the **HttpOnly** `kt_session` cookie, which scripts can never see -- every tracker page guard bounced a signed-in employee back to /login. Fixed to detect the readable `kt_csrf` companion cookie (set/expired together with `kt_session`, same TTL). tsc + eslint PASS on both apps; admin was unaffected (its layout guards via `/auth/me`).
+- Verification: typecheck PASS; lint PASS (same 1 pre-existing `<img>` warning); test:api **103/103 PASS** (5 new in `leave.test.ts`); full `build` PASS.
+  - curl proof: policies seeded; tracker login as Maria; UNPAID_LEAVE (2026-09-07..11) + TIME_OFF submitted, approved via admin PATCH; self-balances flipped pending -> used (5 unpaid, 3 annual/12 remaining); admin balances list all 4 employees.
+  - Payroll impact proven live on the owner's September period with a labeled approved UNPAID_LEAVE for Kemario (fixed $1,800, standardDays 20): draft run line showed `unpaidLeaveDays=5`, `unpaidLeaveDeduction=450`, `gross=1350`, `net 1245.37 + deductions 104.63 = gross` reconciled; register report lines reconcile for all employees.
+  - Browser proof (in-app): admin `/dashboard/people/leave` renders policies table + 0-used balances grid + People tab bar; tracker `/requests` renders "My leave balances" card (15/10 left, 0d unpaid used) and the Unpaid leave type option.
+  - Cleanup: draft run deleted (runs list empty), all 3 test staff requests deleted (table count 0), balances verified all-zero afterwards; the 3 seeded leave policies intentionally remain (additive feature data, same pattern as Batch 1 StatutoryRateVersion). Temp jars/scripts removed.
+- No commit made -- owner WIP in checkout; integration lane commits deliberately.
+- Still open from research: R6 document storage hosting, R7 finance ledger scope, R10 scheduling, R11 ops, R12 npm audit + Prisma 7 deprecation, R13 e2e/visual tests.
+### Batch 6 results (2026-09-19) — npm audit + Prisma deprecation triage (R12)
+
+- Audit baseline (npm 11.12.1, `npm audit --json`): **3 high, 0 critical/moderate/low** — a single transitive chain: `deepmerge-ts@7.1.5` (GHSA-ggr8-5vv4-36mx, stack exhaustion merging recursive object graphs) <- `@prisma/config@6.19.3` <- `prisma@6.19.3` (CLI, devDependency of `packages/db`).
+- Exposure analysis: the vulnerable code runs only inside `loadConfigTsOrJs` when the Prisma CLI parses a `prisma.config.ts` file; this repo has none (config lives in `packages/db/package.json`), so the path is never exercised. Dev-time CLI only; the runtime `@prisma/client` is unaffected. Practical risk: low.
+- No fix on the Prisma 6 line: `prisma@6.19.3` is the latest 6.x and pins `deepmerge-ts` exactly `7.1.5`. Fixed only in Prisma 7+ (`prisma@7.10.0` current stable; `@prisma/config@7.10.0` no longer depends on deepmerge-ts). Prisma 8 is already in RC (`8.0.0-rc.15`).
+- Deprecation status: `prisma@6.19.3` carries NO npm `deprecated` flag. The "Prisma 7" item is an upgrade-window concern, not an npm deprecation.
+- Workaround attempted and reverted: npm `overrides` for deepmerge-ts (scoped `@prisma/config` + flat `^8.0.0` + exact `8.0.0`, with lock/hidden-lock/forced re-resolution). npm 11.12.1 silently DROPS the package from the ideal tree when the override conflicts with an exact pin — `node_modules/deepmerge-ts` disappears and `prisma generate` crashes. Resolver bug, not fixable by override syntax. All changes fully reverted; lock restored byte-identical to pre-batch state (git-clean vs HEAD), `package.json` carries only the owner's pre-existing WIP.
+- Post-revert verification: `prisma generate` + `prisma validate` PASS; test:api **103/103 PASS**; api typecheck PASS; audit back to the 3-high baseline (no regression); API healthy on 8787.
+- No commit made — owner WIP in checkout; integration lane commits deliberately.
+- Outcome / recommendation: accept the 3 dev-time highs for now (documented, unused code path); schedule a dedicated **Prisma 7 migration batch** — expected scope per the v7 upgrade guide (confirm against the official guide at implementation time): new `prisma-client` generator output, required `prisma.config.ts`, seed config move out of package.json, driver-adapter client (`@prisma/adapter-pg`), plus full test/build/live re-verification.
+- Still open from research: R6 document storage hosting, R7 finance ledger scope, R10 scheduling, R11 ops, R13 e2e/visual tests. New: **R12b Prisma 7 migration** (from this triage).
+### Batch 7 results (2026-09-19) — Prisma 7 upgrade (R12b, from Batch 6 triage)
+
+- Upgraded `prisma` + `@prisma/client` 6.19.3 -> **7.10.0** in `packages/db`, added `@prisma/adapter-pg@7.10.0` (v7 client is Rust-free and requires a driver adapter even with the legacy provider).
+- Kept the `prisma-client-js` generator (still supported in v7; the new `prisma-client` provider + generated-output-path import migration deferred — not required for the audit fix and a much larger blast radius).
+- Schema: `datasource.url` is REMOVED in v7 (P1012, not just deprecated) — dropped `url = env("DATABASE_URL")` from `schema.prisma` and `schema.sqlite.prisma`. SQLite fallback validated (`prisma validate --schema prisma/schema.sqlite.prisma` PASS).
+- New `packages/db/prisma.config.ts` (loads root `.env` via dotenv, registers schema path, migrations path, `tsx prisma/seed.ts` seed, datasource url). Removed the now-ignored `"prisma"` key from `packages/db/package.json` and dropped the removed `--skip-generate` flag from `push`/`push:loss` scripts.
+- Runtime instantiation: `packages/db/src/index.ts` now builds `new PrismaClient({ adapter: new PrismaPg({ connectionString }) })` behind a **lazy Proxy singleton** — v6 constructed eagerly without env, but v7 needs DATABASE_URL at construction, and several unit tests import the module for types/enums only. Cache lives on `globalThis` under `prismaClient` (the proxy itself must never be cached — that bug caused a stack-overflow 500 during verification and was fixed). Same adapter pattern applied to `scripts/reset-password.mjs`.
+- Verification: `prisma generate` + `validate` PASS; `db push` = database already in sync (no structural drift); test:api **103/103 PASS**; db + api typecheck PASS; full workspace `build` PASS; lint PASS (same 1 pre-existing `<img>` warning).
+  - Live proof: API restarted on 8787; admin login sets kt_session/kt_csrf cookies; leave policies, balances (4 rows), payroll periods, auth/me all return live data through the pg adapter; draft-run create/delete on the September period reconciles (Kemario gross back to full 1800, confirming Batch 5 cleanup) and was removed afterwards.
+  - Browser proof (in-app): admin `/dashboard/people/leave` renders policies + balances grid on the Prisma 7 stack. Note: the in-app browser shares cookies across localhost ports, so the tracker login from Batch 5 initially shadowed the admin session (cookies ignore ports) — re-signed in as admin; dev-only quirk, not a regression.
+- Audit outcome: the deepmerge-ts chain is NOT cleared — `@prisma/config@7.10.0` still pins `deepmerge-ts@7.1.5`, and v7 additionally bundles `mysql2@3.15.3` (2 new advisories: auth-plugin downgrade, zlib decompression bomb). Current: **4 highs**, all inside the dev-time Prisma CLI. No stable release fixes them (ranges end in the 8.1.0-dev channel; prisma 8.0.0-rc is a full CLI rewrite and not production-appropriate). Exposure: deepmerge-ts runs only when the CLI parses our own static prisma.config.ts; mysql2 is dead code for a PostgreSQL deployment. Accept + monitor: re-run `npm audit` each batch and bump prisma when a stable release carrying deepmerge-ts >= 8 / mysql2 > 3.23.0 ships.
+- No commit made — owner WIP in checkout; integration lane commits deliberately. Changed files: `packages/db/package.json`, `packages/db/prisma.config.ts` (new), `packages/db/src/index.ts`, `packages/db/prisma/schema.prisma`, `packages/db/prisma/schema.sqlite.prisma`, `scripts/reset-password.mjs`, `package-lock.json`.
+- Ops note: seed.ts wipes tables before seeding — never run `npm run db:seed` / `prisma db seed` against the live owner DB.
+- Still open from research: R6 document storage hosting, R7 finance ledger scope, R10 scheduling, R11 ops, R13 e2e/visual tests. Follow-up: prisma-client-js -> prisma-client provider migration when Prisma announces the removal release.
+### Batch 8 results (2026-09-19) — double-entry general ledger core (R7, first slice)
+
+- Schema (`packages/db/prisma/schema.prisma`, pushed): `JournalEntry` (date, memo, `sourceType`/`sourceId`, unique `sourceKey` for idempotency, `status`, `reversalOfId` self-relation, `createdByUserId`) + `JournalLine` (`Decimal(14,2)` debit/credit — decimal-safe storage, unlike the Float documents) + `JournalEntryStatus` enum; `Account.journalLines` relation. Posting rule: corrections are reversal journals (`<type>_reversal` sourceType), posted rows are never edited or deleted by the app.
+- New lib `apps/api/src/lib/gl-posting.ts`: pure validators/builders (2+-line rule, one-sided debit/credit, balance within half-cent) + `postJournal` (idempotent upsert by sourceKey with unique-race fallback) + `reverseJournal` (swap debit/credit, no-op when the original predates the GL) + `ensureControlAccounts` (additive upsert-by-code, same pattern as leave policies). Control accounts: AR 1100 / AP 2000 (already seeded) + new 2100 NHI, 2200 SSB, 2300 payroll-tax, 2400 income-tax, 2500 net-wages, 2600 other-deductions payables, 2700 tax payable, 6100 wages, 6200 employer statutory. `seed.ts` upserts the same set for fresh installs.
+- Posting rules wired into existing transactions (same DB transaction as the document mutation): invoice send (Dr AR / Cr income per line / Cr tax), invoice void (reversal), customer payment create (Dr deposit account / Cr AR) + delete (reversal), bill receive (Dr expense per line / Cr AP) + void (reversal), bill payment create (Dr AP / Cr source account) + delete (reversal), expense post (Dr expense / Cr payment account) + void (reversal), payroll run finalize (Dr wages gross + Dr employer statutory / Cr NHI+SSB+payroll-tax+income-tax+other-deductions payables + Cr net wages) + void (reversal). Deposits deliberately NOT auto-posted: deposit lines carry no account attribution and payments already post at receipt — documented for a later slice.
+- New lib `apps/api/src/lib/gl-reports.ts` + endpoints in the already-mounted `finance-reports.ts` (CAN_VIEW, no app.ts change): `GET /finance/reports/trial-balance?asOf=`, `GET /finance/reports/journal?from=&to=&sourceType=`, `GET /finance/reports/ledger/:accountId?from=&to=` (opening balance + running normal-direction balance).
+- Admin UI: `/dashboard/finance/journal` (source filter, expandable line drill-down, reversal badges) + `/dashboard/finance/trial-balance` (as-of picker, balanced banner, normal-direction balances, "management-prepared, unaudited" label) + 2 new finance tabs.
+- Verification: test:api **111/111 PASS** (8 new in `gl-posting.test.ts`, incl. the Batch 5 payroll numbers as a balanced-journal proof); db+api+admin typecheck PASS; eslint on new pages PASS; full workspace build PASS.
+  - Live proof: invoice→send→payment→bill→receive→bill-payment→expense→post chain produced 5 balanced journals; second invoice send→void produced an exact reversal; trial balance after the flow: balanced 2260=2260 with Cash 90 / AR 600 / Sales 1000 / COGS 250 / Office 60 (hand-verified); September draft run finalized → payroll journal dr 7336.25 = cr 7336.25 with auto-provisioned control accounts → voided → exact reversal, all payroll accounts back to 0.
+  - Browser proof (in-app): journal page (tabs, filter, empty state) and trial-balance page (balanced banner, unaudited label) render live.
+  - Cleanup: payment/bill-payment deleted via API (reversals posted), invoice/bill/expense voided via API (reversals) then all test documents + 14 journal entries DB-deleted; voided test pay run DB-deleted. Final state: 0 journal entries, TB 0 rows, owner's original INV-2026-0001/BILL-2026-0001 untouched, 15-account chart (6 original + 9 control) kept as feature data.
+- No commit made — owner WIP in checkout; integration lane commits deliberately.
+- R7 remaining slices (documented for next batches): fiscal periods with open/locked states, manual journals with approval, opening balances/conversion, AR/AP aging off journal lines, deposits posting design (undeposited-funds account), P&L / balance sheet / cash-flow reports, CSV/PDF export, year-end closing + retained earnings.
+- Still open from research: R6 document storage hosting, R10 scheduling, R11 ops, R13 e2e/visual tests.
+### Batch 9 results (2026-09-19) — deep review & gap analysis (self-audit)
+- Full audit executed against the live working tree; report written to `docs/DEEP-REVIEW-2026-09-19.md`. A copy-paste ChatGPT version of the review brief lives at `docs/CHATGPT-DEEP-REVIEW-PROMPT.md`.
+- Build health re-verified this session: full workspace build PASS, typecheck PASS, test:api 111/111 PASS, lint PASS (0 errors / 1 warning), npm audit unchanged (4 high, dev-CLI prisma chain only).
+- Batch 1-8 claims re-verified against code: all VERIFIED, none false. Deposits-posting gap confirmed real (zero postJournal refs in finance-deposits.ts).
+- Critical findings: (1) ALL of Batches 1-8 are uncommitted working-tree state (214 modified + 86 untracked files, zero commits) — highest-risk item; (2) branch `frontend/auth-client-cookie-ready` (56feb29) is merged nowhere — diff before deleting; (3) seeded DeductionTemplate "NHI + SSB + income tax" mislabels BVI payroll tax as income tax in a zero-income-tax jurisdiction; (4) SSB/NHI seed ceilings mismatch public sources and provenance fields are empty; payrollTaxEmployerClass is NOT_SET; (5) sick-leave seed 10d vs cited 12-day statutory minimum — verify Labour Code.
+- K3 gap map: multi-tenancy NOT STARTED (zero tenant fields in schema), banking/reconciliation NOT STARTED, financial statements + year-end package + BVI filing outputs NOT STARTED, WhatsApp still on recipient-less api.whatsapp.com link, email invite/reset-only, S3/R2 storage unimplemented, no e2e framework anywhere.
+- Competitor verdict (BVI-weighted): QBO/Xero/Gusto/BambooHR/Wave all lack BVI payroll — the app's BVI payroll + integrated ledger is the differentiator; real regional competitor is Celery. Behind everyone on banking, statements, mobile, hardening.
+- Recommended next: Batch 10 = commit the verified baseline (K3 commit sequence), Batch 11 = statutory truth pack, Batch 12 = GL slice 2 (fiscal periods + manual journals + deposits posting).
+- No commit made — owner WIP in checkout; integration lane commits deliberately.
+- Reconciliation (2026-09-19): owner ran the same brief in ChatGPT; comparison written to `docs/DEEP-REVIEW-2026-09-19-RECONCILIATION.md` (file: `docs/DEEP-REVIEW-RECONCILIATION-2026-09-19.md`). ChatGPT confirmed 5 additional findings Kimi verified true: missing migrations for Batches 1/2/3/5/8 models (deploy blocker), CORS missing x-kt-csrf + credentials, bearer fallback still active, 107 Float money fields, BZD hardcoded on customer pages + GL account 2400 "Income Tax Withheld Payable". Kimi's NHI-ceiling flag was wrong (official 2026 bulletin confirms 106,800) and is corrected in the report. Agreed order: Batch 10 = reproducible baseline (commits + migrations), Batch 11 = statutory/jurisdiction truth pack + CORS/bearer decision, Batch 12 = accounting integrity slice 2, Batch 13 = multi-tenancy track (before further GL slices), then statements/banking/filing/comms/e2e.
+### Master shipping plan adopted (2026-09-19)
+- `docs/SHIPPING-PLAN.md` is now the ACTIVE plan, superseding older batch lists. It merges the K3 baseline, both deep reviews, the reconciliation, and the GPT shipping conclusion, renumbered to this board's history (next = Batch 10).
+- Owner directive recorded: SSB ceiling verification is NOT required; the configured value is accepted and removed from all gates.
+- Two releases: Gate A internal pilot after Batch 11; Gate B subscriber SaaS after Batch 16. Order: B10 baseline (commits+migrations+CORS/bearer) -> B11 payroll truth/jurisdiction cleanup (Gate A) -> B12 multi-tenancy -> B13 accounting integrity -> B14 banking -> B15 statements+BVI filing -> B16 storage/email/WhatsApp/e2e (Gate B).

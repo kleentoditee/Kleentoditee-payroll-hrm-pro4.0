@@ -10,6 +10,36 @@ HR and payroll staff can direct employees to the **employee-tracker** app so the
 - **No invite tokens** are placed in shared links. If you use the existing user-invite flow, that remains a separate step (admin sends the invite; the employee sets a password). The tracker link only opens the sign-in page.
 - **No unauthenticated write access**: all time APIs under `/time/self/*` require a valid JWT.
 
+## Tracker login requirements (all must be true)
+
+1. **User status `active`** — invited users must complete **`POST /auth/invite/accept`** (invite link) and set a password before `/auth/login` succeeds.
+2. **Role `employee_tracker_user`** — without it, the API returns **403** on `/time/self/*` even with a valid JWT.
+3. **`User.employeeId` set** — must point to an existing **Employee** row (HR links the login to payroll). Without it, `/time/self/profile` returns **403**.
+4. **Employee record usable** — the linked employee should be **active** (`Employee.active`); the tracker verifies after login.
+
+The tracker app calls the **same JSON API** as admin (`http://127.0.0.1:8787` in local dev). In Next dev on port **3001**, requests use **`/__kleentoditee_api/*`**, which is rewritten to **`http://127.0.0.1:8787/*`** (see `apps/employee-tracker/next.config.ts`). Optional: set **`NEXT_PUBLIC_API_URL`** to a full API origin (e.g. `http://127.0.0.1:8787`) if you intentionally bypass the proxy; the API must allow **CORS** from the tracker origin.
+
+## Diagnosing “login failed” locally
+
+Run from the repo root (API must be up and DB seeded):
+
+```bash
+npm run check:tracker-login
+```
+
+Optional env:
+
+- **`API_BASE`** — default `http://127.0.0.1:8787`
+- **`TRACKER_EMAIL`** / **`TRACKER_PASSWORD`** — override seed defaults
+
+The script prints **`/health`**, **`/auth/login`**, **`/auth/me`**, and **`/time/self/profile`** results (no password, no token). Exit code **1** if any step fails.
+
+If login still fails:
+
+- Confirm **`GET http://127.0.0.1:8787/health`** returns OK and the API uses the same **`DATABASE_URL`** as `npm run db:seed` (see **`GET /dev/db-status`** in non-production).
+- Re-run **`npm run db:seed`** (stops conflicting API first if SQLite is locked).
+- **Invited-but-never-accepted** users cannot sign in until they complete the invite link; the API returns **`code: invitation_pending`** (not a password mismatch).
+
 ## Admin: “Share tracker access” on the employee record
 
 On **People → Employee → detail** (`/dashboard/people/employees/[id]`), the **Share tracker access** card:
