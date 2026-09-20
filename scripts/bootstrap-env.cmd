@@ -1,6 +1,22 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0.."
+set "EXPECTED_ROOT=C:\Kleentoditee Payroll HRM"
+set "APP_DIR=%EXPECTED_ROOT%\Kleentoditee-payroll-hrm-pro4.0"
+
+cd /d "%EXPECTED_ROOT%" 2>nul
+if /I not "%CD%"=="%EXPECTED_ROOT%" (
+  echo Wrong folder open. Please open C:\Kleentoditee Payroll HRM in Cursor before continuing.
+  exit /b 1
+)
+
+if not exist "%APP_DIR%\package.json" (
+  echo.
+  echo  [X] Missing package.json at "%APP_DIR%\package.json"
+  echo.
+  exit /b 1
+)
+
+cd /d "%APP_DIR%" || exit /b 1
 
 rem --- Prereq: Node.js 20+ (npm comes with the official Windows installer) ---
 where node >nul 2>&1

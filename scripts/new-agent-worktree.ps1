@@ -7,7 +7,7 @@ param(
   [string]$Lane,
 
   [string]$BaseBranch = "",
-  [string]$WorktreeRoot = "C:\dev\kleentoditee-worktrees"
+  [string]$WorktreeRoot = "C:\Kleentoditee Payroll HRM"
 )
 
 $ErrorActionPreference = "Stop"
