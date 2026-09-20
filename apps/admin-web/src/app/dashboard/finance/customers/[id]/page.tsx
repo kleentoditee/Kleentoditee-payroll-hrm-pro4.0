@@ -83,9 +83,10 @@ const statusClass: Record<TransactionRow["status"], string> = {
   Closed: "bg-slate-200 text-slate-700"
 };
 
-const moneyFormatter = new Intl.NumberFormat("en-BZ", {
+// BVI uses the US dollar as its official currency.
+const moneyFormatter = new Intl.NumberFormat("en-VI", {
   style: "currency",
-  currency: "BZD",
+  currency: "USD",
   minimumFractionDigits: 2
 });
 

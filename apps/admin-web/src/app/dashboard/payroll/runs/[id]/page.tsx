@@ -28,6 +28,7 @@ type RunDetail = {
   finalizedAt: string | null;
   exportedAt: string | null;
   paidAt: string | null;
+  statutoryRemittedAt: string | null;
   summary: { count: number; gross: number; totalDeductions: number; net: number };
   period: {
     id: string;
@@ -266,6 +267,21 @@ export default function PayrollRunDetailPage() {
           >
             {working === "Mark paid" ? "Marking paid..." : "Mark paid"}
           </button>
+          {run.status !== "draft" && run.status !== "void" && !run.statutoryRemittedAt ? (
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => void postAction(`/payroll/runs/${run.id}/remit-statutory`, "Remit")}
+              className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
+            >
+              {working === "Remit" ? "Recording..." : "Record statutory remittance"}
+            </button>
+          ) : null}
+          {run.statutoryRemittedAt ? (
+            <span className="self-center rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700">
+              Statutory remitted {new Date(run.statutoryRemittedAt).toLocaleDateString()}
+            </span>
+          ) : null}
           {run.status === "draft" ? (
             <button
               type="button"

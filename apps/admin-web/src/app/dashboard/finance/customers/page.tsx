@@ -73,9 +73,10 @@ const COLUMN_LABELS: Array<{ key: ColumnKey; label: string }> = [
   { key: "status", label: "Status" }
 ];
 
-const moneyFormatter = new Intl.NumberFormat("en-BZ", {
+// BVI uses the US dollar as its official currency.
+const moneyFormatter = new Intl.NumberFormat("en-VI", {
   style: "currency",
-  currency: "BZD",
+  currency: "USD",
   minimumFractionDigits: 2
 });
 
