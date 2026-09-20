@@ -628,6 +628,8 @@ model Account {
   depositsAsBank     Deposit[]     @relation("DepositBankAccount")
   journalLines       JournalLine[]
 
+  depositLines DepositLine[] @relation("DepositLineAccount")
+
   @@unique([orgId, code])
   @@index([type, active])
   @@index([parentId])
@@ -1187,6 +1189,9 @@ model DepositLine {
   position    Int
   paymentId   String?
   payment     Payment? @relation("DepositLinePayment", fields: [paymentId], references: [id], onDelete: Restrict)
+  /// Offset credit account for ad-hoc (non-payment) lines (Batch 13).
+  accountId   String?
+  account     Account? @relation("DepositLineAccount", fields: [accountId], references: [id], onDelete: Restrict)
   description String   @default("")
   amount      Float
   /// Owning organization (Batch 12).
@@ -1204,8 +1209,61 @@ model DepositLine {
 // `_reversal`, reversalOfId pointing at the original) undoes the original.
 
 enum JournalEntryStatus {
+  /// Manual journals start as drafts, optionally approved, then posted (Batch 13).
+  draft
+  approved
   posted
   void
+}
+
+enum FiscalPeriodStatus {
+  open
+  /// Soft-close: no new postings, existing docs can still be corrected by reopening.
+  soft_closed
+  /// Locked: immutable; reopen requires platform_owner (audited).
+  locked
+}
+
+/// A tenant's fiscal year (calendar-year for KleenToDiTee; dates allow otherwise).
+model FiscalYear {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  year      Int
+  startDate DateTime
+  endDate   DateTime
+  closedAt  DateTime?
+  /// Owning organization (Batch 12).
+  orgId     String
+
+  periods FiscalPeriod[]
+
+  @@unique([orgId, year])
+  @@index([orgId])
+}
+
+/// One posting month within a fiscal year. Auto-created open on first use;
+/// posting is rejected when the period is soft_closed or locked (Batch 13).
+model FiscalPeriod {
+  id             String             @id @default(cuid())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  year           Int
+  /// 1-12 within the fiscal year.
+  period         Int
+  startDate      DateTime
+  endDate        DateTime
+  status         FiscalPeriodStatus @default(open)
+  closedAt       DateTime?
+  closedByUserId String?
+  fiscalYear     FiscalYear         @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  fiscalYearId   String
+  /// Owning organization (Batch 12).
+  orgId          String
+
+  @@unique([orgId, year, period])
+  @@index([orgId])
+  @@index([startDate, endDate])
 }
 
 model JournalEntry {

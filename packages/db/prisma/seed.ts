@@ -427,6 +427,7 @@ async function main() {
   // The API's posting engine auto-provisions these too; seeding keeps a fresh
   // install complete without posting activity.
   const controlAccounts = [
+    { code: "1150", name: "Undeposited Funds", type: AccountType.asset, subtype: "Cash and Cash Equivalents" },
     { code: "2100", name: "NHI Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2200", name: "SSB Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
     { code: "2300", name: "Payroll Tax Payable", type: AccountType.liability, subtype: "Payroll Liabilities" },
