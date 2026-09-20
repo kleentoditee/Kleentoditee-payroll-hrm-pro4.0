@@ -4,10 +4,21 @@ import { roundMoney } from "./payroll-calc.js";
 import { buildRunItemsFromEntries } from "./payroll-run-builder.js";
 import { loadYtdOpeningGrossByEmployee } from "./payroll-ytd-import.js";
 import { loadUnpaidLeaveDaysByEmployee } from "./leave.js";
-import { buildPayrollRunJournal, ensureControlAccounts, postJournal, reverseJournal } from "./gl-posting.js";
+import {
+  buildPayrollRemittanceJournal,
+  buildPayrollRunJournal,
+  buildPayrollSettlementJournal,
+  ensureControlAccounts,
+  findAccountIdByCode,
+  postJournal,
+  reverseJournal
+} from "./gl-posting.js";
 import {
   statutoryConfigFromOrgSettings,
-  type StatutoryConfig
+  statutoryConfigFromVersion,
+  versionCoversDate,
+  type StatutoryConfig,
+  type StatutoryRateVersionLike
 } from "./statutory-config.js";
 import {
   buildPayrollCsv,
@@ -51,21 +62,57 @@ function assertPayrollSettingsReady(company: OrgCompanyInfo, statutoryConfig: St
  * freezing paystubs. Lives at the DB/service boundary; the pure calc functions
  * still take an explicit config.
  */
-async function loadOrgPayrollContext(schedule: PaySchedule): Promise<{
+export type StatutorySourceMeta = {
+  source: "statutory_rate_version" | "org_settings";
+  versionId: string | null;
+  approvedBy: string | null;
+  sourceUrl: string | null;
+};
+
+async function loadOrgPayrollContext(schedule: PaySchedule, asOf?: Date): Promise<{
   statutoryConfig: StatutoryConfig;
   company: OrgCompanyInfo;
+  statutorySource: StatutorySourceMeta;
 }> {
   const org = await prisma.orgSettings.upsert({
     where: { id: "singleton" },
     create: { id: "singleton" },
     update: {}
   });
+
+  // Effective-dated, provenance-tracked rate versions win over the mutable
+  // OrgSettings singleton (Batch 11). The newest version for the period's year
+  // whose optional in-year range covers the pay date drives the calculation.
+  let version: StatutoryRateVersionLike | null = null;
+  if (asOf) {
+    const year = asOf.getUTCFullYear();
+    const candidates = await prisma.statutoryRateVersion.findMany({
+      where: { effectiveYear: year },
+      orderBy: { createdAt: "desc" }
+    });
+    version = candidates.find((v) => versionCoversDate(v, asOf)) ?? null;
+  }
+
+  const company = {
+    companyLegalName: org.companyLegalName,
+    companyAddress: org.companyAddress
+  };
+  if (version) {
+    return {
+      statutoryConfig: statutoryConfigFromVersion(version, schedule),
+      company,
+      statutorySource: {
+        source: "statutory_rate_version",
+        versionId: version.id,
+        approvedBy: version.approvedBy || null,
+        sourceUrl: version.sourceUrl || null
+      }
+    };
+  }
   return {
     statutoryConfig: statutoryConfigFromOrgSettings(org, schedule),
-    company: {
-      companyLegalName: org.companyLegalName,
-      companyAddress: org.companyAddress
-    }
+    company,
+    statutorySource: { source: "org_settings", versionId: null, approvedBy: null, sourceUrl: null }
   };
 }
 
@@ -286,7 +333,7 @@ async function buildRunItemPayloads(period: {
     yearToDateGrossByEmployee.set(employeeId, (yearToDateGrossByEmployee.get(employeeId) ?? 0) + openingGross);
   }
 
-  const { statutoryConfig } = await loadOrgPayrollContext(period.schedule);
+  const { statutoryConfig } = await loadOrgPayrollContext(period.schedule, period.startDate);
   const unpaidLeaveDaysByEmployee = await loadUnpaidLeaveDaysByEmployee(employeeIds, period);
   return buildRunItemsFromEntries(period, approvedEntries, statutoryConfig, {
     fixedEmployees: fixedEmployees.map((employee) => ({
@@ -378,7 +425,7 @@ export async function previewPaystubs(periodId: string) {
   }
 
   const items = await buildRunItemPayloads(period);
-  const { company } = await loadOrgPayrollContext(period.schedule);
+  const { company } = await loadOrgPayrollContext(period.schedule, period.startDate);
   const periodWithLabel = {
     ...period,
     label: period.label || buildPeriodLabel(period)
@@ -406,8 +453,13 @@ export async function finalizeRun(runId: string) {
     throw new Error("Cannot finalize an empty pay run.");
   }
 
-  const { company, statutoryConfig } = await loadOrgPayrollContext(run.period.schedule);
+  const { company, statutoryConfig, statutorySource } = await loadOrgPayrollContext(run.period.schedule, run.period.startDate);
   assertPayrollSettingsReady(company, statutoryConfig);
+  if (statutorySource.source === "statutory_rate_version" && !statutorySource.approvedBy) {
+    throw new Error(
+      "The statutory rate version for this period is not approved. Record the verifier and owner approval in Settings before finalizing payroll."
+    );
+  }
   if (run.period.startDate.getUTCFullYear() !== statutoryConfig.effectiveYear) {
     throw new Error(
       `Settings are approved for ${statutoryConfig.effectiveYear}, but this pay period starts in ${run.period.startDate.getUTCFullYear()}. Review the statutory year before finalizing.`
@@ -440,7 +492,11 @@ export async function finalizeRun(runId: string) {
       data: {
         status: PayRunStatus.finalized,
         finalizedAt: new Date(),
-        statutorySnapshot: statutoryConfig as unknown as Prisma.InputJsonValue
+        statutorySnapshot: {
+          config: statutoryConfig,
+          source: statutorySource,
+          frozenAt: new Date().toISOString()
+        } as unknown as Prisma.InputJsonValue
       }
     });
     const issuedAt = new Date();
@@ -560,6 +616,67 @@ export async function markRunPaid(runId: string) {
         paidAt: new Date()
       }
     });
+    // GL: settle net wages against cash in the same transaction (idempotent).
+    const glAccounts = await ensureControlAccounts(tx);
+    const cashAccountId = await findAccountIdByCode(tx, "1000");
+    await postJournal(
+      tx,
+      buildPayrollSettlementJournal(
+        {
+          id: run.id,
+          periodLabel: run.period.label,
+          payDate: new Date(),
+          items: run.items
+        },
+        glAccounts,
+        cashAccountId
+      )
+    );
+  });
+
+  return loadRun(runId);
+}
+
+/**
+ * Records that the run's NHI/SSB/payroll-tax liabilities were remitted to the
+ * authorities: clears the liability control accounts against cash (idempotent,
+ * reversal-only corrections). Requires a finalized (or later) run.
+ */
+export async function remitRunStatutory(runId: string) {
+  const run = await loadRun(runId);
+  if (!run) {
+    throw new Error("Pay run not found.");
+  }
+  if (run.status === PayRunStatus.draft) {
+    throw new Error("Finalize the pay run before recording a statutory remittance.");
+  }
+  if (run.status === PayRunStatus.void) {
+    throw new Error("A voided pay run cannot be remitted.");
+  }
+  if (run.statutoryRemittedAt) {
+    throw new Error("Statutory remittance for this pay run is already recorded.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const glAccounts = await ensureControlAccounts(tx);
+    const cashAccountId = await findAccountIdByCode(tx, "1000");
+    await postJournal(
+      tx,
+      buildPayrollRemittanceJournal(
+        {
+          id: run.id,
+          periodLabel: run.period.label,
+          payDate: new Date(),
+          items: run.items
+        },
+        glAccounts,
+        cashAccountId
+      )
+    );
+    await tx.payRun.update({
+      where: { id: runId },
+      data: { statutoryRemittedAt: new Date() }
+    });
   });
 
   return loadRun(runId);
@@ -596,6 +713,16 @@ export async function voidRun(runId: string, options: { reversePaid?: boolean } 
     await reverseJournal(tx, "payroll_run", runId, {
       date: new Date(),
       memo: `Payroll run voided — reversal (${run.period.label})`
+    });
+    // Reverse the payment settlement and statutory remittance when present
+    // (no-ops for runs that never reached those states).
+    await reverseJournal(tx, "payroll_run_paid", runId, {
+      date: new Date(),
+      memo: `Payroll payment voided — reversal (${run.period.label})`
+    });
+    await reverseJournal(tx, "payroll_statutory_remittance", runId, {
+      date: new Date(),
+      memo: `Statutory remittance voided — reversal (${run.period.label})`
     });
     await tx.payRun.update({
       where: { id: runId },

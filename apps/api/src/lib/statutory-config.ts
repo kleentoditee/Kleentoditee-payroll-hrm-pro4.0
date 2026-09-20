@@ -117,3 +117,58 @@ export function statutoryConfigFromOrgSettings(
     incomeTax: { employeeRate: 0, employerRate: 0, periodCeiling: 0, enabled: false }
   };
 }
+export type StatutoryRateVersionLike = {
+  id: string;
+  effectiveYear: number;
+  effectiveFrom: Date | null;
+  effectiveTo: Date | null;
+  ssbEmployeeRate: number;
+  ssbEmployerRate: number;
+  ssbAnnualCeiling: number;
+  ssbEnabled: boolean;
+  nhiEmployeeRate: number;
+  nhiEmployerRate: number;
+  nhiAnnualCeiling: number;
+  nhiEnabled: boolean;
+  payrollTaxEmployeeRate: number;
+  payrollTaxEmployerClass: PayrollTaxClass;
+  payrollTaxAnnualExemption: number;
+  payrollTaxEnabled: boolean;
+  sourceUrl: string;
+  verifiedBy: string;
+  verifiedAt: Date | null;
+  approvedBy: string;
+  approvedAt: Date | null;
+};
+
+/** Builds the run config from a versioned, provenance-tracked statutory rate row. */
+export function statutoryConfigFromVersion(
+  version: StatutoryRateVersionLike,
+  schedule: PaySchedule
+): StatutoryConfig {
+  return statutoryConfigFromOrgSettings(
+    {
+      ssbEmployeeRate: version.ssbEmployeeRate,
+      ssbEmployerRate: version.ssbEmployerRate,
+      ssbAnnualCeiling: version.ssbAnnualCeiling,
+      ssbEnabled: version.ssbEnabled,
+      nhiEmployeeRate: version.nhiEmployeeRate,
+      nhiEmployerRate: version.nhiEmployerRate,
+      nhiAnnualCeiling: version.nhiAnnualCeiling,
+      nhiEnabled: version.nhiEnabled,
+      payrollTaxEnabled: version.payrollTaxEnabled,
+      payrollTaxEmployeeRate: version.payrollTaxEmployeeRate,
+      payrollTaxEmployerClass: version.payrollTaxEmployerClass,
+      payrollTaxAnnualExemption: version.payrollTaxAnnualExemption,
+      statutoryEffectiveYear: version.effectiveYear
+    },
+    schedule
+  );
+}
+
+/** True when the version covers the given pay date (explicit range wins over bare year). */
+export function versionCoversDate(version: StatutoryRateVersionLike, asOf: Date): boolean {
+  if (version.effectiveFrom && version.effectiveFrom > asOf) return false;
+  if (version.effectiveTo && version.effectiveTo < asOf) return false;
+  return true;
+}

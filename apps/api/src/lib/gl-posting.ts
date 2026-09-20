@@ -25,7 +25,6 @@ export type ControlAccountKey =
   | "nhiPayable"
   | "ssbPayable"
   | "payrollTaxPayable"
-  | "incomeTaxPayable"
   | "netWagesPayable"
   | "otherDeductionsPayable"
   | "wagesExpense"
@@ -41,7 +40,6 @@ export const CONTROL_ACCOUNTS: Record<
   nhiPayable: { code: "2100", name: "NHI Payable", type: "liability", subtype: "Payroll Liabilities" },
   ssbPayable: { code: "2200", name: "SSB Payable", type: "liability", subtype: "Payroll Liabilities" },
   payrollTaxPayable: { code: "2300", name: "Payroll Tax Payable", type: "liability", subtype: "Payroll Liabilities" },
-  incomeTaxPayable: { code: "2400", name: "Income Tax Withheld Payable", type: "liability", subtype: "Payroll Liabilities" },
   netWagesPayable: { code: "2500", name: "Net Wages Payable", type: "liability", subtype: "Payroll Liabilities" },
   otherDeductionsPayable: { code: "2600", name: "Other Payroll Deductions Payable", type: "liability", subtype: "Payroll Liabilities" },
   wagesExpense: { code: "6100", name: "Wages & Salaries", type: "expense", subtype: "Payroll" },
@@ -239,7 +237,6 @@ export function buildPayrollRunJournal(
   const net = sum((i) => i.net);
   const nhi = sum((i) => i.nhi);
   const ssb = sum((i) => i.ssb);
-  const incomeTax = sum((i) => i.incomeTax);
   const payrollTax = sum((i) => i.payrollTax);
   const employerNhi = sum((i) => i.employerNhi);
   const employerSsb = sum((i) => i.employerSsb);
@@ -255,7 +252,6 @@ export function buildPayrollRunJournal(
     { accountId: accounts.nhiPayable, credit: round2(nhi + employerNhi), memo: "NHI payable (employee + employer)" },
     { accountId: accounts.ssbPayable, credit: round2(ssb + employerSsb), memo: "SSB payable (employee + employer)" },
     { accountId: accounts.payrollTaxPayable, credit: round2(payrollTax + employerPayrollTax), memo: "Payroll tax payable" },
-    { accountId: accounts.incomeTaxPayable, credit: incomeTax, memo: "Income tax withheld" },
     { accountId: accounts.otherDeductionsPayable, credit: otherDeductions, memo: "Other deductions payable" },
     { accountId: accounts.netWagesPayable, credit: net, memo: "Net wages payable" }
   ];
@@ -266,6 +262,67 @@ export function buildPayrollRunJournal(
     memo: `Payroll run finalized — ${run.periodLabel}`,
     lines
   };
+}
+
+/**
+ * Settlement journal for marking a run PAID: cash leaves the bank and the
+ * net-wages liability is cleared. Cash account is resolved by code (default
+ * "1000 Cash" from the seeded chart); explicit account id wins.
+ */
+export function buildPayrollSettlementJournal(
+  run: PayrollRunLike,
+  accounts: Record<ControlAccountKey, string>,
+  cashAccountId: string
+): GlJournalInput {
+  const net = round2(run.items.reduce((s, i) => s + i.net, 0));
+  return {
+    sourceType: "payroll_run_paid",
+    sourceId: run.id,
+    date: run.payDate,
+    memo: `Payroll run paid — net wages settled (${run.periodLabel})`,
+    lines: [
+      { accountId: accounts.netWagesPayable, debit: net, memo: "Net wages paid" },
+      { accountId: cashAccountId, credit: net, memo: "Cash paid to employees" }
+    ]
+  };
+}
+
+/**
+ * Statutory remittance journal: the withheld + employer NHI/SSB/payroll-tax
+ * liabilities are paid over to SSB / NHI / Inland Revenue, clearing the
+ * liability accounts against cash.
+ */
+export function buildPayrollRemittanceJournal(
+  run: PayrollRunLike,
+  accounts: Record<ControlAccountKey, string>,
+  cashAccountId: string
+): GlJournalInput {
+  const sum = (fn: (i: PayrollRunLike["items"][number]) => number) => round2(run.items.reduce((s, i) => s + fn(i), 0));
+  const nhi = round2(sum((i) => i.nhi) + sum((i) => i.employerNhi));
+  const ssb = round2(sum((i) => i.ssb) + sum((i) => i.employerSsb));
+  const payrollTax = round2(sum((i) => i.payrollTax) + sum((i) => i.employerPayrollTax));
+  const total = round2(nhi + ssb + payrollTax);
+  return {
+    sourceType: "payroll_statutory_remittance",
+    sourceId: run.id,
+    date: run.payDate,
+    memo: `Statutory remittance — NHI/SSB/payroll tax (${run.periodLabel})`,
+    lines: [
+      { accountId: accounts.nhiPayable, debit: nhi, memo: "NHI remitted" },
+      { accountId: accounts.ssbPayable, debit: ssb, memo: "SSB remitted" },
+      { accountId: accounts.payrollTaxPayable, debit: payrollTax, memo: "Payroll tax remitted" },
+      { accountId: cashAccountId, credit: total, memo: "Cash remitted to authorities" }
+    ]
+  };
+}
+
+/** Look up a GL account by its chart code. Throws when the code is missing. */
+export async function findAccountIdByCode(db: DbClient, code: string): Promise<string> {
+  const account = await db.account.findFirst({ where: { code }, select: { id: true } });
+  if (!account) {
+    throw new Error(`GL account with code ${code} not found. Add it to the chart of accounts first.`);
+  }
+  return account.id;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { documentStorage, safeDocumentKeyForEmployee } from "../lib/document-storage.js";
 import { canViewFullEmployeePii, redactEmployeeSnapshot, toDetailPayload, toListEmployee } from "../lib/employee-privacy.js";
+import { minimumWageWarning } from "../lib/min-wage.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const MAX_DOC_BYTES = 20 * 1024 * 1024;
@@ -515,7 +516,16 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "Not found" }, 404);
     }
     const roles = c.get("roles");
-    return c.json({ employee: toDetailPayload(row, roles) });
+    return c.json({
+      employee: toDetailPayload(row, roles),
+      minimumWageWarning: minimumWageWarning({
+        basePayType: row.basePayType,
+        hourlyRate: row.hourlyRate,
+        dailyRate: row.dailyRate,
+        fixedPay: row.fixedPay,
+        paySchedule: row.paySchedule
+      })
+    });
   })
   .post("/employees", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
@@ -614,7 +624,16 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       entityId: row.id,
       after: redactEmployeeSnapshot(row as unknown as Record<string, unknown>)
     });
-    return c.json({ employee: toDetailPayload(row, roles) }, 201);
+    return c.json({
+      employee: toDetailPayload(row, roles),
+      minimumWageWarning: minimumWageWarning({
+        basePayType: row.basePayType,
+        hourlyRate: row.hourlyRate,
+        dailyRate: row.dailyRate,
+        fixedPay: row.fixedPay,
+        paySchedule: row.paySchedule
+      })
+    }, 201);
   })
   .patch("/employees/:id", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const id = c.req.param("id");
@@ -785,7 +804,16 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       after: redactEmployeeSnapshot(row as unknown as Record<string, unknown>),
       metadata: meta
     });
-    return c.json({ employee: toDetailPayload(row, roles) });
+    return c.json({
+      employee: toDetailPayload(row, roles),
+      minimumWageWarning: minimumWageWarning({
+        basePayType: row.basePayType,
+        hourlyRate: row.hourlyRate,
+        dailyRate: row.dailyRate,
+        fixedPay: row.fixedPay,
+        paySchedule: row.paySchedule
+      })
+    });
   })
   .post("/employees/:id/archive", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const id = c.req.param("id");

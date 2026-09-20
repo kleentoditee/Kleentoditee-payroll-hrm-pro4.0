@@ -6,6 +6,7 @@ import {
   createRunExport,
   deleteDraftRun,
   finalizeRun,
+  remitRunStatutory,
   getPaystubDetail,
   getRunDetail,
   getRunExport,
@@ -554,6 +555,23 @@ async function loadStatutoryForms(month: string) {
       return c.json({ run });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : "Could not mark pay run paid." }, 400);
+    }
+  })
+  .post("/runs/:id/remit-statutory", authRequired, requireRole(...CAN_EDIT), async (c) => {
+    try {
+      const before = await prisma.payRun.findUnique({ where: { id: c.req.param("id") } });
+      const run = await remitRunStatutory(c.req.param("id"));
+      await writeAudit({
+        actorUserId: c.get("userId"),
+        action: "pay_run.remit_statutory",
+        entityType: "PayRun",
+        entityId: run?.id,
+        before,
+        after: run
+      });
+      return c.json({ run });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Could not record statutory remittance." }, 400);
     }
   })
   .post("/runs/:id/void", authRequired, requireRole(...CAN_EDIT), async (c) => {
