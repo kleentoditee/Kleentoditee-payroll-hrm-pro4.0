@@ -1,13 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { EmployeeDocumentType, PayBasis, prisma, Role } from "@kleentoditee/db";
+import { EmployeeDocumentType, PayBasis, prisma, Role, UserStatus, WorkAuthorizationStatus } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
-import {
-  fileExtensionFromName,
-  fileStreamFromRelative,
-  safeRelativeForEmployee,
-  writeBufferToRelative
-} from "../lib/employee-files.js";
+import { documentStorage, safeDocumentKeyForEmployee } from "../lib/document-storage.js";
 import { canViewFullEmployeePii, redactEmployeeSnapshot, toDetailPayload, toListEmployee } from "../lib/employee-privacy.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -52,6 +47,13 @@ function parsePaySchedule(v: unknown): "weekly" | "biweekly" | "monthly" | null 
   return null;
 }
 
+function parseWorkAuthorizationStatus(v: unknown): WorkAuthorizationStatus | null {
+  const value = String(v ?? "");
+  return Object.values(WorkAuthorizationStatus).includes(value as WorkAuthorizationStatus)
+    ? (value as WorkAuthorizationStatus)
+    : null;
+}
+
 function parseDocumentType(v: unknown): EmployeeDocumentType | null {
   const s = String(v ?? "");
   for (const t of Object.values(EmployeeDocumentType) as string[]) {
@@ -71,6 +73,61 @@ function parseOptionalDateInput(value: unknown): Date | null {
     return null;
   }
   return d;
+}
+
+function parseOptionalDateField(value: unknown): { valid: boolean; value: Date | null } {
+  if (value == null || value === "") {
+    return { valid: true, value: null };
+  }
+  const parsed = parseOptionalDateInput(value);
+  return { valid: parsed !== null, value: parsed };
+}
+
+function parseNonNegativeNumber(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+const EMPLOYEE_NUMBER_FIELDS = [
+  "dailyRate",
+  "hourlyRate",
+  "overtimeRate",
+  "fixedPay",
+  "standardDays",
+  "standardHours"
+] as const;
+
+type SupportedUpload = { extension: string; contentType: string };
+
+function supportedUpload(fileName: string): SupportedUpload | null {
+  const lower = fileName.trim().toLowerCase();
+  if (lower.endsWith(".pdf")) return { extension: ".pdf", contentType: "application/pdf" };
+  if (lower.endsWith(".png")) return { extension: ".png", contentType: "image/png" };
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return { extension: lower.endsWith(".jpeg") ? ".jpeg" : ".jpg", contentType: "image/jpeg" };
+  }
+  if (lower.endsWith(".webp")) return { extension: ".webp", contentType: "image/webp" };
+  return null;
+}
+
+function hasExpectedFileSignature(buffer: Buffer, contentType: string): boolean {
+  if (contentType === "application/pdf") return buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+  if (contentType === "image/png") {
+    return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  }
+  if (contentType === "image/jpeg") {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (contentType === "image/webp") {
+    return buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+  }
+  return false;
+}
+
+function parseEmployeeEmail(value: unknown): string | null {
+  const email = String(value ?? "").trim().toLowerCase();
+  if (!email) return "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
 function contentTypeForPath(p: string): string {
@@ -142,10 +199,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
         name,
         nhiRate: Number(body.nhiRate ?? 0),
         ssbRate: Number(body.ssbRate ?? 0),
-        incomeTaxRate: Number(body.incomeTaxRate ?? 0),
+        incomeTaxRate: 0,
         applyNhi: Boolean(body.applyNhi ?? true),
         applySsb: Boolean(body.applySsb ?? true),
-        applyIncomeTax: Boolean(body.applyIncomeTax ?? false)
+        applyIncomeTax: false
       }
     });
     await writeAudit({
@@ -175,7 +232,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       data.ssbRate = Number(body.ssbRate);
     }
     if (body.incomeTaxRate !== undefined) {
-      data.incomeTaxRate = Number(body.incomeTaxRate);
+      data.incomeTaxRate = 0;
     }
     if (body.applyNhi !== undefined) {
       data.applyNhi = Boolean(body.applyNhi);
@@ -184,7 +241,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       data.applySsb = Boolean(body.applySsb);
     }
     if (body.applyIncomeTax !== undefined) {
-      data.applyIncomeTax = Boolean(body.applyIncomeTax);
+      data.applyIncomeTax = false;
     }
     if (Object.keys(data).length === 0) {
       return c.json({ error: "No fields to update" }, 400);
@@ -222,18 +279,23 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .get("/employees", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const q = (c.req.query("q") ?? "").trim();
+    const status = c.req.query("status") === "archived" ? "archived" : "current";
     const items = await prisma.employee.findMany({
-      where: q
-        ? {
+      where: {
+        active: status === "current",
+        ...(q
+          ? {
             OR: [
               { fullName: { contains: q } },
               { role: { contains: q } },
               { defaultSite: { contains: q } },
               { phone: { contains: q } },
+              { email: { contains: q, mode: "insensitive" } },
               { linkedUser: { email: { contains: q } } }
             ]
           }
-        : undefined,
+          : {})
+      },
       include: { template: true, linkedUser: { select: { email: true, status: true } } },
       orderBy: { fullName: "asc" }
     });
@@ -294,28 +356,66 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (file.size > MAX_DOC_BYTES) {
       return c.json({ error: "File too large (max 20MB)" }, 400);
     }
+    const upload = supportedUpload(file.name);
+    if (!upload || (docType === EmployeeDocumentType.PHOTO && !upload.contentType.startsWith("image/"))) {
+      return c.json({ error: "Upload a PDF, PNG, JPG, or WebP file. Profile photos must be an image." }, 400);
+    }
     const buf = Buffer.from(await file.arrayBuffer());
-    const ext = fileExtensionFromName(file.name) || ".bin";
-    const relative = `doc-${randomUUID()}${ext}`;
-    const sub = safeRelativeForEmployee(employee.id, relative);
-    const { relative: relPath } = writeBufferToRelative(sub, buf);
-    const userId = c.get("userId");
-    const created = await prisma.employeeDocument.create({
-      data: {
-        employeeId: employee.id,
-        type: docType,
-        fileName: file.name || "upload",
-        mimeType: file.type || contentTypeForPath(file.name),
-        sizeBytes: buf.length,
-        storagePath: relPath,
-        uploadedByUserId: userId
-      }
+    if (!hasExpectedFileSignature(buf, upload.contentType)) {
+      return c.json({ error: "The file contents do not match the selected file type." }, 400);
+    }
+    const relative = `doc-${randomUUID()}${upload.extension}`;
+    const relPath = safeDocumentKeyForEmployee(employee.id, relative);
+    const previousPhotoDocuments = docType === EmployeeDocumentType.PHOTO
+      ? await prisma.employeeDocument.findMany({
+          where: { employeeId: employee.id, type: EmployeeDocumentType.PHOTO, deletedAt: null },
+          select: { id: true, storagePath: true }
+        })
+      : [];
+    await documentStorage.putObject({
+      key: relPath,
+      body: buf,
+      contentType: upload.contentType
     });
-    if (docType === "PHOTO") {
-      await prisma.employee.update({
-        where: { id: employee.id },
-        data: { profilePhotoPath: relPath }
+    const userId = c.get("userId");
+    let created;
+    try {
+      created = await prisma.$transaction(async (tx) => {
+        if (docType === EmployeeDocumentType.PHOTO && previousPhotoDocuments.length > 0) {
+          await tx.employeeDocument.updateMany({
+            where: { id: { in: previousPhotoDocuments.map((document) => document.id) } },
+            data: { deletedAt: new Date() }
+          });
+        }
+        const nextDocument = await tx.employeeDocument.create({
+          data: {
+            employeeId: employee.id,
+            type: docType,
+            fileName: file.name || "upload",
+            mimeType: upload.contentType,
+            sizeBytes: buf.length,
+            storagePath: relPath,
+            uploadedByUserId: userId
+          }
+        });
+        if (docType === EmployeeDocumentType.PHOTO) {
+          await tx.employee.update({
+            where: { id: employee.id },
+            data: { profilePhotoPath: relPath }
+          });
+        }
+        return nextDocument;
       });
+    } catch (cause) {
+      await documentStorage.deleteObject(relPath).catch(() => undefined);
+      throw cause;
+    }
+    if (docType === EmployeeDocumentType.PHOTO) {
+      const replacedKeys = new Set(
+        [...previousPhotoDocuments.map((document) => document.storagePath), employee.profilePhotoPath]
+          .filter((key): key is string => Boolean(key) && key !== relPath)
+      );
+      await Promise.allSettled([...replacedKeys].map((key) => documentStorage.deleteObject(key)));
     }
     await writeAudit({
       actorUserId: userId,
@@ -327,7 +427,8 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
         documentId: created.id,
         type: created.type,
         fileName: created.fileName,
-        sizeBytes: created.sizeBytes
+        sizeBytes: created.sizeBytes,
+        replacedPhotoCount: previousPhotoDocuments.length
       }
     });
     return c.json({ document: { ...created, downloadUrl: `/people/employees/${id}/documents/${created.id}/file` } }, 201);
@@ -345,12 +446,14 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!canDownloadDocumentByType(roles, doc.type)) {
       return c.json({ error: "Forbidden" }, 403);
     }
-    const stream = fileStreamFromRelative(doc.storagePath);
-    return new Response(stream as never, {
+    const stored = await documentStorage.getObject(doc.storagePath);
+    return new Response(stored.body as never, {
       status: 200,
       headers: {
         "Content-Type": doc.mimeType || contentTypeForPath(doc.fileName),
-        "Content-Disposition": `inline; filename="${encodeURIComponent(doc.fileName)}"`
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`,
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store"
       }
     });
   })
@@ -360,9 +463,16 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!employee?.profilePhotoPath) {
       return c.json({ error: "No profile photo" }, 404);
     }
-    const stream = fileStreamFromRelative(employee.profilePhotoPath);
+    const stored = await documentStorage.getObject(employee.profilePhotoPath);
     const ct = contentTypeForPath(employee.profilePhotoPath);
-    return new Response(stream as never, { status: 200, headers: { "Content-Type": ct, "Cache-Control": "private, max-age=3600" } });
+    return new Response(stored.body as never, {
+      status: 200,
+      headers: {
+        "Content-Type": ct,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
   })
   .delete("/employees/:id/documents/:docId", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const eid = c.req.param("id");
@@ -430,28 +540,68 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "basePayType must be daily, hourly, or fixed" }, 400);
     }
     const paySchedule = parsePaySchedule(body.paySchedule) ?? "monthly";
+    const email = parseEmployeeEmail(body.email);
+    if (!email) {
+      return c.json({ error: "Employee email is required and must be valid." }, 400);
+    }
+    const workAuthorizationStatus =
+      parseWorkAuthorizationStatus(body.workAuthorizationStatus) ?? WorkAuthorizationStatus.NOT_SPECIFIED;
+    const employmentStartDate = parseOptionalDateField(body.employmentStartDate);
+    const employmentEndDate = parseOptionalDateField(body.employmentEndDate);
+    const workPermitExpiryDate = parseOptionalDateField(body.workPermitExpiryDate);
+    if (!employmentStartDate.valid || !employmentEndDate.valid || !workPermitExpiryDate.valid) {
+      return c.json({ error: "Employment and work permit dates must be valid dates." }, 400);
+    }
+    if (employmentStartDate.value && employmentEndDate.value && employmentEndDate.value < employmentStartDate.value) {
+      return c.json({ error: "Employment end date cannot be before the start date." }, 400);
+    }
+    const workPermitNumber = String(body.workPermitNumber ?? "").trim();
+    if (workAuthorizationStatus === WorkAuthorizationStatus.WORK_PERMIT && (!workPermitNumber || !workPermitExpiryDate.value)) {
+      return c.json({ error: "Work permit number and expiry date are required for work-permit employees." }, 400);
+    }
+    const numericValues: Record<(typeof EMPLOYEE_NUMBER_FIELDS)[number], number> = {} as never;
+    for (const field of EMPLOYEE_NUMBER_FIELDS) {
+      const value = parseNonNegativeNumber(body[field] ?? 0);
+      if (value === null) {
+        return c.json({ error: `${field} must be a non-negative number.` }, 400);
+      }
+      numericValues[field] = value;
+    }
+    const requestedActive = body.active !== undefined ? Boolean(body.active) : true;
     const row = await prisma.employee.create({
       data: {
         fullName,
+        sex: body.sex === "M" || body.sex === "F" ? String(body.sex) : "",
         role: String(body.role ?? ""),
         defaultSite: String(body.defaultSite ?? ""),
         phone: String(body.phone ?? ""),
+        email,
         socialSecurityNumber: String(body.socialSecurityNumber ?? ""),
         nationalHealthInsuranceNumber: String(body.nationalHealthInsuranceNumber ?? ""),
+        nhiUnemployedSpouse: Boolean(body.nhiUnemployedSpouse),
         inlandRevenueDepartmentNumber: String(body.inlandRevenueDepartmentNumber ?? ""),
-        employmentStartDate: parseOptionalDateInput(body.employmentStartDate),
-        employmentEndDate: parseOptionalDateInput(body.employmentEndDate),
-        workPermitNumber: String(body.workPermitNumber ?? ""),
-        workPermitExpiryDate: parseOptionalDateInput(body.workPermitExpiryDate),
+        employmentStartDate: employmentStartDate.value,
+        employmentEndDate: employmentEndDate.value,
+        workAuthorizationStatus,
+        workPermitNumber:
+          workAuthorizationStatus === WorkAuthorizationStatus.WORK_PERMIT
+            ? workPermitNumber
+            : "",
+        workPermitExpiryDate:
+          workAuthorizationStatus === WorkAuthorizationStatus.WORK_PERMIT
+            ? workPermitExpiryDate.value
+            : null,
         basePayType: basis,
-        dailyRate: Number(body.dailyRate ?? 0),
-        hourlyRate: Number(body.hourlyRate ?? 0),
-        overtimeRate: Number(body.overtimeRate ?? 0),
-        fixedPay: Number(body.fixedPay ?? 0),
-        standardDays: Number(body.standardDays ?? 0),
-        standardHours: Number(body.standardHours ?? 0),
+        dailyRate: numericValues.dailyRate,
+        hourlyRate: numericValues.hourlyRate,
+        overtimeRate: numericValues.overtimeRate,
+        fixedPay: numericValues.fixedPay,
+        standardDays: numericValues.standardDays,
+        standardHours: numericValues.standardHours,
         paySchedule,
-        active: body.active !== undefined ? Boolean(body.active) : true,
+        active: employmentEndDate.value ? false : requestedActive,
+        payrollTaxExemptionEnabled:
+          body.payrollTaxExemptionEnabled === undefined ? true : Boolean(body.payrollTaxExemptionEnabled),
         notes: String(body.notes ?? ""),
         templateId
       },
@@ -481,6 +631,13 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.fullName !== undefined) {
       data.fullName = String(body.fullName).trim();
     }
+    if (body.sex !== undefined) {
+      const sex = String(body.sex);
+      if (sex !== "" && sex !== "M" && sex !== "F") {
+        return c.json({ error: "sex must be M, F, or blank" }, 400);
+      }
+      data.sex = sex;
+    }
     if (body.role !== undefined) {
       data.role = String(body.role);
     }
@@ -490,6 +647,13 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.phone !== undefined) {
       data.phone = String(body.phone);
     }
+    if (body.email !== undefined) {
+      const email = parseEmployeeEmail(body.email);
+      if (!email) {
+        return c.json({ error: "Employee email is required and must be valid." }, 400);
+      }
+      data.email = email;
+    }
     if (body.basePayType !== undefined) {
       const basis = parsePayBasis(body.basePayType);
       if (!basis) {
@@ -497,23 +661,14 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       }
       data.basePayType = basis;
     }
-    if (body.dailyRate !== undefined) {
-      data.dailyRate = Number(body.dailyRate);
-    }
-    if (body.hourlyRate !== undefined) {
-      data.hourlyRate = Number(body.hourlyRate);
-    }
-    if (body.overtimeRate !== undefined) {
-      data.overtimeRate = Number(body.overtimeRate);
-    }
-    if (body.fixedPay !== undefined) {
-      data.fixedPay = Number(body.fixedPay);
-    }
-    if (body.standardDays !== undefined) {
-      data.standardDays = Number(body.standardDays);
-    }
-    if (body.standardHours !== undefined) {
-      data.standardHours = Number(body.standardHours);
+    for (const field of EMPLOYEE_NUMBER_FIELDS) {
+      if (body[field] !== undefined) {
+        const value = parseNonNegativeNumber(body[field]);
+        if (value === null) {
+          return c.json({ error: `${field} must be a non-negative number.` }, 400);
+        }
+        data[field] = value;
+      }
     }
     if (body.paySchedule !== undefined) {
       const paySchedule = parsePaySchedule(body.paySchedule);
@@ -524,6 +679,12 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     if (body.active !== undefined) {
       data.active = Boolean(body.active);
+    }
+    if (body.payrollTaxExemptionEnabled !== undefined) {
+      data.payrollTaxExemptionEnabled = Boolean(body.payrollTaxExemptionEnabled);
+    }
+    if (body.nhiUnemployedSpouse !== undefined) {
+      data.nhiUnemployedSpouse = Boolean(body.nhiUnemployedSpouse);
     }
     if (body.notes !== undefined) {
       data.notes = String(body.notes);
@@ -548,14 +709,38 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.workPermitNumber !== undefined) {
       data.workPermitNumber = String(body.workPermitNumber);
     }
+    if (body.workAuthorizationStatus !== undefined) {
+      const status = parseWorkAuthorizationStatus(body.workAuthorizationStatus);
+      if (!status) {
+        return c.json(
+          { error: "workAuthorizationStatus must be NOT_SPECIFIED, WORK_PERMIT, BELONGER, RESIDENT, or BV_ISLANDER" },
+          400
+        );
+      }
+      data.workAuthorizationStatus = status;
+    }
     if (body.employmentStartDate !== undefined) {
-      data.employmentStartDate = parseOptionalDateInput(body.employmentStartDate);
+      const parsed = parseOptionalDateField(body.employmentStartDate);
+      if (!parsed.valid) return c.json({ error: "Invalid employment start date." }, 400);
+      data.employmentStartDate = parsed.value;
     }
     if (body.employmentEndDate !== undefined) {
-      data.employmentEndDate = parseOptionalDateInput(body.employmentEndDate);
+      const parsed = parseOptionalDateField(body.employmentEndDate);
+      if (!parsed.valid) return c.json({ error: "Invalid employment end date." }, 400);
+      data.employmentEndDate = parsed.value;
+      if (parsed.value) data.active = false;
     }
     if (body.workPermitExpiryDate !== undefined) {
-      data.workPermitExpiryDate = parseOptionalDateInput(body.workPermitExpiryDate);
+      const parsed = parseOptionalDateField(body.workPermitExpiryDate);
+      if (!parsed.valid) return c.json({ error: "Invalid work permit expiry date." }, 400);
+      data.workPermitExpiryDate = parsed.value;
+    }
+    if (
+      data.workAuthorizationStatus !== undefined &&
+      data.workAuthorizationStatus !== WorkAuthorizationStatus.WORK_PERMIT
+    ) {
+      data.workPermitNumber = "";
+      data.workPermitExpiryDate = null;
     }
     if (body.profilePhotoPath !== undefined) {
       const v = body.profilePhotoPath;
@@ -563,6 +748,23 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     if (Object.keys(data).length === 0) {
       return c.json({ error: "No fields to update" }, 400);
+    }
+    const nextStart = data.employmentStartDate !== undefined
+      ? (data.employmentStartDate as Date | null)
+      : before.employmentStartDate;
+    const nextEnd = data.employmentEndDate !== undefined
+      ? (data.employmentEndDate as Date | null)
+      : before.employmentEndDate;
+    if (nextStart && nextEnd && nextEnd < nextStart) {
+      return c.json({ error: "Employment end date cannot be before the start date." }, 400);
+    }
+    const nextAuthorization = (data.workAuthorizationStatus as WorkAuthorizationStatus | undefined) ?? before.workAuthorizationStatus;
+    const nextPermitNumber = String(data.workPermitNumber ?? before.workPermitNumber).trim();
+    const nextPermitExpiry = data.workPermitExpiryDate !== undefined
+      ? (data.workPermitExpiryDate as Date | null)
+      : before.workPermitExpiryDate;
+    if (nextAuthorization === WorkAuthorizationStatus.WORK_PERMIT && (!nextPermitNumber || !nextPermitExpiry)) {
+      return c.json({ error: "Work permit number and expiry date are required for work-permit employees." }, 400);
     }
     const row = await prisma.employee.update({
       where: { id },
@@ -585,19 +787,80 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     });
     return c.json({ employee: toDetailPayload(row, roles) });
   })
-  .delete("/employees/:id", authRequired, requireRole(...CAN_EDIT), async (c) => {
+  .post("/employees/:id/archive", authRequired, requireRole(...CAN_EDIT), async (c) => {
+    const id = c.req.param("id");
+    const before = await prisma.employee.findUnique({
+      where: { id },
+      include: { linkedUser: { select: { id: true, status: true } } }
+    });
+    if (!before) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
+    const suspendTrackerAccess =
+      before.linkedUser?.status === UserStatus.active || before.linkedUser?.status === UserStatus.invited;
+    const row = await prisma.$transaction(async (tx) => {
+      const archived = await tx.employee.update({
+        where: { id },
+        data: {
+          active: false,
+          employmentEndDate: before.employmentEndDate ?? new Date()
+        },
+        include: { template: true, linkedUser: { select: { email: true, status: true } } }
+      });
+      if (suspendTrackerAccess && before.linkedUser) {
+        await tx.user.update({
+          where: { id: before.linkedUser.id },
+          data: { status: UserStatus.suspended, tokenVersion: { increment: 1 } }
+        });
+      }
+      return archived;
+    });
+
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "employee.archive",
+      entityType: "Employee",
+      entityId: id,
+      before: redactEmployeeSnapshot(before as unknown as Record<string, unknown>),
+      after: redactEmployeeSnapshot(row as unknown as Record<string, unknown>),
+      metadata: { trackerAccessSuspended: suspendTrackerAccess }
+    });
+    return c.json({ employee: toListEmployee(row), trackerAccessSuspended: suspendTrackerAccess });
+  })
+  .post("/employees/:id/restore", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const id = c.req.param("id");
     const before = await prisma.employee.findUnique({ where: { id } });
     if (!before) {
       return c.json({ error: "Not found" }, 404);
     }
-    await prisma.employee.delete({ where: { id } });
+    const row = await prisma.employee.update({
+      where: { id },
+      data: { active: true, employmentEndDate: null },
+      include: { template: true, linkedUser: { select: { email: true, status: true } } }
+    });
     await writeAudit({
       actorUserId: c.get("userId"),
-      action: "employee.delete",
+      action: "employee.restore",
       entityType: "Employee",
       entityId: id,
-      before: redactEmployeeSnapshot(before as unknown as Record<string, unknown>)
+      before: redactEmployeeSnapshot(before as unknown as Record<string, unknown>),
+      after: redactEmployeeSnapshot(row as unknown as Record<string, unknown>),
+      metadata: { trackerAccessRestored: false }
     });
-    return c.body(null, 204);
+    return c.json({ employee: toListEmployee(row), trackerAccessRestored: false });
+  })
+  .delete("/employees/:id", authRequired, requireRole(...CAN_EDIT), async (c) => {
+    const id = c.req.param("id");
+    const exists = await prisma.employee.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return c.json(
+      {
+        error:
+          "Employee records are retained for payroll and audit history. Set an employment end date and mark the employee inactive instead."
+      },
+      409
+    );
   });

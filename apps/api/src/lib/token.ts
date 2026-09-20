@@ -2,7 +2,7 @@ import type { Role } from "@kleentoditee/db";
 import { sign, verify } from "hono/jwt";
 import { requireEnv } from "../env.js";
 
-const TOKEN_TTL_SEC = 60 * 60 * 24 * 7; // 7 days (dev-friendly)
+const TOKEN_TTL_SEC = 60 * 60 * 12;
 const JWT_ALGORITHM = "HS256" as const;
 
 export type JwtPayload = {
@@ -19,8 +19,9 @@ export async function signSessionToken(
   tokenVersion: number
 ): Promise<string> {
   const secret = requireEnv("JWT_SECRET");
-  const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC;
-  return sign({ sub: userId, roles, exp, tv: tokenVersion }, secret, JWT_ALGORITHM);
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + TOKEN_TTL_SEC;
+  return sign({ sub: userId, roles, iat, exp, tv: tokenVersion }, secret, JWT_ALGORITHM);
 }
 
 export async function verifySessionToken(token: string): Promise<JwtPayload> {

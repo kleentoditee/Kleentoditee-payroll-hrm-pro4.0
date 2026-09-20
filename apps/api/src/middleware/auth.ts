@@ -1,5 +1,13 @@
 import { prisma, UserStatus, type Role } from "@kleentoditee/db";
 import { createMiddleware } from "hono/factory";
+import {
+  CSRF_COOKIE,
+  CSRF_HEADER,
+  SESSION_COOKIE,
+  csrfTokensMatch,
+  isMutatingMethod,
+  parseCookies
+} from "../lib/auth-cookies.js";
 import { verifySessionToken } from "../lib/token.js";
 
 export type AuthVariables = {
@@ -7,12 +15,30 @@ export type AuthVariables = {
   roles: Role[];
 };
 
+/**
+ * Authenticates via Authorization bearer (transitional) or the HttpOnly
+ * session cookie. Cookie-authenticated mutating requests must also pass the
+ * double-submit CSRF check (x-kt-csrf header matches the kt_csrf cookie).
+ */
 export const authRequired = createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
   const header = c.req.header("Authorization");
-  const token = header?.replace(/^Bearer\s+/i, "").trim();
+  const bearerToken = header?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  const cookies = parseCookies(c.req.header("Cookie"));
+  const token = bearerToken || cookies[SESSION_COOKIE] || "";
+  const viaCookie = !bearerToken && Boolean(cookies[SESSION_COOKIE]);
+
   if (!token) {
-    return c.json({ error: "Missing Authorization bearer token" }, 401);
+    return c.json({ error: "Authentication required" }, 401);
   }
+
+  if (viaCookie && isMutatingMethod(c.req.method)) {
+    const headerCsrf = c.req.header(CSRF_HEADER) ?? "";
+    const cookieCsrf = cookies[CSRF_COOKIE] ?? "";
+    if (!csrfTokensMatch(headerCsrf, cookieCsrf)) {
+      return c.json({ error: "CSRF validation failed. Refresh the page and try again." }, 403);
+    }
+  }
+
   try {
     const payload = await verifySessionToken(token);
     const user = await prisma.user.findUnique({
@@ -25,13 +51,13 @@ export const authRequired = createMiddleware<{ Variables: AuthVariables }>(async
       }
     });
     if (!user || user.status !== UserStatus.active || user.tokenVersion !== payload.tv) {
-      return c.json({ error: "Invalid or expired token" }, 401);
+      return c.json({ error: "Invalid or expired session" }, 401);
     }
     c.set("userId", user.id);
     c.set("roles", user.roles.map((r) => r.role));
     await next();
   } catch {
-    return c.json({ error: "Invalid or expired token" }, 401);
+    return c.json({ error: "Invalid or expired session" }, 401);
   }
 });
 

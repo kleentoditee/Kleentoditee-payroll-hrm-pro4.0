@@ -6,6 +6,12 @@ import {
   nextBillNumber,
   rollupTotals
 } from "../lib/finance-transactions.js";
+import {
+  buildBillReceivedJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -313,9 +319,15 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.total <= 0) {
       return c.json({ error: "Bill total must be greater than zero before receiving." }, 409);
     }
-    const row = await prisma.bill.update({
-      where: { id },
-      data: { status: TransactionStatus.open, receivedAt: new Date() }
+    const row = await prisma.$transaction(async (tx) => {
+      const updated = await tx.bill.update({
+        where: { id },
+        data: { status: TransactionStatus.open, receivedAt: new Date() }
+      });
+      const withLines = await tx.bill.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      const accounts = await ensureControlAccounts(tx);
+      await postJournal(tx, buildBillReceivedJournal(withLines, accounts.accountsPayable, accounts.taxPayable), c.get("userId"));
+      return updated;
     });
     await writeAudit({
       actorUserId: c.get("userId"),
@@ -342,9 +354,17 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
         409
       );
     }
-    const row = await prisma.bill.update({
-      where: { id },
-      data: { status: TransactionStatus.void, voidedAt: new Date() }
+    const row = await prisma.$transaction(async (tx) => {
+      const updated = await tx.bill.update({
+        where: { id },
+        data: { status: TransactionStatus.void, voidedAt: new Date() }
+      });
+      await reverseJournal(tx, "bill", id, {
+        date: new Date(),
+        memo: `Bill ${before.number} voided — reversal`,
+        createdByUserId: c.get("userId")
+      });
+      return updated;
     });
     await writeAudit({
       actorUserId: c.get("userId"),

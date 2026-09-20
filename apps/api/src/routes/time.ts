@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { employeeForNestedTimeContextSelect } from "../lib/employee-privacy.js";
 import { computeEntryPreview } from "../lib/payroll-calc.js";
+import { getEmployeePaystub, listEmployeePaystubs } from "../lib/payroll-service.js";
+import { calculatedShiftHours } from "../lib/work-time.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -26,6 +28,24 @@ const CAN_APPROVE_ENTRIES = [
 ] as const;
 
 const SELF_TIME = [Role.employee_tracker_user] as const;
+
+const ADMIN_ONLY_PAY_FIELDS = [
+  "flatGross",
+  "bonus",
+  "allowance",
+  "advanceDeduction",
+  "withdrawalDeduction",
+  "loanDeduction",
+  "otherDeduction",
+  "templateId",
+  "applyNhi",
+  "applySsb",
+  "applyIncomeTax"
+] as const;
+
+function containsAdminOnlyPayFields(body: Record<string, unknown>): boolean {
+  return ADMIN_ONLY_PAY_FIELDS.some((field) => body[field] !== undefined);
+}
 
 async function resolveLinkedEmployeeId(
   c: { json: (body: { error: string }, status: number) => Response; get: (k: "userId") => string }
@@ -117,8 +137,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
         otherDeduction: Number(body.otherDeduction ?? 0),
         applyNhi: body.applyNhi !== undefined ? Boolean(body.applyNhi) : template.applyNhi,
         applySsb: body.applySsb !== undefined ? Boolean(body.applySsb) : template.applySsb,
-        applyIncomeTax:
-          body.applyIncomeTax !== undefined ? Boolean(body.applyIncomeTax) : template.applyIncomeTax
+        applyIncomeTax: false
       }
     );
     return c.json({ preview });
@@ -244,47 +263,177 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "templateId not found" }, 400);
     }
     const status = parseStatus(body.status) ?? TimeEntryStatus.draft;
+    if (status !== TimeEntryStatus.draft && status !== TimeEntryStatus.submitted) {
+      return c.json(
+        { error: "New time entries can only be created as draft or submitted. Use the submit/approve workflow to advance them." },
+        400
+      );
+    }
     const periodStart = parseDateInput(body.periodStart);
     const periodEnd = parseDateInput(body.periodEnd);
     if (periodStart && periodEnd && periodStart > periodEnd) {
       return c.json({ error: "periodStart must be on or before periodEnd" }, 400);
     }
+    const rawLocations = Array.isArray(body.locations) ? body.locations : null;
+    if (rawLocations && (rawLocations.length === 0 || rawLocations.length > 20)) {
+      return c.json({ error: "Add between 1 and 20 work locations." }, 400);
+    }
+    const locationBodies: Record<string, unknown>[] = rawLocations
+      ? rawLocations.filter(
+          (location): location is Record<string, unknown> =>
+            typeof location === "object" && location !== null && !Array.isArray(location)
+        )
+      : [body];
+    if (rawLocations && locationBodies.length !== rawLocations.length) {
+      return c.json({ error: "Each work location must be a valid row." }, 400);
+    }
+    const locations = locationBodies.map((location) => {
+      const site = String(location.site ?? employee.defaultSite ?? "").trim();
+      const startTime = String(location.startTime ?? "").trim();
+      const endTime = String(location.endTime ?? "").trim();
+      const breakMinutes = Number(location.breakMinutes ?? 0);
+      const shiftHours = startTime || endTime ? calculatedShiftHours(startTime, endTime, breakMinutes) : null;
+      return { site, startTime, endTime, breakMinutes, shiftHours };
+    });
+    if (rawLocations && locations.some((location) => !location.site || !location.startTime || !location.endTime)) {
+      return c.json({ error: "Enter a location, start time, and finish time for every row." }, 400);
+    }
+    if (locations.some((location) => (location.startTime || location.endTime) && location.shiftHours === null)) {
+      return c.json({ error: "Enter valid start and finish times and a non-negative break." }, 400);
+    }
 
-    const row = await prisma.timeEntry.create({
-      data: {
+    const rows = await prisma.$transaction(
+      locations.map((location, index) => prisma.timeEntry.create({
+        data: {
         employeeId,
         month,
         periodStart,
         periodEnd,
-        site: String(body.site ?? employee.defaultSite ?? ""),
+        site: location.site,
+        startTime: location.startTime,
+        endTime: location.endTime,
+        breakMinutes: location.breakMinutes,
         status,
-        daysWorked: Number(body.daysWorked ?? 0),
-        hoursWorked: Number(body.hoursWorked ?? 0),
-        overtimeHours: Number(body.overtimeHours ?? 0),
-        flatGross: Number(body.flatGross ?? 0),
-        bonus: Number(body.bonus ?? 0),
-        allowance: Number(body.allowance ?? 0),
-        advanceDeduction: Number(body.advanceDeduction ?? 0),
-        withdrawalDeduction: Number(body.withdrawalDeduction ?? 0),
-        loanDeduction: Number(body.loanDeduction ?? 0),
-        otherDeduction: Number(body.otherDeduction ?? 0),
+        daysWorked: location.shiftHours !== null ? (location.shiftHours > 0 ? 1 : 0) : Number(body.daysWorked ?? 0),
+        hoursWorked: location.shiftHours ?? Number(body.hoursWorked ?? 0),
+        overtimeHours: index === 0 ? Number(body.overtimeHours ?? 0) : 0,
+        flatGross: index === 0 ? Number(body.flatGross ?? 0) : 0,
+        bonus: index === 0 ? Number(body.bonus ?? 0) : 0,
+        allowance: index === 0 ? Number(body.allowance ?? 0) : 0,
+        advanceDeduction: index === 0 ? Number(body.advanceDeduction ?? 0) : 0,
+        withdrawalDeduction: index === 0 ? Number(body.withdrawalDeduction ?? 0) : 0,
+        loanDeduction: index === 0 ? Number(body.loanDeduction ?? 0) : 0,
+        otherDeduction: index === 0 ? Number(body.otherDeduction ?? 0) : 0,
         templateId,
         applyNhi: body.applyNhi !== undefined ? Boolean(body.applyNhi) : tpl.applyNhi,
         applySsb: body.applySsb !== undefined ? Boolean(body.applySsb) : tpl.applySsb,
-        applyIncomeTax:
-          body.applyIncomeTax !== undefined ? Boolean(body.applyIncomeTax) : tpl.applyIncomeTax,
+        applyIncomeTax: false,
         notes: String(body.notes ?? "")
-      },
-      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
-    });
+        },
+        include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
+      }))
+    );
     await writeAudit({
       actorUserId: c.get("userId"),
-      action: "time_entry.create",
+      action: rows.length > 1 ? "time_entry.create_multiple_locations" : "time_entry.create",
       entityType: "TimeEntry",
-      entityId: row.id,
-      after: { id: row.id, employeeId, month }
+      entityId: rows[0].id,
+      after: { ids: rows.map((row) => row.id), employeeId, month, locationCount: rows.length }
     });
-    return c.json({ entry: row }, 201);
+    return c.json({ entry: rows[0], entries: rows }, 201);
+  })
+  .put("/entries/:id/locations", authRequired, requireRole(...CAN_EDIT), async (c) => {
+    const id = c.req.param("id");
+    const before = await prisma.timeEntry.findUnique({ where: { id } });
+    if (!before) return c.json({ error: "Not found" }, 404);
+    if (before.status === TimeEntryStatus.approved || before.status === TimeEntryStatus.paid) {
+      return c.json({ error: "Approved or paid work time is locked." }, 400);
+    }
+
+    const body = await c.req.json<Record<string, unknown>>();
+    const rawLocations = Array.isArray(body.locations) ? body.locations : [];
+    if (rawLocations.length === 0 || rawLocations.length > 20) {
+      return c.json({ error: "Add between 1 and 20 work locations." }, 400);
+    }
+    const locationBodies = rawLocations.filter(
+      (location): location is Record<string, unknown> =>
+        typeof location === "object" && location !== null && !Array.isArray(location)
+    );
+    if (locationBodies.length !== rawLocations.length) {
+      return c.json({ error: "Each work location must be a valid row." }, 400);
+    }
+    const locations = locationBodies.map((location) => {
+      const site = String(location.site ?? "").trim();
+      const startTime = String(location.startTime ?? "").trim();
+      const endTime = String(location.endTime ?? "").trim();
+      const breakMinutes = Number(location.breakMinutes ?? 0);
+      return { site, startTime, endTime, breakMinutes, shiftHours: calculatedShiftHours(startTime, endTime, breakMinutes) };
+    });
+    if (locations.some((location) => !location.site || location.shiftHours === null)) {
+      return c.json({ error: "Enter a location, valid start and finish times, and a non-negative break for every row." }, 400);
+    }
+
+    const month = String(body.month ?? before.month).trim();
+    const periodStart = parseDateInput(body.periodStart);
+    const periodEnd = parseDateInput(body.periodEnd);
+    if (!periodStart || !periodEnd || periodStart > periodEnd) {
+      return c.json({ error: "Enter a valid work date." }, 400);
+    }
+    const status = body.status === undefined ? before.status : parseStatus(body.status);
+    if (!status || (status !== TimeEntryStatus.draft && status !== TimeEntryStatus.submitted)) {
+      return c.json({ error: "Work time can be saved as draft or submitted." }, 400);
+    }
+    const templateId = String(body.templateId ?? before.templateId);
+    const template = await prisma.deductionTemplate.findUnique({ where: { id: templateId } });
+    if (!template) return c.json({ error: "Template not found" }, 400);
+
+    const rows = await prisma.$transaction(async (tx) => {
+      const first = locations[0];
+      const updated = await tx.timeEntry.update({
+        where: { id },
+        data: {
+          month, periodStart, periodEnd, site: first.site, startTime: first.startTime, endTime: first.endTime,
+          breakMinutes: first.breakMinutes, status,
+          daysWorked: (first.shiftHours ?? 0) > 0 ? 1 : 0, hoursWorked: first.shiftHours ?? 0,
+          overtimeHours: Number(body.overtimeHours ?? before.overtimeHours),
+          flatGross: Number(body.flatGross ?? before.flatGross), bonus: Number(body.bonus ?? before.bonus),
+          allowance: Number(body.allowance ?? before.allowance),
+          advanceDeduction: Number(body.advanceDeduction ?? before.advanceDeduction),
+          withdrawalDeduction: Number(body.withdrawalDeduction ?? before.withdrawalDeduction),
+          loanDeduction: Number(body.loanDeduction ?? before.loanDeduction),
+          otherDeduction: Number(body.otherDeduction ?? before.otherDeduction), templateId,
+          applyNhi: body.applyNhi !== undefined ? Boolean(body.applyNhi) : before.applyNhi,
+          applySsb: body.applySsb !== undefined ? Boolean(body.applySsb) : before.applySsb,
+          applyIncomeTax: false, notes: String(body.notes ?? before.notes)
+        },
+        include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
+      });
+      const created = [];
+      for (const location of locations.slice(1)) {
+        created.push(await tx.timeEntry.create({
+          data: {
+            employeeId: before.employeeId, month, periodStart, periodEnd, site: location.site,
+            startTime: location.startTime, endTime: location.endTime, breakMinutes: location.breakMinutes,
+            status, daysWorked: (location.shiftHours ?? 0) > 0 ? 1 : 0, hoursWorked: location.shiftHours ?? 0,
+            overtimeHours: 0, flatGross: 0, bonus: 0, allowance: 0, advanceDeduction: 0,
+            withdrawalDeduction: 0, loanDeduction: 0, otherDeduction: 0, templateId,
+            applyNhi: body.applyNhi !== undefined ? Boolean(body.applyNhi) : before.applyNhi,
+            applySsb: body.applySsb !== undefined ? Boolean(body.applySsb) : before.applySsb,
+            applyIncomeTax: false, notes: String(body.notes ?? before.notes)
+          },
+          include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
+        }));
+      }
+      return [updated, ...created];
+    });
+
+    await writeAudit({
+      actorUserId: c.get("userId"), action: "time_entry.update_multiple_locations",
+      entityType: "TimeEntry", entityId: id,
+      before: { id: before.id, site: before.site },
+      after: { ids: rows.map((row) => row.id), locationCount: rows.length }
+    });
+    return c.json({ entry: rows[0], entries: rows });
   })
   .patch("/entries/:id", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const id = c.req.param("id");
@@ -292,6 +441,8 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!before) {
       return c.json({ error: "Not found" }, 404);
     }
+    const locked =
+      before.status === TimeEntryStatus.approved || before.status === TimeEntryStatus.paid;
     const body = await c.req.json<Record<string, unknown>>();
     const data: Record<string, unknown> = {};
 
@@ -301,6 +452,9 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.site !== undefined) {
       data.site = String(body.site);
     }
+    if (body.startTime !== undefined) data.startTime = String(body.startTime).trim();
+    if (body.endTime !== undefined) data.endTime = String(body.endTime).trim();
+    if (body.breakMinutes !== undefined) data.breakMinutes = Number(body.breakMinutes);
     if (body.periodStart !== undefined) {
       const periodStart = body.periodStart ? parseDateInput(body.periodStart) : null;
       if (body.periodStart && !periodStart) {
@@ -335,6 +489,19 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.hoursWorked !== undefined) {
       data.hoursWorked = Number(body.hoursWorked);
     }
+    if (body.startTime !== undefined || body.endTime !== undefined || body.breakMinutes !== undefined) {
+      const nextStartTime = String(data.startTime ?? before.startTime);
+      const nextEndTime = String(data.endTime ?? before.endTime);
+      const nextBreakMinutes = Number(data.breakMinutes ?? before.breakMinutes);
+      if (nextStartTime || nextEndTime) {
+        const shiftHours = calculatedShiftHours(nextStartTime, nextEndTime, nextBreakMinutes);
+        if (shiftHours === null) {
+          return c.json({ error: "Enter valid start and finish times and a non-negative break." }, 400);
+        }
+        data.hoursWorked = shiftHours;
+        data.daysWorked = shiftHours > 0 ? 1 : 0;
+      }
+    }
     if (body.overtimeHours !== undefined) {
       data.overtimeHours = Number(body.overtimeHours);
     }
@@ -366,7 +533,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       data.applySsb = Boolean(body.applySsb);
     }
     if (body.applyIncomeTax !== undefined) {
-      data.applyIncomeTax = Boolean(body.applyIncomeTax);
+      data.applyIncomeTax = false;
     }
     if (body.notes !== undefined) {
       data.notes = String(body.notes);
@@ -382,6 +549,21 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
 
     if (Object.keys(data).length === 0) {
       return c.json({ error: "No fields to update" }, 400);
+    }
+
+    // Approved/paid entries are locked (they may already be part of a finalized
+    // pay run). Block any amount/status/period change; only notes may be edited.
+    if (locked) {
+      const editableKeys = Object.keys(data).filter((key) => key !== "notes");
+      if (editableKeys.length > 0) {
+        return c.json(
+          {
+            error:
+              "This time entry is approved or paid and is locked. Only notes can be edited; reverse the pay run to make further changes."
+          },
+          409
+        );
+      }
     }
 
     const row = await prisma.timeEntry.update({
@@ -404,6 +586,15 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     const before = await prisma.timeEntry.findUnique({ where: { id } });
     if (!before) {
       return c.json({ error: "Not found" }, 404);
+    }
+    if (before.status === TimeEntryStatus.approved || before.status === TimeEntryStatus.paid) {
+      return c.json(
+        {
+          error:
+            "Approved or paid time entries cannot be deleted. Reverse the related pay run before making payroll corrections."
+        },
+        409
+      );
     }
     await prisma.timeEntry.delete({ where: { id } });
     await writeAudit({
@@ -464,6 +655,15 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       return eid;
     }
     const body = await c.req.json<Record<string, unknown>>();
+    if (containsAdminOnlyPayFields(body)) {
+      return c.json(
+        {
+          error:
+            "Employees can submit work time only. Pay adjustments and deductions must be entered by an authorized payroll administrator."
+        },
+        403
+      );
+    }
     const month = String(body.month ?? "").trim();
     if (!month) {
       return c.json({ error: "month (YYYY-MM) is required" }, 400);
@@ -472,7 +672,7 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!employee) {
       return c.json({ error: "Employee not found" }, 404);
     }
-    const templateId = String(body.templateId ?? employee.templateId);
+    const templateId = employee.templateId;
     const tpl = await prisma.deductionTemplate.findUnique({ where: { id: templateId } });
     if (!tpl) {
       return c.json({ error: "templateId not found" }, 400);
@@ -482,42 +682,69 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (periodStart && periodEnd && periodStart > periodEnd) {
       return c.json({ error: "periodStart must be on or before periodEnd" }, 400);
     }
+    const rawLocations = Array.isArray(body.locations) ? body.locations : null;
+    if (rawLocations && (rawLocations.length === 0 || rawLocations.length > 20)) {
+      return c.json({ error: "Add between 1 and 20 work locations." }, 400);
+    }
+    const locationBodies: Record<string, unknown>[] = rawLocations
+      ? rawLocations.filter(
+          (location): location is Record<string, unknown> =>
+            typeof location === "object" && location !== null && !Array.isArray(location)
+        )
+      : [body];
+    if (rawLocations && locationBodies.length !== rawLocations.length) {
+      return c.json({ error: "Each work location must be a valid row." }, 400);
+    }
+    const locations = locationBodies.map((location) => {
+      const site = String(location.site ?? employee.defaultSite ?? "").trim();
+      const startTime = String(location.startTime ?? "").trim();
+      const endTime = String(location.endTime ?? "").trim();
+      const breakMinutes = Number(location.breakMinutes ?? 0);
+      return { site, startTime, endTime, breakMinutes, shiftHours: calculatedShiftHours(startTime, endTime, breakMinutes) };
+    });
+    if (locations.some((location) => !location.site || location.shiftHours === null)) {
+      return c.json({ error: "Enter a location, valid start and finish times, and a non-negative break for every row." }, 400);
+    }
 
-    const row = await prisma.timeEntry.create({
-      data: {
+    const rows = await prisma.$transaction(
+      locations.map((location) => prisma.timeEntry.create({
+        data: {
         employeeId: eid,
         month,
         periodStart,
         periodEnd,
-        site: String(body.site ?? employee.defaultSite ?? ""),
-        status: TimeEntryStatus.draft,
-        daysWorked: Number(body.daysWorked ?? 0),
-        hoursWorked: Number(body.hoursWorked ?? 0),
+        site: location.site,
+        startTime: location.startTime,
+        endTime: location.endTime,
+        breakMinutes: location.breakMinutes,
+        status: body.submit === true ? TimeEntryStatus.submitted : TimeEntryStatus.draft,
+        daysWorked: (location.shiftHours ?? 0) > 0 ? 1 : 0,
+        hoursWorked: location.shiftHours ?? 0,
         overtimeHours: Number(body.overtimeHours ?? 0),
-        flatGross: Number(body.flatGross ?? 0),
-        bonus: Number(body.bonus ?? 0),
-        allowance: Number(body.allowance ?? 0),
-        advanceDeduction: Number(body.advanceDeduction ?? 0),
-        withdrawalDeduction: Number(body.withdrawalDeduction ?? 0),
-        loanDeduction: Number(body.loanDeduction ?? 0),
-        otherDeduction: Number(body.otherDeduction ?? 0),
+        flatGross: 0,
+        bonus: 0,
+        allowance: 0,
+        advanceDeduction: 0,
+        withdrawalDeduction: 0,
+        loanDeduction: 0,
+        otherDeduction: 0,
         templateId,
-        applyNhi: body.applyNhi !== undefined ? Boolean(body.applyNhi) : tpl.applyNhi,
-        applySsb: body.applySsb !== undefined ? Boolean(body.applySsb) : tpl.applySsb,
-        applyIncomeTax:
-          body.applyIncomeTax !== undefined ? Boolean(body.applyIncomeTax) : tpl.applyIncomeTax,
+        applyNhi: tpl.applyNhi,
+        applySsb: tpl.applySsb,
+        applyIncomeTax: false,
         notes: String(body.notes ?? "")
-      },
-      include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
-    });
+        },
+        include: { employee: { select: employeeForNestedTimeContextSelect }, template: true }
+      }))
+    );
     await writeAudit({
       actorUserId: c.get("userId"),
-      action: "time_entry.self_create",
+      action: rows.length > 1 ? "time_entry.self_create_multiple_locations" : "time_entry.self_create",
       entityType: "TimeEntry",
-      entityId: row.id,
-      after: { id: row.id, employeeId: eid, month }
+      entityId: rows[0].id,
+      after: { ids: rows.map((row) => row.id), employeeId: eid, month, locationCount: rows.length }
     });
-    return c.json({ entry: row }, 201);
+    return c.json({ entry: rows[0], entries: rows }, 201);
   })
   .patch("/self/entries/:id", authRequired, requireRole(...SELF_TIME), async (c) => {
     const eid = await resolveLinkedEmployeeId(c);
@@ -533,6 +760,15 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: "Only draft entries can be edited in the app" }, 400);
     }
     const body = await c.req.json<Record<string, unknown>>();
+    if (containsAdminOnlyPayFields(body)) {
+      return c.json(
+        {
+          error:
+            "Employees can update work time only. Pay adjustments and deductions must be entered by an authorized payroll administrator."
+        },
+        403
+      );
+    }
     const data: Record<string, unknown> = {};
     if (body.month !== undefined) {
       data.month = String(body.month).trim();
@@ -540,6 +776,9 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.site !== undefined) {
       data.site = String(body.site);
     }
+    if (body.startTime !== undefined) data.startTime = String(body.startTime).trim();
+    if (body.endTime !== undefined) data.endTime = String(body.endTime).trim();
+    if (body.breakMinutes !== undefined) data.breakMinutes = Number(body.breakMinutes);
     if (body.periodStart !== undefined) {
       const periodStart = body.periodStart ? parseDateInput(body.periodStart) : null;
       if (body.periodStart && !periodStart) {
@@ -559,6 +798,19 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     if (body.hoursWorked !== undefined) {
       data.hoursWorked = Number(body.hoursWorked);
+    }
+    if (body.startTime !== undefined || body.endTime !== undefined || body.breakMinutes !== undefined) {
+      const nextStartTime = String(data.startTime ?? before.startTime);
+      const nextEndTime = String(data.endTime ?? before.endTime);
+      const nextBreakMinutes = Number(data.breakMinutes ?? before.breakMinutes);
+      if (nextStartTime || nextEndTime) {
+        const shiftHours = calculatedShiftHours(nextStartTime, nextEndTime, nextBreakMinutes);
+        if (shiftHours === null) {
+          return c.json({ error: "Enter valid start and finish times and a non-negative break." }, 400);
+        }
+        data.hoursWorked = shiftHours;
+        data.daysWorked = shiftHours > 0 ? 1 : 0;
+      }
     }
     if (body.overtimeHours !== undefined) {
       data.overtimeHours = Number(body.overtimeHours);
@@ -640,4 +892,23 @@ export const timeRoutes = new Hono<{ Variables: AuthVariables }>()
       before
     });
     return c.body(null, 204);
+  })
+  .get("/self/paystubs", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const items = await listEmployeePaystubs(eid);
+    return c.json({ items });
+  })
+  .get("/self/paystubs/:id", authRequired, requireRole(...SELF_TIME), async (c) => {
+    const eid = await resolveLinkedEmployeeId(c);
+    if (eid instanceof Response) {
+      return eid;
+    }
+    const paystub = await getEmployeePaystub(eid, c.req.param("id"));
+    if (!paystub) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return c.json({ paystub });
   });

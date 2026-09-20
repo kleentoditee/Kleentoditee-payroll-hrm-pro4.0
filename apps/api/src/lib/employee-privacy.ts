@@ -13,6 +13,7 @@ export const employeeForNestedTimeContextSelect = {
   hourlyRate: true,
   overtimeRate: true,
   fixedPay: true,
+  payrollTaxExemptionEnabled: true,
   standardDays: true,
   standardHours: true,
   paySchedule: true,
@@ -79,6 +80,7 @@ export type EmployeeListRow = {
   role: string;
   defaultSite: string;
   phone: string;
+  email: string;
   active: boolean;
   basePayType: string;
   paySchedule: string;
@@ -94,6 +96,7 @@ export function toListEmployee(emp: Employee & { template: Template; linkedUser?
     role: emp.role,
     defaultSite: emp.defaultSite,
     phone: emp.phone,
+    email: emp.email,
     active: emp.active,
     basePayType: emp.basePayType,
     paySchedule: emp.paySchedule,
@@ -136,14 +139,17 @@ export function toDetailPayload(
     createdAt: emp.createdAt,
     updatedAt: emp.updatedAt,
     fullName: emp.fullName,
+    sex: emp.sex,
     role: emp.role,
     defaultSite: emp.defaultSite,
     phone: emp.phone,
+    email: emp.email,
     basePayType: emp.basePayType,
     dailyRate: emp.dailyRate,
     hourlyRate: emp.hourlyRate,
     overtimeRate: emp.overtimeRate,
     fixedPay: emp.fixedPay,
+    payrollTaxExemptionEnabled: emp.payrollTaxExemptionEnabled,
     standardDays: emp.standardDays,
     standardHours: emp.standardHours,
     paySchedule: emp.paySchedule,
@@ -155,9 +161,11 @@ export function toDetailPayload(
     profilePhotoViewUrl: `/people/employees/${emp.id}/profile-photo`,
     employmentStartDate: emp.employmentStartDate?.toISOString() ?? null,
     employmentEndDate: emp.employmentEndDate?.toISOString() ?? null,
+    workAuthorizationStatus: emp.workAuthorizationStatus,
     workPermitExpiryDate: emp.workPermitExpiryDate?.toISOString() ?? null,
     socialSecurityNumber: expose ? emp.socialSecurityNumber : maskIdentifier(emp.socialSecurityNumber),
     nationalHealthInsuranceNumber: expose ? emp.nationalHealthInsuranceNumber : maskIdentifier(emp.nationalHealthInsuranceNumber),
+    nhiUnemployedSpouse: emp.nhiUnemployedSpouse,
     inlandRevenueDepartmentNumber: expose ? emp.inlandRevenueDepartmentNumber : maskIdentifier(emp.inlandRevenueDepartmentNumber),
     workPermitNumber: expose ? emp.workPermitNumber : maskIdentifier(emp.workPermitNumber),
     sensitiveExposed: expose,

@@ -8,6 +8,12 @@ import {
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { MONEY_TOLERANCE, nextBillPaymentNumber, round2 } from "../lib/finance-transactions.js";
+import {
+  buildBillPaymentJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -200,6 +206,8 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
             }
           });
         }
+        const glAccounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildBillPaymentJournal(created, glAccounts.accountsPayable), c.get("userId"));
         return tx.billPayment.findUnique({
           where: { id: created.id },
           include: {
@@ -306,6 +314,11 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
           }
         });
       }
+      await reverseJournal(tx, "bill_payment", id, {
+        date: new Date(),
+        memo: `Supplier payment ${before.number} deleted — reversal`,
+        createdByUserId: c.get("userId")
+      });
       await tx.billPayment.delete({ where: { id } });
     });
 

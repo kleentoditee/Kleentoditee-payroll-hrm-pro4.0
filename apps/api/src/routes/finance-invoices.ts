@@ -6,6 +6,12 @@ import {
   nextInvoiceNumber,
   rollupTotals
 } from "../lib/finance-transactions.js";
+import {
+  buildInvoiceIssuedJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -134,6 +140,20 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
         lines: {
           include: { product: true, incomeAccount: true },
           orderBy: { position: "asc" }
+        },
+        applications: {
+          include: {
+            payment: {
+              select: {
+                id: true,
+                number: true,
+                paymentDate: true,
+                method: true,
+                reference: true
+              }
+            }
+          },
+          orderBy: { createdAt: "asc" }
         }
       }
     });
@@ -307,9 +327,15 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.total <= 0) {
       return c.json({ error: "Invoice total must be greater than zero before sending." }, 409);
     }
-    const row = await prisma.invoice.update({
-      where: { id },
-      data: { status: TransactionStatus.open, sentAt: new Date() }
+    const row = await prisma.$transaction(async (tx) => {
+      const updated = await tx.invoice.update({
+        where: { id },
+        data: { status: TransactionStatus.open, sentAt: new Date() }
+      });
+      const withLines = await tx.invoice.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      const accounts = await ensureControlAccounts(tx);
+      await postJournal(tx, buildInvoiceIssuedJournal(withLines, accounts.accountsReceivable, accounts.taxPayable), c.get("userId"));
+      return updated;
     });
     await writeAudit({
       actorUserId: c.get("userId"),
@@ -336,9 +362,18 @@ export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
         409
       );
     }
-    const row = await prisma.invoice.update({
-      where: { id },
-      data: { status: TransactionStatus.void, voidedAt: new Date() }
+    const row = await prisma.$transaction(async (tx) => {
+      const updated = await tx.invoice.update({
+        where: { id },
+        data: { status: TransactionStatus.void, voidedAt: new Date() }
+      });
+      // Reversal journal undoes the issue posting; no-op if it predates the GL.
+      await reverseJournal(tx, "invoice", id, {
+        date: new Date(),
+        memo: `Invoice ${before.number} voided — reversal`,
+        createdByUserId: c.get("userId")
+      });
+      return updated;
     });
     await writeAudit({
       actorUserId: c.get("userId"),

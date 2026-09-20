@@ -8,6 +8,12 @@ import {
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { MONEY_TOLERANCE, nextPaymentNumber, round2 } from "../lib/finance-transactions.js";
+import {
+  buildPaymentReceivedJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -205,6 +211,8 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
             }
           });
         }
+        const glAccounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildPaymentReceivedJournal(created, glAccounts.accountsReceivable), c.get("userId"));
         return tx.payment.findUnique({
           where: { id: created.id },
           include: {
@@ -434,6 +442,12 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
           }
         });
       }
+      // Reverse the receipt posting before removing the document.
+      await reverseJournal(tx, "payment", id, {
+        date: new Date(),
+        memo: `Payment ${before.number} deleted — reversal`,
+        createdByUserId: c.get("userId")
+      });
       await tx.payment.delete({ where: { id } });
     });
 

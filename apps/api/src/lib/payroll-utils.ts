@@ -26,6 +26,10 @@ export type CsvRunLike = {
     nhi: number;
     ssb: number;
     incomeTax: number;
+    payrollTax: number;
+    employerNhi: number;
+    employerSsb: number;
+    employerPayrollTax: number;
     manualDeductions: number;
     totalDeductions: number;
     net: number;
@@ -84,10 +88,10 @@ export function isTimeEntryWithinPeriod(period: PeriodLike, entry: TimeEntryPeri
       dateKey(entry.periodEnd) <= dateKey(period.endDate)
     );
   }
-  if (period.schedule === "monthly") {
-    return entry.month === monthKey(period.startDate);
-  }
-  return false;
+  // Entries without explicit period dates (e.g. tracker submissions that only
+  // carry a month) fall back to calendar-month matching for every schedule, so
+  // weekly/biweekly employees are not silently excluded from their pay run.
+  return entry.month === monthKey(period.startDate);
 }
 
 function csvEscape(value: string | number): string {
@@ -113,7 +117,10 @@ export function buildPayrollCsv(run: CsvRunLike): string {
     "Gross",
     "NHI",
     "SSB",
-    "Income Tax",
+    "Payroll Tax (Employee)",
+    "NHI (Employer)",
+    "SSB (Employer)",
+    "Payroll Tax (Employer)",
     "Manual Deductions",
     "Total Deductions",
     "Net",
@@ -134,7 +141,10 @@ export function buildPayrollCsv(run: CsvRunLike): string {
     roundMoney(item.gross),
     roundMoney(item.nhi),
     roundMoney(item.ssb),
-    roundMoney(item.incomeTax),
+    roundMoney(item.payrollTax),
+    roundMoney(item.employerNhi),
+    roundMoney(item.employerSsb),
+    roundMoney(item.employerPayrollTax),
     roundMoney(item.manualDeductions),
     roundMoney(item.totalDeductions),
     roundMoney(item.net),

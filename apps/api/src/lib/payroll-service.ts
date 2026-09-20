@@ -1,13 +1,76 @@
-import { PayRunStatus, Prisma, TimeEntryStatus, prisma } from "@kleentoditee/db";
+import { PaySchedule, PayRunStatus, Prisma, TimeEntryStatus, prisma } from "@kleentoditee/db";
 import { employeeForNestedTimeContextSelect } from "./employee-privacy.js";
-import { computeEntryPreview, roundMoney } from "./payroll-calc.js";
+import { roundMoney } from "./payroll-calc.js";
+import { buildRunItemsFromEntries } from "./payroll-run-builder.js";
+import { loadYtdOpeningGrossByEmployee } from "./payroll-ytd-import.js";
+import { loadUnpaidLeaveDaysByEmployee } from "./leave.js";
+import { buildPayrollRunJournal, ensureControlAccounts, postJournal, reverseJournal } from "./gl-posting.js";
+import {
+  statutoryConfigFromOrgSettings,
+  type StatutoryConfig
+} from "./statutory-config.js";
 import {
   buildPayrollCsv,
   buildPeriodLabel,
   createPaystubNumber,
-  dateKey,
-  isTimeEntryWithinPeriod
+  dateKey
 } from "./payroll-utils.js";
+
+type OrgCompanyInfo = { companyLegalName: string; companyAddress: string };
+
+function assertPayrollSettingsReady(company: OrgCompanyInfo, statutoryConfig: StatutoryConfig) {
+  if (!company.companyLegalName.trim()) {
+    throw new Error("Add the company legal name in Settings before finalizing payroll.");
+  }
+
+  const requiredContributions = [
+    ["Social Security", statutoryConfig.socialSecurity],
+    ["National Health Insurance", statutoryConfig.nationalHealthInsurance]
+  ] as const;
+  for (const [label, contribution] of requiredContributions) {
+    if (!contribution.enabled) continue;
+    if (contribution.employeeRate <= 0 || contribution.employerRate <= 0 || contribution.periodCeiling <= 0) {
+      throw new Error(
+        `${label} is enabled but its employee rate, employer rate, or period ceiling is zero. Review the official BVI figures in Settings before finalizing payroll.`
+      );
+    }
+  }
+  if (statutoryConfig.payrollTax.enabled) {
+    if (statutoryConfig.payrollTax.employerClass === "NOT_SET") {
+      throw new Error("Choose the BVI payroll tax employer class in Settings before finalizing payroll.");
+    }
+    if (statutoryConfig.payrollTax.employeeRate <= 0 || statutoryConfig.payrollTax.annualExemption < 0) {
+      throw new Error("Review the BVI payroll tax rate and annual exemption in Settings.");
+    }
+  }
+}
+
+/**
+ * Loads the editable OrgSettings singleton (create-on-read with defaults) and
+ * derives the statutory config + company info used when building a pay run and
+ * freezing paystubs. Lives at the DB/service boundary; the pure calc functions
+ * still take an explicit config.
+ */
+async function loadOrgPayrollContext(schedule: PaySchedule): Promise<{
+  statutoryConfig: StatutoryConfig;
+  company: OrgCompanyInfo;
+}> {
+  const org = await prisma.orgSettings.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton" },
+    update: {}
+  });
+  return {
+    statutoryConfig: statutoryConfigFromOrgSettings(org, schedule),
+    company: {
+      companyLegalName: org.companyLegalName,
+      companyAddress: org.companyAddress
+    }
+  };
+}
+
+export { buildRunItemsFromEntries };
+export type { RunItemPayload, RunPeriodLike, RunSourceEntry } from "./payroll-run-builder.js";
 
 const RUN_DETAIL_INCLUDE = {
   period: true,
@@ -42,6 +105,10 @@ function buildPaystubPayload(
     nhi: number;
     ssb: number;
     incomeTax: number;
+    payrollTax: number;
+    employerNhi: number;
+    employerSsb: number;
+    employerPayrollTax: number;
     manualDeductions: number;
     totalDeductions: number;
     net: number;
@@ -56,9 +123,14 @@ function buildPaystubPayload(
     loanDeduction: number;
     otherDeduction: number;
     sourceSummary: Prisma.JsonValue | null;
-  }
+  },
+  company: OrgCompanyInfo
 ): Prisma.InputJsonValue {
   return {
+    company: {
+      legalName: company.companyLegalName,
+      address: company.companyAddress
+    },
     employeeName: item.employeeName,
     employeeRole: item.employeeRole,
     site: item.defaultSite,
@@ -78,12 +150,19 @@ function buildPaystubPayload(
       nhi: roundMoney(item.nhi),
       ssb: roundMoney(item.ssb),
       incomeTax: roundMoney(item.incomeTax),
+      payrollTax: roundMoney(item.payrollTax),
       manual: roundMoney(item.manualDeductions),
       advance: roundMoney(item.advanceDeduction),
       withdrawal: roundMoney(item.withdrawalDeduction),
       loan: roundMoney(item.loanDeduction),
       other: roundMoney(item.otherDeduction),
       total: roundMoney(item.totalDeductions)
+    },
+    employerContributions: {
+      nhi: roundMoney(item.employerNhi),
+      ssb: roundMoney(item.employerSsb),
+      payrollTax: roundMoney(item.employerPayrollTax),
+      total: roundMoney(item.employerNhi + item.employerSsb + item.employerPayrollTax)
     },
     totals: {
       daysWorked: roundMoney(item.daysWorked),
@@ -139,7 +218,7 @@ function summarizeRunItems(
 async function buildRunItemPayloads(period: {
   id: string;
   label: string;
-  schedule: "weekly" | "biweekly" | "monthly";
+  schedule: PaySchedule;
   startDate: Date;
   endDate: Date;
 }) {
@@ -147,8 +226,11 @@ async function buildRunItemPayloads(period: {
     where: {
       status: TimeEntryStatus.approved,
       employee: {
-        active: true,
-        paySchedule: period.schedule
+        paySchedule: period.schedule,
+        AND: [
+          { OR: [{ employmentStartDate: null }, { employmentStartDate: { lte: period.endDate } }] },
+          { OR: [{ employmentEndDate: null }, { employmentEndDate: { gte: period.startDate } }] }
+        ]
       }
     },
     include: {
@@ -158,185 +240,62 @@ async function buildRunItemPayloads(period: {
     orderBy: [{ employee: { fullName: "asc" } }, { site: "asc" }]
   });
 
-  const matchingEntries = approvedEntries.filter((entry) =>
-    isTimeEntryWithinPeriod(period, {
-      month: entry.month,
-      periodStart: entry.periodStart,
-      periodEnd: entry.periodEnd
-    })
-  );
-
-  const grouped = new Map<
-    string,
-    {
-      employeeId: string;
-      employeeName: string;
-      employeeRole: string;
-      defaultSite: string;
-      paySchedule: "weekly" | "biweekly" | "monthly";
-      payBasis: "daily" | "hourly" | "fixed";
-      templateNames: Set<string>;
-      sourceEntryIds: string[];
-      sourceSummary: Array<{
-        entryId: string;
-        month: string;
-        periodStart: string | null;
-        periodEnd: string | null;
-        site: string;
-        daysWorked: number;
-        hoursWorked: number;
-        overtimeHours: number;
-        gross: number;
-        net: number;
-      }>;
-      gross: number;
-      nhi: number;
-      ssb: number;
-      incomeTax: number;
-      manualDeductions: number;
-      totalDeductions: number;
-      net: number;
-      daysWorked: number;
-      hoursWorked: number;
-      overtimeHours: number;
-      bonus: number;
-      allowance: number;
-      flatGross: number;
-      advanceDeduction: number;
-      withdrawalDeduction: number;
-      loanDeduction: number;
-      otherDeduction: number;
+  const fixedEmployees = await prisma.employee.findMany({
+    where: {
+      paySchedule: period.schedule,
+      basePayType: "fixed",
+      AND: [
+        { OR: [{ employmentStartDate: null }, { employmentStartDate: { lte: period.endDate } }] },
+        { OR: [{ employmentEndDate: null }, { employmentEndDate: { gte: period.startDate } }] }
+      ]
+    },
+    select: {
+      ...employeeForNestedTimeContextSelect,
+      template: { select: { name: true } }
     }
-  >();
+  });
 
-  for (const entry of matchingEntries) {
-    const preview = computeEntryPreview(
-      {
-        basePayType: entry.employee.basePayType,
-        dailyRate: entry.employee.dailyRate,
-        hourlyRate: entry.employee.hourlyRate,
-        overtimeRate: entry.employee.overtimeRate,
-        fixedPay: entry.employee.fixedPay
-      },
-      {
-        nhiRate: entry.template.nhiRate,
-        ssbRate: entry.template.ssbRate,
-        incomeTaxRate: entry.template.incomeTaxRate
-      },
-      {
-        daysWorked: entry.daysWorked,
-        hoursWorked: entry.hoursWorked,
-        overtimeHours: entry.overtimeHours,
-        flatGross: entry.flatGross,
-        bonus: entry.bonus,
-        allowance: entry.allowance,
-        advanceDeduction: entry.advanceDeduction,
-        withdrawalDeduction: entry.withdrawalDeduction,
-        loanDeduction: entry.loanDeduction,
-        otherDeduction: entry.otherDeduction,
-        applyNhi: entry.applyNhi,
-        applySsb: entry.applySsb,
-        applyIncomeTax: entry.applyIncomeTax
-      }
-    );
-
-    const current =
-      grouped.get(entry.employeeId) ??
-      {
-        employeeId: entry.employeeId,
-        employeeName: entry.employee.fullName,
-        employeeRole: entry.employee.role,
-        defaultSite: entry.employee.defaultSite,
-        paySchedule: entry.employee.paySchedule,
-        payBasis: entry.employee.basePayType,
-        templateNames: new Set<string>(),
-        sourceEntryIds: [],
-        sourceSummary: [],
-        gross: 0,
-        nhi: 0,
-        ssb: 0,
-        incomeTax: 0,
-        manualDeductions: 0,
-        totalDeductions: 0,
-        net: 0,
-        daysWorked: 0,
-        hoursWorked: 0,
-        overtimeHours: 0,
-        bonus: 0,
-        allowance: 0,
-        flatGross: 0,
-        advanceDeduction: 0,
-        withdrawalDeduction: 0,
-        loanDeduction: 0,
-        otherDeduction: 0
-      };
-
-    current.templateNames.add(entry.template.name);
-    current.sourceEntryIds.push(entry.id);
-    current.sourceSummary.push({
-      entryId: entry.id,
-      month: entry.month,
-      periodStart: entry.periodStart ? dateKey(entry.periodStart) : null,
-      periodEnd: entry.periodEnd ? dateKey(entry.periodEnd) : null,
-      site: entry.site,
-      daysWorked: roundMoney(entry.daysWorked),
-      hoursWorked: roundMoney(entry.hoursWorked),
-      overtimeHours: roundMoney(entry.overtimeHours),
-      gross: roundMoney(preview.gross),
-      net: roundMoney(preview.net)
-    });
-    current.gross += preview.gross;
-    current.nhi += preview.breakdown.nhi;
-    current.ssb += preview.breakdown.ssb;
-    current.incomeTax += preview.breakdown.incomeTax;
-    current.manualDeductions += preview.breakdown.manual;
-    current.totalDeductions += preview.totalDeductions;
-    current.net += preview.net;
-    current.daysWorked += entry.daysWorked;
-    current.hoursWorked += entry.hoursWorked;
-    current.overtimeHours += entry.overtimeHours;
-    current.bonus += entry.bonus;
-    current.allowance += entry.allowance;
-    current.flatGross += entry.flatGross;
-    current.advanceDeduction += entry.advanceDeduction;
-    current.withdrawalDeduction += entry.withdrawalDeduction;
-    current.loanDeduction += entry.loanDeduction;
-    current.otherDeduction += entry.otherDeduction;
-
-    grouped.set(entry.employeeId, current);
+  const employeeIds = [
+    ...new Set([
+      ...approvedEntries.map((entry) => entry.employeeId),
+      ...fixedEmployees.map((employee) => employee.id)
+    ])
+  ];
+  const yearStart = new Date(Date.UTC(period.startDate.getUTCFullYear(), 0, 1));
+  const priorGrossRows = employeeIds.length
+    ? await prisma.payRunItem.groupBy({
+        by: ["employeeId"],
+        where: {
+          employeeId: { in: employeeIds },
+          run: {
+            status: { in: [PayRunStatus.finalized, PayRunStatus.exported, PayRunStatus.paid] },
+            period: { startDate: { gte: yearStart, lt: period.startDate } }
+          }
+        },
+        _sum: { gross: true }
+      })
+    : [];
+  const yearToDateGrossByEmployee = new Map(
+    priorGrossRows.map((row) => [row.employeeId, row._sum.gross ?? 0])
+  );
+  const openingGrossByEmployee = await loadYtdOpeningGrossByEmployee(
+    employeeIds,
+    period.startDate.getUTCFullYear()
+  );
+  for (const [employeeId, openingGross] of openingGrossByEmployee) {
+    yearToDateGrossByEmployee.set(employeeId, (yearToDateGrossByEmployee.get(employeeId) ?? 0) + openingGross);
   }
 
-  return [...grouped.values()]
-    .sort((a, b) => a.employeeName.localeCompare(b.employeeName))
-    .map((item) => ({
-      employeeId: item.employeeId,
-      employeeName: item.employeeName,
-      employeeRole: item.employeeRole,
-      defaultSite: item.defaultSite,
-      paySchedule: item.paySchedule,
-      payBasis: item.payBasis,
-      templateName:
-        item.templateNames.size === 1 ? [...item.templateNames][0] : "Multiple templates",
-      sourceEntryIds: item.sourceEntryIds,
-      sourceSummary: item.sourceSummary,
-      gross: roundMoney(item.gross),
-      nhi: roundMoney(item.nhi),
-      ssb: roundMoney(item.ssb),
-      incomeTax: roundMoney(item.incomeTax),
-      manualDeductions: roundMoney(item.manualDeductions),
-      totalDeductions: roundMoney(item.totalDeductions),
-      net: roundMoney(item.net),
-      daysWorked: roundMoney(item.daysWorked),
-      hoursWorked: roundMoney(item.hoursWorked),
-      overtimeHours: roundMoney(item.overtimeHours),
-      bonus: roundMoney(item.bonus),
-      allowance: roundMoney(item.allowance),
-      flatGross: roundMoney(item.flatGross),
-      advanceDeduction: roundMoney(item.advanceDeduction),
-      withdrawalDeduction: roundMoney(item.withdrawalDeduction),
-      loanDeduction: roundMoney(item.loanDeduction),
-      otherDeduction: roundMoney(item.otherDeduction)
-    }));
+  const { statutoryConfig } = await loadOrgPayrollContext(period.schedule);
+  const unpaidLeaveDaysByEmployee = await loadUnpaidLeaveDaysByEmployee(employeeIds, period);
+  return buildRunItemsFromEntries(period, approvedEntries, statutoryConfig, {
+    fixedEmployees: fixedEmployees.map((employee) => ({
+      ...employee,
+      templateName: employee.template.name
+    })),
+    yearToDateGrossByEmployee,
+    unpaidLeaveDaysByEmployee
+  });
 }
 
 async function loadRun(runId: string) {
@@ -374,7 +333,9 @@ export async function createDraftRun(periodId: string, notes = "") {
   if (!period) {
     throw new Error("Pay period not found.");
   }
-  const existing = await prisma.payRun.count({ where: { periodId } });
+  const existing = await prisma.payRun.count({
+    where: { periodId, status: { not: PayRunStatus.void } }
+  });
   if (existing > 0) {
     throw new Error("A pay run already exists for this period.");
   }
@@ -410,6 +371,29 @@ export async function rebuildDraftRun(runId: string) {
   return loadRun(runId);
 }
 
+export async function previewPaystubs(periodId: string) {
+  const period = await prisma.payPeriod.findUnique({ where: { id: periodId } });
+  if (!period) {
+    throw new Error("Pay period not found.");
+  }
+
+  const items = await buildRunItemPayloads(period);
+  const { company } = await loadOrgPayrollContext(period.schedule);
+  const periodWithLabel = {
+    ...period,
+    label: period.label || buildPeriodLabel(period)
+  };
+
+  return {
+    period: periodWithLabel,
+    items: items.map((item) => ({
+      employeeId: item.employeeId,
+      employeeName: item.employeeName,
+      payload: buildPaystubPayload(periodWithLabel, item, company)
+    }))
+  };
+}
+
 export async function finalizeRun(runId: string) {
   const run = await loadRun(runId);
   if (!run) {
@@ -422,12 +406,41 @@ export async function finalizeRun(runId: string) {
     throw new Error("Cannot finalize an empty pay run.");
   }
 
+  const { company, statutoryConfig } = await loadOrgPayrollContext(run.period.schedule);
+  assertPayrollSettingsReady(company, statutoryConfig);
+  if (run.period.startDate.getUTCFullYear() !== statutoryConfig.effectiveYear) {
+    throw new Error(
+      `Settings are approved for ${statutoryConfig.effectiveYear}, but this pay period starts in ${run.period.startDate.getUTCFullYear()}. Review the statutory year before finalizing.`
+    );
+  }
+  if (run.items.some((item) => item.net < 0)) {
+    throw new Error("One or more employees has negative net pay. Correct deductions and rebuild the run.");
+  }
+
+  const recalculated = await buildRunItemPayloads(run.period);
+  const currentSignature = run.items.map((item) => ({
+    employeeId: item.employeeId,
+    gross: item.gross,
+    totalDeductions: item.totalDeductions,
+    net: item.net
+  }));
+  const recalculatedSignature = recalculated.map((item) => ({
+    employeeId: item.employeeId,
+    gross: item.gross,
+    totalDeductions: item.totalDeductions,
+    net: item.net
+  }));
+  if (JSON.stringify(currentSignature) !== JSON.stringify(recalculatedSignature)) {
+    throw new Error("Payroll inputs or settings changed after this draft was built. Rebuild and review the run before finalizing.");
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.payRun.update({
       where: { id: runId },
       data: {
         status: PayRunStatus.finalized,
-        finalizedAt: new Date()
+        finalizedAt: new Date(),
+        statutorySnapshot: statutoryConfig as unknown as Prisma.InputJsonValue
       }
     });
     const issuedAt = new Date();
@@ -436,16 +449,31 @@ export async function finalizeRun(runId: string) {
         where: { payRunItemId: item.id },
         update: {
           issuedAt,
-          payload: buildPaystubPayload(run.period, item)
+          payload: buildPaystubPayload(run.period, item, company)
         },
         create: {
           payRunItemId: item.id,
           stubNumber: createPaystubNumber(run.id, item.id),
           issuedAt,
-          payload: buildPaystubPayload(run.period, item)
+          payload: buildPaystubPayload(run.period, item, company)
         }
       });
     }
+
+    // GL: post the payroll accrual journal (idempotent by sourceKey).
+    const glAccounts = await ensureControlAccounts(tx);
+    await postJournal(
+      tx,
+      buildPayrollRunJournal(
+        {
+          id: run.id,
+          periodLabel: run.period.label,
+          payDate: run.period.payDate ?? run.period.endDate,
+          items: run.items
+        },
+        glAccounts
+      )
+    );
   });
 
   return loadRun(runId);
@@ -501,8 +529,16 @@ export async function markRunPaid(runId: string) {
   if (!run) {
     throw new Error("Pay run not found.");
   }
+  if (run.status === PayRunStatus.paid) {
+    throw new Error("This pay run is already marked paid.");
+  }
+  // Policy: a run must have at least one export (PayrollExport) on file before it
+  // can be marked paid, so every payment is backed by an immutable export.
   if (run.status === PayRunStatus.draft) {
-    throw new Error("Finalize the pay run before marking it paid.");
+    throw new Error("Finalize and export the pay run before marking it paid.");
+  }
+  if (run.exports.length === 0) {
+    throw new Error("Export the pay run before marking it paid.");
   }
 
   const sourceEntryIds = [...new Set(run.items.flatMap((item) => parseSourceEntryIds(item.sourceEntryIds)))];
@@ -529,6 +565,72 @@ export async function markRunPaid(runId: string) {
   return loadRun(runId);
 }
 
+export async function voidRun(runId: string, options: { reversePaid?: boolean } = {}) {
+  const run = await loadRun(runId);
+  if (!run) {
+    throw new Error("Pay run not found.");
+  }
+  if (run.status === PayRunStatus.void) {
+    throw new Error("This pay run is already void.");
+  }
+  if (run.status === PayRunStatus.paid && !options.reversePaid) {
+    throw new Error(
+      "This pay run is already paid. Confirm the reversal to void it and revert its time entries."
+    );
+  }
+
+  const sourceEntryIds = [...new Set(run.items.flatMap((item) => parseSourceEntryIds(item.sourceEntryIds)))];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.paystub.deleteMany({
+      where: { payRunItem: { runId } }
+    });
+    if (run.status === PayRunStatus.paid && sourceEntryIds.length > 0) {
+      await tx.timeEntry.updateMany({
+        where: { id: { in: sourceEntryIds }, status: TimeEntryStatus.paid },
+        data: { status: TimeEntryStatus.approved }
+      });
+    }
+    // GL: reverse the accrual journal if this run was finalized after the
+    // ledger went live (no-op for pre-GL runs).
+    await reverseJournal(tx, "payroll_run", runId, {
+      date: new Date(),
+      memo: `Payroll run voided — reversal (${run.period.label})`
+    });
+    await tx.payRun.update({
+      where: { id: runId },
+      data: {
+        status: PayRunStatus.void,
+        voidedAt: new Date()
+      }
+    });
+  });
+
+  return loadRun(runId);
+}
+
+export async function deleteDraftRun(runId: string) {
+  const run = await prisma.payRun.findUnique({ where: { id: runId } });
+  if (!run) {
+    throw new Error("Pay run not found.");
+  }
+  if (run.status !== PayRunStatus.draft) {
+    throw new Error("Only draft pay runs can be deleted. Void a finalized run instead.");
+  }
+  await prisma.payRun.delete({ where: { id: runId } });
+  return run;
+}
+
+export async function getRunExport(runId: string, exportId: string) {
+  const exportRow = await prisma.payrollExport.findFirst({
+    where: { id: exportId, runId }
+  });
+  if (!exportRow) {
+    throw new Error("Export not found.");
+  }
+  return exportRow;
+}
+
 export async function getRunDetail(runId: string) {
   const run = await loadRun(runId);
   if (!run) {
@@ -538,6 +640,62 @@ export async function getRunDetail(runId: string) {
     ...run,
     summary: summarizeRunItems(run.items)
   };
+}
+
+const EMPLOYEE_VISIBLE_RUN_STATUSES = [
+  PayRunStatus.finalized,
+  PayRunStatus.exported,
+  PayRunStatus.paid
+] as const;
+
+export async function listEmployeePaystubs(employeeId: string) {
+  const stubs = await prisma.paystub.findMany({
+    where: {
+      payRunItem: {
+        employeeId,
+        run: { status: { in: [...EMPLOYEE_VISIBLE_RUN_STATUSES] } }
+      }
+    },
+    include: {
+      payRunItem: {
+        include: { run: { include: { period: true } } }
+      }
+    },
+    orderBy: { issuedAt: "desc" }
+  });
+  return stubs.map((stub) => {
+    const period = stub.payRunItem.run.period;
+    return {
+      id: stub.id,
+      stubNumber: stub.stubNumber,
+      issuedAt: stub.issuedAt,
+      periodLabel: period.label || buildPeriodLabel(period),
+      startDate: period.startDate,
+      endDate: period.endDate,
+      gross: stub.payRunItem.gross,
+      net: stub.payRunItem.net
+    };
+  });
+}
+
+export async function getEmployeePaystub(employeeId: string, paystubId: string) {
+  const paystub = await prisma.paystub.findUnique({
+    where: { id: paystubId },
+    include: {
+      payRunItem: {
+        include: { run: { include: { period: true } } }
+      }
+    }
+  });
+  if (
+    !paystub ||
+    paystub.payRunItem.employeeId !== employeeId ||
+    paystub.payRunItem.run.status === PayRunStatus.draft ||
+    paystub.payRunItem.run.status === PayRunStatus.void
+  ) {
+    return null;
+  }
+  return paystub;
 }
 
 export async function getPaystubDetail(paystubId: string) {

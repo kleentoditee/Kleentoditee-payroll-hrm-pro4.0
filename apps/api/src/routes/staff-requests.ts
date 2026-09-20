@@ -2,6 +2,12 @@ import { prisma, Role, StaffRequestStatus, StaffRequestType, type Prisma } from 
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
+import {
+  ensureDefaultLeavePolicies,
+  isLeaveRequestType,
+  listLeaveBalances
+} from "../lib/leave.js";
+import { parseYearInput } from "../lib/payroll-ytd-import.js";
 
 const SELF_ROLES = [Role.employee_tracker_user] as const;
 
@@ -23,6 +29,7 @@ const REVIEW_ROLES = [
  * payroll can plan around approved leave; they cannot review/approve.
  */
 const PAYROLL_VIEW_ROLES = [Role.payroll_admin] as const;
+const DELETE_ROLES = [Role.platform_owner, Role.hr_admin] as const;
 
 const ALL_REVIEW_OR_VIEW_ROLES = [...REVIEW_ROLES, ...PAYROLL_VIEW_ROLES] as const;
 
@@ -30,6 +37,7 @@ const REQUEST_TYPES: readonly StaffRequestType[] = [
   StaffRequestType.JOB_LETTER,
   StaffRequestType.TIME_OFF,
   StaffRequestType.SICK_LEAVE,
+  StaffRequestType.UNPAID_LEAVE,
   StaffRequestType.PROFILE_UPDATE,
   StaffRequestType.SUPPLIES_REQUEST,
   StaffRequestType.EQUIPMENT_UNIFORM_REQUEST,
@@ -71,7 +79,8 @@ const ALLOWED_CONTACT_KEYS = new Set<string>([
 
 const TYPES_VIEWABLE_BY_PAYROLL = new Set<StaffRequestType>([
   StaffRequestType.TIME_OFF,
-  StaffRequestType.SICK_LEAVE
+  StaffRequestType.SICK_LEAVE,
+  StaffRequestType.UNPAID_LEAVE
 ]);
 
 function isStaffRequestType(v: unknown): v is StaffRequestType {
@@ -241,11 +250,11 @@ function buildCreateData(
 
   let requestedContactUpdate: Prisma.InputJsonValue | undefined;
 
-  if (type === StaffRequestType.TIME_OFF || type === StaffRequestType.SICK_LEAVE) {
+  if (isLeaveRequestType(type)) {
     if (!startDate || !endDate) {
       return {
         data: {} as Prisma.StaffRequestUncheckedCreateInput,
-        error: "startDate and endDate are required for time off / sick leave"
+        error: "startDate and endDate are required for time off / sick / unpaid leave"
       };
     }
   }
@@ -480,6 +489,30 @@ export const staffRequestRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     return c.json({ item: publicShape(row) });
   })
+  .delete("/admin/staff-requests/:id", authRequired, requireRole(...DELETE_ROLES), async (c) => {
+    const id = c.req.param("id");
+    const before = await prisma.staffRequest.findUnique({
+      where: { id },
+      include: { employee: { select: { fullName: true } } }
+    });
+    if (!before) return c.json({ error: "Not found" }, 404);
+
+    await prisma.staffRequest.delete({ where: { id } });
+    await writeAudit({
+      actorUserId: c.get("userId"),
+      action: "staff_request.delete",
+      entityType: "StaffRequest",
+      entityId: id,
+      before: {
+        employeeId: before.employeeId,
+        employeeName: before.employee.fullName,
+        type: before.type,
+        status: before.status,
+        subject: before.subject
+      }
+    });
+    return c.body(null, 204);
+  })
   .patch(
     "/admin/staff-requests/:id/status",
     authRequired,
@@ -543,3 +576,97 @@ export const staffRequestRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ item: publicShape(row) });
     }
   );
+
+
+/* ---------- Leave policies & balances (R8) ---------- */
+
+const POLICY_EDIT_ROLES = [Role.platform_owner, Role.hr_admin] as const;
+
+staffRequestRoutes.get("/leave/policies", authRequired, requireRole(...ALL_REVIEW_OR_VIEW_ROLES), async (c) => {
+  const policies = await prisma.leavePolicy.findMany({ orderBy: [{ sortOrder: "asc" }, { code: "asc" }] });
+  return c.json({ items: policies });
+});
+
+staffRequestRoutes.post("/leave/policies/seed-defaults", authRequired, requireRole(...POLICY_EDIT_ROLES), async (c) => {
+  const policies = await ensureDefaultLeavePolicies();
+  await writeAudit({
+    actorUserId: c.get("userId"),
+    action: "leave_policy.seed_defaults",
+    entityType: "LeavePolicy",
+    after: policies.map((policy) => ({ id: policy.id, code: policy.code }))
+  });
+  return c.json({ items: policies });
+});
+
+staffRequestRoutes.put("/leave/policies/:id", authRequired, requireRole(...POLICY_EDIT_ROLES), async (c) => {
+  const id = c.req.param("id");
+  const existing = await prisma.leavePolicy.findUnique({ where: { id } });
+  if (!existing) {
+    return c.json({ error: "Leave policy not found." }, 404);
+  }
+  const body = await c.req.json<Record<string, unknown>>();
+  const data: Record<string, unknown> = {};
+  if (body.name !== undefined) {
+    const name = String(body.name).trim();
+    if (!name) {
+      return c.json({ error: "name cannot be empty." }, 400);
+    }
+    data.name = name.slice(0, 100);
+  }
+  if (body.paid !== undefined) {
+    data.paid = Boolean(body.paid);
+  }
+  if (body.annualAllowanceDays !== undefined) {
+    const days = Number(body.annualAllowanceDays);
+    if (!Number.isFinite(days) || days < 0 || days > 365) {
+      return c.json({ error: "annualAllowanceDays must be between 0 and 365 (0 = untracked)." }, 400);
+    }
+    data.annualAllowanceDays = days;
+  }
+  if (body.active !== undefined) {
+    data.active = Boolean(body.active);
+  }
+  if (body.sortOrder !== undefined) {
+    const sortOrder = Number(body.sortOrder);
+    if (!Number.isInteger(sortOrder)) {
+      return c.json({ error: "sortOrder must be an integer." }, 400);
+    }
+    data.sortOrder = sortOrder;
+  }
+  if (!Object.keys(data).length) {
+    return c.json({ error: "Nothing to update." }, 400);
+  }
+  const updated = await prisma.leavePolicy.update({ where: { id }, data });
+  await writeAudit({
+    actorUserId: c.get("userId"),
+    action: "leave_policy.update",
+    entityType: "LeavePolicy",
+    entityId: id,
+    before: existing,
+    after: updated
+  });
+  return c.json({ item: updated });
+});
+
+staffRequestRoutes.get("/leave/balances", authRequired, requireRole(...ALL_REVIEW_OR_VIEW_ROLES), async (c) => {
+  const yearParam = c.req.query("year");
+  const year = yearParam ? parseYearInput(yearParam) : new Date().getUTCFullYear();
+  if (year === null) {
+    return c.json({ error: "year must be an integer between 2000 and 2100." }, 400);
+  }
+  const employeeId = String(c.req.query("employeeId") ?? "").trim() || undefined;
+  return c.json(await listLeaveBalances(year, employeeId));
+});
+
+staffRequestRoutes.get("/staff/self/leave-balances", authRequired, requireRole(...SELF_ROLES), async (c) => {
+  const eid = await resolveLinkedEmployeeId(c);
+  if (eid instanceof Response) {
+    return eid;
+  }
+  const yearParam = c.req.query("year");
+  const year = yearParam ? parseYearInput(yearParam) : new Date().getUTCFullYear();
+  if (year === null) {
+    return c.json({ error: "year must be an integer between 2000 and 2100." }, 400);
+  }
+  return c.json(await listLeaveBalances(year, eid));
+});

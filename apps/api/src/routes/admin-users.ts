@@ -4,7 +4,9 @@ import { randomBytes } from "crypto";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { emailCanonical } from "../lib/email-normalize.js";
+import { isEmailDeliveryConfigured, sendUserInvitationEmail } from "../lib/email.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { isValidResetPassword, resetPasswordRuleMessage } from "../lib/password-reset.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_MANAGE = [Role.platform_owner] as const;
@@ -48,8 +50,12 @@ function isValidEmail(s: string): boolean {
   return s.length > 0 && s.length < 256 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
-function devInviteBaseUrl(): string {
-  return (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+function adminPublicBaseUrl(): string {
+  return (
+    process.env.ADMIN_WEB_PUBLIC_URL ??
+    process.env.PUBLIC_APP_URL ??
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 }
 
 function isProduction(): boolean {
@@ -194,6 +200,12 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!isValidEmail(email)) {
       return c.json({ error: "A valid email is required" }, 400);
     }
+    if (isProduction() && !isEmailDeliveryConfigured()) {
+      return c.json(
+        { error: "Email delivery is not configured. Add the SMTP settings before inviting users." },
+        503
+      );
+    }
     const roles = parseRoleArray(body.roles);
     if (!roles) {
       return c.json({ error: "roles must be a non-empty array of valid role values" }, 400);
@@ -255,6 +267,21 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         select: userSelect
       });
       const mapped = mapUser(userFull as UserRow);
+      const path = `/accept-invite?token=${encodeURIComponent(result.rawToken)}`;
+      const acceptUrl = `${adminPublicBaseUrl()}${path}`;
+      const delivered = await sendUserInvitationEmail(result.user.email, acceptUrl).catch((error) => {
+        console.error("[user admin] Invitation email delivery failed.", error);
+        return false;
+      });
+      if (isProduction() && !delivered) {
+        return c.json(
+          {
+            error:
+              "The invitation was created, but the email could not be delivered. Cancel this invitation and try again after checking SMTP settings."
+          },
+          502
+        );
+      }
       await writeAudit({
         actorUserId: c.get("userId"),
         action: "user.admin.invite",
@@ -269,10 +296,11 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         devMessage?: string;
       } = { user: mapped };
       if (!isProduction()) {
-        const path = `/accept-invite?token=${encodeURIComponent(result.rawToken)}`;
         resBody.devInvitePath = path;
-        resBody.devMessage = `Invitation created. Dev accept URL path (append to admin app base): ${path}`;
-        console.log(`[user admin] dev invite (no email): ${devInviteBaseUrl()}${path}`);
+        resBody.devMessage = delivered
+          ? "Invitation created and emailed."
+          : `Invitation created. Development accept URL path: ${path}`;
+        if (!delivered) console.log(`[user admin] dev invite (no email): ${acceptUrl}`);
       }
       return c.json(resBody, 201);
     } catch (e) {
@@ -305,8 +333,8 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!name) {
       return c.json({ error: "name is required" }, 400);
     }
-    if (password.length < 8) {
-      return c.json({ error: "password must be at least 8 characters" }, 400);
+    if (!isValidResetPassword(password)) {
+      return c.json({ error: resetPasswordRuleMessage() }, 400);
     }
     const roles = parseRoleArray(body.roles);
     if (!roles) {
@@ -432,8 +460,8 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.password !== undefined) {
       const password = String(body.password);
       if (password.length > 0) {
-        if (password.length < 8) {
-          return c.json({ error: "password must be at least 8 characters" }, 400);
+        if (!isValidResetPassword(password)) {
+          return c.json({ error: resetPasswordRuleMessage() }, 400);
         }
         if (before.status === UserStatus.invited) {
           return c.json({ error: "Set password through invitation acceptance, not admin PATCH" }, 400);

@@ -1,6 +1,8 @@
 import { prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
+import { isEmailDeliveryConfigured } from "./lib/email.js";
 import { adminUserRoutes } from "./routes/admin-users.js";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
@@ -10,15 +12,27 @@ import { financeBillPaymentsRoutes } from "./routes/finance-bill-payments.js";
 import { financeDepositsRoutes } from "./routes/finance-deposits.js";
 import { financeExpensesRoutes } from "./routes/finance-expenses.js";
 import { financeInvoicesRoutes } from "./routes/finance-invoices.js";
+import { financeReportsRoutes } from "./routes/finance-reports.js";
 import { financePaymentsRoutes } from "./routes/finance-payments.js";
 import { peopleRoutes } from "./routes/people.js";
 import { payrollRoutes } from "./routes/payroll.js";
+import { quickBooksImportRoutes } from "./routes/quickbooks-imports.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { staffRequestRoutes } from "./routes/staff-requests.js";
 import { staffRoutes } from "./routes/staff.js";
 import { adminStaffRoutes } from "./routes/admin-staff.js";
 import { timeRoutes } from "./routes/time.js";
 
 const app = new Hono();
+
+app.use("*", secureHeaders());
+
+function allowedCorsOrigins(): string[] {
+  return (process.env.CORS_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 app.use(
   "*",
@@ -27,11 +41,8 @@ app.use(
     // be allowed or the browser blocks fetch() to :8787 and the login page shows "Cannot reach the API."
     origin: (origin) => {
       if (process.env.NODE_ENV === "production") {
-        const allowed = (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost:3000")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const fallback = allowed[0] ?? "http://localhost:3000";
+        const allowed = allowedCorsOrigins();
+        const fallback = allowed[0];
         if (origin && allowed.includes(origin)) {
           return origin;
         }
@@ -39,8 +50,13 @@ app.use(
       }
       return origin ?? "http://localhost:3000";
     },
-    allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    // x-kt-csrf: double-submit CSRF header required on mutating requests (Batch 2).
+    // credentials: cookie sessions (kt_session) require it on cross-origin deployments.
+    // Bearer auth remains for server-side ops scripts only (smoke-*.mjs, check-tracker-login);
+    // browser apps authenticate exclusively with the HttpOnly cookie.
+    allowHeaders: ["Content-Type", "Authorization", "x-kt-csrf"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    credentials: true
   })
 );
 
@@ -65,6 +81,20 @@ app.get("/health", (c) =>
     time: new Date().toISOString()
   })
 );
+
+app.get("/health/ready", async (c) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return c.json({
+      ok: true,
+      database: "ready",
+      passwordResetEmail: isEmailDeliveryConfigured() ? "configured" : "not_configured",
+      documentStorage: process.env.OBJECT_STORAGE_PROVIDER?.trim() || "local"
+    });
+  } catch {
+    return c.json({ ok: false, database: "unavailable" }, 503);
+  }
+});
 
 // Local debugging: which DB file / URL this API is using, and how many users exist.
 // If userCount is 0 after `npm run db:seed`, seed and API are not sharing the same DATABASE_URL
@@ -100,13 +130,16 @@ app.route("/admin", adminStaffRoutes);
 app.route("/audit", auditRoutes);
 app.route("/finance", financeRoutes);
 app.route("/finance", financeInvoicesRoutes);
+app.route("/finance", financeReportsRoutes);
 app.route("/finance", financeBillsRoutes);
 app.route("/finance", financePaymentsRoutes);
 app.route("/finance", financeBillPaymentsRoutes);
 app.route("/finance", financeExpensesRoutes);
 app.route("/finance", financeDepositsRoutes);
+app.route("/imports", quickBooksImportRoutes);
 app.route("/people", peopleRoutes);
 app.route("/payroll", payrollRoutes);
+app.route("/settings", settingsRoutes);
 app.route("/time", timeRoutes);
 app.route("/staff", staffRoutes);
 app.route("/", staffRequestRoutes);
