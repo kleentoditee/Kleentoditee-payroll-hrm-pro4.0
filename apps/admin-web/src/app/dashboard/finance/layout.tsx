@@ -17,6 +17,9 @@ const links = [
   { href: "/dashboard/finance/journal", label: "Journal" },
   { href: "/dashboard/finance/journals", label: "Manual journals" },
   { href: "/dashboard/finance/periods", label: "Fiscal periods" },
+  { href: "/dashboard/finance/statements", label: "Bank statements" },
+  { href: "/dashboard/finance/reconciliations", label: "Reconciliation" },
+  { href: "/dashboard/finance/register", label: "Bank register" },
   { href: "/dashboard/finance/trial-balance", label: "Trial balance" },
   { href: "/dashboard/reports", label: "Reports" }
 ] as const;
