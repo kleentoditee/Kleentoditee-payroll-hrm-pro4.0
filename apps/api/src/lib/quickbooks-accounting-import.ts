@@ -135,6 +135,7 @@ const configs: Record<QuickBooksImportType, FieldConfig> = {
       issueDate: ["Invoice Date", "Date"],
       dueDate: ["Due Date"],
       lineItemName: ["Product/Service", "Item"],
+      lineAmount: ["Line Amount", "Item Amount", "Line Total"],
       total: ["Amount", "Total"],
       balance: ["Balance"],
       status: ["Status"]
@@ -171,6 +172,7 @@ const configs: Record<QuickBooksImportType, FieldConfig> = {
       method: ["Payment Method", "Method"],
       reference: ["Reference No.", "Reference Number", "Ref No."],
       amount: ["Amount"],
+      invoiceNumber: ["Invoice", "Invoice No.", "Invoice Number", "Applied To"],
       depositAccountName: ["Deposit To", "Deposit Account", "Account"]
     }
   },
@@ -181,7 +183,8 @@ const configs: Record<QuickBooksImportType, FieldConfig> = {
       accountName: ["Account", "Deposit Account"],
       receivedFrom: ["Received From", "Payee"],
       memo: ["Memo", "Description"],
-      amount: ["Amount", "Total"]
+      amount: ["Amount", "Total"],
+      offsetAccountName: ["Offset Account", "From Account", "Income Account"]
     }
   }
 };
@@ -355,7 +358,7 @@ export function suggestMappings(importType: QuickBooksImportType, headers: strin
   return mappings;
 }
 
-function normalizeMappings(importType: QuickBooksImportType, headers: string[], rows: CsvRow[], mappings: Record<string, string>) {
+export function normalizeMappings(importType: QuickBooksImportType, headers: string[], rows: CsvRow[], mappings: Record<string, string>) {
   const normalized: Record<string, string> = {};
   for (const [header, field] of Object.entries(mappings)) {
     if (headers.includes(header) && field) normalized[header] = field;
@@ -519,7 +522,7 @@ export async function executeQuickBooksImport(
   return { importType, created, skipped, skippedEmptyRows, duplicates, validationErrors: [], validationErrorCount: 0 };
 }
 
-function validateMappedRows(importType: QuickBooksImportType, rows: CsvRow[], mappings: Record<string, string>): RowError[] {
+export function validateMappedRows(importType: QuickBooksImportType, rows: CsvRow[], mappings: Record<string, string>): RowError[] {
   const config = configs[importType];
   const errors: RowError[] = [];
   const mappedFields = new Set(Object.values(mappings));
@@ -551,7 +554,7 @@ function applyMappings(row: CsvRow, mappings: Record<string, string>): CsvRow {
   return mapped;
 }
 
-function cleanRowsForImport(importType: QuickBooksImportType, rows: CsvRow[], mappings: Record<string, string>) {
+export function cleanRowsForImport(importType: QuickBooksImportType, rows: CsvRow[], mappings: Record<string, string>) {
   const sourceRows: CsvRow[] = [];
   const mappedRows: CsvRow[] = [];
   let skippedRows = 0;

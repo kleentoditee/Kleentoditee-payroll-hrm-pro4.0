@@ -437,7 +437,8 @@ async function main() {
     { code: "6100", name: "Wages & Salaries", type: AccountType.expense, subtype: "Payroll" },
     { code: "6200", name: "Employer Statutory Contributions", type: AccountType.expense, subtype: "Payroll" },
     { code: "3000", name: "Owner's Equity", type: AccountType.equity, subtype: "Equity" },
-    { code: "3100", name: "Retained Earnings", type: AccountType.equity, subtype: "Equity" }
+    { code: "3100", name: "Retained Earnings", type: AccountType.equity, subtype: "Equity" },
+    { code: "3200", name: "Opening Balance Equity", type: AccountType.equity, subtype: "Equity" }
   ];
   for (const account of controlAccounts) {
     await prisma.account.upsert({

@@ -32,7 +32,8 @@ export type ControlAccountKey =
   | "wagesExpense"
   | "employerStatutoryExpense"
   | "retainedEarnings"
-  | "ownerEquity";
+  | "ownerEquity"
+  | "openingBalanceEquity";
 
 export const CONTROL_ACCOUNTS: Record<
   ControlAccountKey,
@@ -50,7 +51,8 @@ export const CONTROL_ACCOUNTS: Record<
   wagesExpense: { code: "6100", name: "Wages & Salaries", type: "expense", subtype: "Payroll" },
   employerStatutoryExpense: { code: "6200", name: "Employer Statutory Contributions", type: "expense", subtype: "Payroll" },
   retainedEarnings: { code: "3100", name: "Retained Earnings", type: "equity", subtype: "Equity" },
-  ownerEquity: { code: "3000", name: "Owner's Equity", type: "equity", subtype: "Equity" }
+  ownerEquity: { code: "3000", name: "Owner's Equity", type: "equity", subtype: "Equity" },
+  openingBalanceEquity: { code: "3200", name: "Opening Balance Equity", type: "equity", subtype: "Equity" }
 };
 
 // ---------------------------------------------------------------------------
@@ -417,6 +419,50 @@ export function buildYearEndClosingJournal(input: {
     sourceId: input.closeId,
     date: input.closeDate,
     memo: `Year-end close ${input.year} — revenue/expense to retained earnings`,
+    lines
+  };
+}
+
+/**
+ * Opening-balance journal for a migration batch (Batch 17): every imported
+ * opening balance posts against Opening Balance Equity (3200), never into
+ * notes. Asset/normal-debit balances debit the account; liability/equity/
+ * revenue normal-credit balances credit it; the offsetting side is always OBE
+ * so the journal balances by construction.
+ *
+ * `entries` are signed debit-positive amounts per account.
+ */
+export function buildOpeningBalanceJournal(input: {
+  batchId: string;
+  asOfDate: Date;
+  openingBalanceEquityAccountId: string;
+  entries: Array<{ accountId: string; code: string; name: string; balance: number }>;
+}): GlJournalInput {
+  const lines: GlLineInput[] = [];
+  let obeNet = 0; // credit-positive into OBE
+  for (const e of input.entries) {
+    const amount = round2(Math.abs(e.balance));
+    if (amount <= 0) continue;
+    if (e.balance > 0) {
+      lines.push({ accountId: e.accountId, debit: amount, memo: `Opening balance ${e.code} ${e.name}` });
+      obeNet = round2(obeNet + amount);
+    } else {
+      lines.push({ accountId: e.accountId, credit: amount, memo: `Opening balance ${e.code} ${e.name}` });
+      obeNet = round2(obeNet - amount);
+    }
+  }
+  if (Math.abs(obeNet) > 0) {
+    lines.push(
+      obeNet > 0
+        ? { accountId: input.openingBalanceEquityAccountId, credit: obeNet, memo: "Opening balance offset" }
+        : { accountId: input.openingBalanceEquityAccountId, debit: Math.abs(obeNet), memo: "Opening balance offset" }
+    );
+  }
+  return {
+    sourceType: "migration_opening_balance",
+    sourceId: input.batchId,
+    date: input.asOfDate,
+    memo: `Opening balances — migration batch ${input.batchId}`,
     lines
   };
 }
