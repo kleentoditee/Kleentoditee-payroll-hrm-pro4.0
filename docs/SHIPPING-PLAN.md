@@ -7,6 +7,8 @@
 - the GPT consolidated shipping conclusion (owner-provided, 2026-09-19),
 - **owner directive 2026-09-19: SSB ceiling verification is NOT required — the configured value is accepted. Remove it from all gates.**
 
+**2026-09-20 extension:** `docs/FINAL-SHIPPING-PLAN-CELERY-QBO-2026-09-20.md` adds the controlled QuickBooks file-migration gates and the accepted Celery HR recommendations. Batch 16 remains active; the extension defines Batches 17-20 and Gates C-D.
+
 Batch numbers continue the TASKS.md history (Batches 1–9 complete; next is **Batch 10**). GPT's "Batch 9–15" map to Batches 10–16 below.
 
 ---
