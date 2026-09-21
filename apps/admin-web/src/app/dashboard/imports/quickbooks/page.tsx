@@ -215,6 +215,12 @@ export default function QuickBooksAccountingImportPage() {
             File import only. KleenToDiTee does not connect to or sync with any outside accounting platform.
           </div>
         </div>
+        <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          This quick import is not approved for full system migrations — it does not post journals, apply payments,
+          or preserve opening balances. Use the{" "}
+          <a href="/dashboard/imports/migration" className="underline">Migration center</a>{" "}
+          for any legacy-system move (batched, validated, atomic, and reversible).
+        </div>
       </section>
 
       <div className="grid gap-3 md:grid-cols-5">
