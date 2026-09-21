@@ -41,6 +41,7 @@ import {
   type QuickBooksImportType
 } from "./quickbooks-accounting-import.js";
 import {
+  buildBillPaymentJournal,
   buildBillReceivedJournal,
   buildDepositPostedJournal,
   buildExpensePostedJournal,
@@ -55,9 +56,61 @@ import {
 } from "./gl-posting.js";
 import { deriveStatus } from "./finance-transactions.js";
 import { documentStorage } from "./document-storage.js";
+import { unzipSync } from "fflate";
 
-export const MIGRATION_IMPORT_TYPES = [...QUICKBOOKS_IMPORT_TYPES, "opening_balances"] as const;
+export const MIGRATION_IMPORT_TYPES = [
+  ...QUICKBOOKS_IMPORT_TYPES,
+  "opening_balances",
+  "journal_entries",
+  "bill_payments",
+  "sales_receipts",
+  "transfers",
+  "estimates",
+  "purchase_orders",
+  "credit_memos",
+  "classes",
+  "locations",
+  "projects",
+  "product_categories",
+  "time_activities",
+  "attachment"
+] as const;
 export type MigrationImportType = (typeof MIGRATION_IMPORT_TYPES)[number];
+
+/**
+ * Batch 18 classification: every source type has a final disposition.
+ *  - IMPORTABLE: committed into live books through the posting engine.
+ *  - ARCHIVED: kept as evidence (hash + storage), never posted (no target
+ *    model yet — classes/locations/jobs land with Batch 19 cost centres).
+ *  - UNSUPPORTED: no destination exists (e.g. credit memos need a credit-note
+ *    model); reported on the signed exception report.
+ */
+export const ARCHIVED_TYPES = ["estimates", "purchase_orders", "classes", "locations", "projects", "product_categories", "time_activities", "attachment"] as const;
+export const UNSUPPORTED_TYPES = ["credit_memos"] as const;
+export type TypeDisposition = "importable" | "archived" | "unsupported";
+
+export function typeDisposition(importType: MigrationImportType): TypeDisposition {
+  if ((UNSUPPORTED_TYPES as readonly string[]).includes(importType)) return "unsupported";
+  if ((ARCHIVED_TYPES as readonly string[]).includes(importType)) return "archived";
+  return "importable";
+}
+
+export const DISPOSITION_REASONS: Record<string, string> = {
+  estimates: "Non-posting document; retained as archive evidence only.",
+  purchase_orders: "Non-posting document; retained as archive evidence only.",
+  classes: "Classes map to cost centres (Batch 19); archived until then.",
+  locations: "Locations map to cost centres (Batch 19); archived until then.",
+  projects: "Customer jobs map to projects (Batch 19); archived until then.",
+  product_categories: "Product categories have no target model; archived.",
+  time_activities: "Time activities need employee mapping; archived.",
+  attachment: "Binary attachment retained in private storage with its hash.",
+  credit_memos: "Credit notes are not supported by the current ledger; listed on the exception report."
+};
+
+/** Types excluded in cutover mode (history is represented by opening balances). */
+export const CUTOVER_EXCLUDED_TYPES: MigrationImportType[] = [
+  "payments", "bill_payments", "expenses", "deposits", "sales_receipts", "journal_entries", "transfers"
+];
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -71,7 +124,11 @@ const TYPE_ORDER: MigrationImportType[] = [
   "bills",
   "expenses",
   "payments",
+  "bill_payments",
   "deposits",
+  "sales_receipts",
+  "journal_entries",
+  "transfers",
   "opening_balances"
 ];
 
@@ -157,6 +214,16 @@ export function deriveSourceRef(sourceSystem: string, importType: MigrationImpor
       return `${prefix}:${normKey(row.accountName)}:${normKey(row.depositDate)}:${normKey(row.amount)}`;
     case "opening_balances":
       return `${prefix}:${normKey(row.accountName)}`;
+    case "journal_entries":
+      return `${prefix}:${normKey(row.number || `${row.journalDate}|${row.accountName}|${row.debit}|${row.credit}`)}`;
+    case "bill_payments":
+      return `${prefix}:${normKey(row.supplierName)}:${normKey(row.paymentDate)}:${normKey(row.amount)}:${normKey(row.reference)}`;
+    case "sales_receipts":
+      return `${prefix}:${normKey(row.number)}`;
+    case "transfers":
+      return `${prefix}:${normKey(row.fromAccountName)}:${normKey(row.toAccountName)}:${normKey(row.transferDate)}:${normKey(row.amount)}`;
+    default:
+      return `${prefix}:${normKey(JSON.stringify(row)).slice(0, 120)}`;
   }
 }
 
@@ -237,9 +304,104 @@ export function mappingTemplateCsv(importType: MigrationImportType): string {
     expenses: ["expenseDate", "payeeName", "paymentAccountName", "categoryName", "amount", "memo"],
     payments: ["paymentDate", "customerName", "method", "reference", "amount", "invoiceNumber", "depositAccountName"],
     deposits: ["depositDate", "accountName", "receivedFrom", "memo", "amount", "offsetAccountName"],
-    opening_balances: ["accountName", "balance"]
+    opening_balances: ["accountName", "balance"],
+    journal_entries: ["number", "journalDate", "accountName", "debit", "credit", "memo"],
+    bill_payments: ["paymentDate", "supplierName", "method", "reference", "amount", "billNumber", "sourceAccountName"],
+    sales_receipts: ["number", "customerName", "receiptDate", "lineItemName", "lineAmount", "amount", "depositAccountName"],
+    transfers: ["transferDate", "fromAccountName", "toAccountName", "amount", "memo"],
+    estimates: ["number", "customerName", "estimateDate", "amount", "status"],
+    purchase_orders: ["number", "supplierName", "orderDate", "amount", "status"],
+    credit_memos: ["number", "customerName", "creditDate", "amount"],
+    classes: ["name"],
+    locations: ["name"],
+    projects: ["name", "customerName", "status"],
+    product_categories: ["name"],
+    time_activities: ["activityDate", "employeeName", "customerName", "hours", "description"],
+    attachment: []
   };
   return fields[importType].join(",") + "\n";
+}
+
+/** Alias tables for the Batch 18 importable types (header → canonical field). */
+export const B18_ALIASES: Record<string, Record<string, string[]>> = {
+  journal_entries: {
+    number: ["Journal No.", "Journal Number", "No.", "Ref", "Reference"],
+    journalDate: ["Date", "Journal Date"],
+    accountName: ["Account", "Account Name"],
+    debit: ["Debit", "Dr"],
+    credit: ["Credit", "Cr"],
+    memo: ["Memo", "Description"]
+  },
+  bill_payments: {
+    paymentDate: ["Date", "Payment Date"],
+    supplierName: ["Vendor", "Supplier", "Payee", "Vendor Name"],
+    method: ["Payment Method", "Method"],
+    reference: ["Reference No.", "Ref No.", "Check No.", "Reference"],
+    amount: ["Amount", "Total"],
+    billNumber: ["Bill", "Bill No.", "Bill Number", "Applied To"],
+    sourceAccountName: ["Bank Account", "Account", "Paid From", "Source Account"]
+  },
+  sales_receipts: {
+    number: ["Sales Receipt No.", "Receipt No.", "No.", "Number"],
+    customerName: ["Customer", "Customer Name"],
+    receiptDate: ["Date", "Sale Date"],
+    lineItemName: ["Product/Service", "Item"],
+    lineAmount: ["Line Amount", "Item Amount"],
+    amount: ["Amount", "Total"],
+    depositAccountName: ["Deposit To", "Deposit Account", "Account"]
+  },
+  transfers: {
+    transferDate: ["Date", "Transfer Date"],
+    fromAccountName: ["From Account", "Transfer From", "Source Account"],
+    toAccountName: ["To Account", "Transfer To", "Destination Account"],
+    amount: ["Amount", "Total"],
+    memo: ["Memo", "Description"]
+  }
+};
+
+export const B18_REQUIRED: Record<string, string[]> = {
+  journal_entries: ["journalDate", "accountName"],
+  bill_payments: ["paymentDate", "supplierName", "amount", "sourceAccountName"],
+  sales_receipts: ["number", "customerName", "receiptDate", "amount"],
+  transfers: ["transferDate", "fromAccountName", "toAccountName", "amount"]
+};
+
+const normalizeHeaderName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** Suggest header→field mappings for a Batch 18 type from its alias table. */
+export function suggestB18Mappings(importType: string, headers: string[]): Record<string, string> {
+  const aliases = B18_ALIASES[importType] ?? {};
+  const byNorm = new Map(headers.map((h) => [normalizeHeaderName(h), h]));
+  const mappings: Record<string, string> = {};
+  const used = new Set<string>();
+  for (const [field, names] of Object.entries(aliases)) {
+    const hit = names.map(normalizeHeaderName).map((n) => byNorm.get(n)).find((h) => h && !used.has(h));
+    if (hit) {
+      mappings[hit] = field;
+      used.add(hit);
+    }
+  }
+  return mappings;
+}
+
+/**
+ * Infer the import type from a ZIP member or loose filename: longest known
+ * type name that the normalized basename starts with (bill_payments beats
+ * bills). Returns null when nothing matches — unknown files are refused so no
+ * source record stays unclassified (Gate 18).
+ */
+export function inferImportTypeFromName(fileName: string): MigrationImportType | null {
+  const base = fileName.replace(/\\/g, "/").split("/").pop() ?? "";
+  const stem = normalizeHeaderName(base.replace(/\.[^.]+$/, ""));
+  if (!stem) return null;
+  const candidates = (MIGRATION_IMPORT_TYPES as readonly string[])
+    .filter((t) => t !== "attachment")
+    .sort((a, b) => b.length - a.length);
+  for (const type of candidates) {
+    const norm = normalizeHeaderName(type);
+    if (stem === norm || stem.startsWith(norm)) return type as MigrationImportType;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,13 +414,18 @@ async function getBatchOrThrow(batchId: string) {
   return batch;
 }
 
-export async function createMigrationBatch(input: { sourceSystem: string; label?: string; asOfDate?: Date }, actorUserId?: string) {
+export async function createMigrationBatch(
+  input: { sourceSystem: string; label?: string; asOfDate?: Date; migrationMode?: string },
+  actorUserId?: string
+) {
   const orgId = requireOrgId();
+  const migrationMode = input.migrationMode === "cutover" ? "cutover" : "full_detail";
   return prisma.accountingImportBatch.create({
     data: {
       orgId,
       sourceSystem: input.sourceSystem.trim() || "excel_generic",
       label: input.label?.trim() ?? "",
+      migrationMode,
       mappingJson: input.asOfDate ? ({ asOfDate: input.asOfDate.toISOString().slice(0, 10) } as Prisma.InputJsonValue) : undefined,
       createdByUserId: actorUserId ?? null
     }
@@ -285,6 +452,35 @@ function mapOpeningBalanceRows(headers: string[], rows: CsvRow[]): { mapped: Csv
   return { mapped, mappings };
 }
 
+/** Map + required-field validation for a Batch 18 importable type. */
+function mapB18Rows(
+  importType: MigrationImportType,
+  headers: string[],
+  rows: CsvRow[]
+): { mapped: CsvRow[]; mappings: Record<string, string>; errors: Array<{ rowNumber: number; message: string }> } {
+  const mappings = suggestB18Mappings(importType, headers);
+  const mapped = rows.map((row) => {
+    const out: CsvRow = {};
+    for (const [header, field] of Object.entries(mappings)) out[field] = String(row[header] ?? "").trim();
+    return out;
+  });
+  const errors: Array<{ rowNumber: number; message: string }> = [];
+  const required = B18_REQUIRED[importType] ?? [];
+  mapped.forEach((row, i) => {
+    for (const field of required) {
+      if (!String(row[field] ?? "").trim()) errors.push({ rowNumber: i + 2, message: `${field} is required.` });
+    }
+    const dateFields = ["journalDate", "paymentDate", "receiptDate", "transferDate"];
+    for (const field of dateFields) {
+      if (row[field] && !normalizeDate(row[field])) errors.push({ rowNumber: i + 2, message: `${field} is not a valid date.` });
+    }
+    if (importType === "journal_entries" && !normalizeCurrency(row.debit) && !normalizeCurrency(row.credit)) {
+      errors.push({ rowNumber: i + 2, message: "A journal line needs a debit or a credit." });
+    }
+  });
+  return { mapped, mappings, errors };
+}
+
 /** Parse + hash + store + inventory an uploaded file into batch rows. */
 export async function inventoryFile(
   batchId: string,
@@ -298,6 +494,56 @@ export async function inventoryFile(
   }
   const sniff = sniffUpload(input.fileName, input.buffer);
   const parsed = sniff.kind === "xlsx" ? await parseExcel(input.buffer) : parseCsv(input.buffer.toString("utf8"));
+
+  // Disposition decision (Batch 18): archived / unsupported / cutover-excluded
+  // files are hashed + stored + counted, but never inventoried into rows.
+  let disposition = "pending";
+  let dispositionNote = "";
+  const typeClass = typeDisposition(input.importType);
+  if (typeClass !== "importable") {
+    disposition = typeClass;
+    dispositionNote = DISPOSITION_REASONS[input.importType] ?? "";
+  } else if (batch.migrationMode === "cutover" && CUTOVER_EXCLUDED_TYPES.includes(input.importType)) {
+    disposition = "archived";
+    dispositionNote = "Excluded by cutover mode — history is represented by opening balances.";
+  }
+
+  const key = `${orgId}/migration/${batchId}/${Date.now()}-${input.fileName.replace(/[^\w.()-]+/g, "_")}`;
+  await documentStorage.putObject({
+    key,
+    body: input.buffer,
+    contentType: sniff.kind === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv"
+  });
+
+  if (disposition !== "pending") {
+    const file = await prisma.accountingImportFile.create({
+      data: {
+        orgId,
+        batchId,
+        fileName: input.fileName,
+        importType: input.importType,
+        sha256: sha256Hex(input.buffer),
+        sizeBytes: input.buffer.length,
+        storageKey: key,
+        rowCount: parsed.rows.length,
+        disposition,
+        dispositionNote
+      }
+    });
+    await prisma.accountingImportBatch.update({ where: { id: batchId }, data: { status: "inventoried" } });
+    await prisma.auditLog.create({
+      data: {
+        orgId,
+        actorUserId: actorUserId ?? null,
+        action: "migration.file_classified",
+        entityType: "AccountingImportBatch",
+        entityId: batchId,
+        metadata: { fileId: file.id, fileName: input.fileName, importType: input.importType, disposition, rows: parsed.rows.length } as Prisma.InputJsonValue
+      }
+    });
+    return prisma.accountingImportFile.findFirst({ where: { id: file.id }, include: { rows: true } });
+  }
+
   if (!parsed.rows.length) throw new Error("No data rows found in the file.");
 
   let mappings: Record<string, string>;
@@ -313,25 +559,23 @@ export async function inventoryFile(
       if (!String(r.balance ?? "").trim()) errs.push({ rowNumber: i + 2, message: "Balance is required." });
       return errs;
     });
+  } else if (B18_ALIASES[input.importType]) {
+    const b18 = mapB18Rows(input.importType, parsed.headers, parsed.rows);
+    mappings = b18.mappings;
+    mappedRows = b18.mapped.filter((r) => Object.values(r).some((v) => String(v).trim()));
+    rowErrors = b18.errors;
   } else {
-    const suggested = input.mappings ?? suggestMappings(input.importType, parsed.headers, parsed.rows);
-    mappings = normalizeMappings(input.importType, parsed.headers, parsed.rows, suggested).mappings;
-    const cleaned = cleanRowsForImport(input.importType, parsed.rows, mappings);
+    const suggested = input.mappings ?? suggestMappings(input.importType as QuickBooksImportType, parsed.headers, parsed.rows);
+    mappings = normalizeMappings(input.importType as QuickBooksImportType, parsed.headers, parsed.rows, suggested).mappings;
+    const cleaned = cleanRowsForImport(input.importType as QuickBooksImportType, parsed.rows, mappings);
     mappedRows = cleaned.mappedRows;
-    rowErrors = validateMappedRows(input.importType, mappedRows, mappings);
+    rowErrors = validateMappedRows(input.importType as QuickBooksImportType, mappedRows, mappings);
   }
 
   const errorByRow = new Map<number, string[]>();
   for (const e of rowErrors) {
     errorByRow.set(e.rowNumber, [...(errorByRow.get(e.rowNumber) ?? []), e.message]);
   }
-
-  const key = `${orgId}/migration/${batchId}/${Date.now()}-${input.fileName.replace(/[^\w.()-]+/g, "_")}`;
-  await documentStorage.putObject({
-    key,
-    body: input.buffer,
-    contentType: sniff.kind === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv"
-  });
 
   const file = await prisma.accountingImportFile.create({
     data: {
@@ -385,6 +629,95 @@ export async function inventoryFile(
 }
 
 // ---------------------------------------------------------------------------
+// ZIP packages (Batch 18): expand members, classify each one, store attachments
+// ---------------------------------------------------------------------------
+
+export type ZipInventoryResult = {
+  files: Array<{ fileName: string; importType: string; disposition: string; rows: number }>;
+  attachments: number;
+};
+
+const ATTACHMENT_EXTENSIONS = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".txt", ".doc", ".docx", ".tif", ".tiff", ".heic"]);
+
+/**
+ * Expand an uploaded ZIP export package: each .csv/.xlsx member whose name
+ * maps to a known import type is inventoried; binary members become hashed
+ * LegacyDocument attachments; unknown spreadsheets are REFUSED (listed by
+ * name) so no source record stays unclassified.
+ */
+export async function inventoryZip(
+  batchId: string,
+  input: { fileName: string; buffer: Buffer },
+  actorUserId?: string
+): Promise<ZipInventoryResult> {
+  const orgId = requireOrgId();
+  const batch = await getBatchOrThrow(batchId);
+  if (!["uploaded", "inventoried", "mapped", "rejected"].includes(batch.status)) {
+    throw new Error(`Cannot add files while batch is ${batch.status}.`);
+  }
+  if (input.buffer.length > MAX_UPLOAD_BYTES) throw new Error("ZIP package exceeds the 50 MB limit.");
+  const isZip = input.buffer.length > 4 && input.buffer[0] === 0x50 && input.buffer[1] === 0x4b;
+  if (!isZip) throw new Error("Not a ZIP package.");
+  if (input.buffer.includes(Buffer.from("vbaProject.bin"))) {
+    throw new Error("Package contains a macro-enabled workbook (vbaProject.bin). Remove macros and re-export.");
+  }
+  const members = unzipSync(input.buffer, { filter: (f) => !f.name.endsWith("/") });
+  const names = Object.keys(members).filter((n) => !n.startsWith("__MACOSX"));
+  if (!names.length) throw new Error("ZIP package is empty.");
+
+  const unknown: string[] = [];
+  const results: ZipInventoryResult["files"] = [];
+  let attachments = 0;
+  for (const name of names) {
+    const buffer = Buffer.from(members[name]!);
+    const base = name.split("/").pop() ?? name;
+    const ext = base.slice(base.lastIndexOf(".")).toLowerCase();
+    const importType = inferImportTypeFromName(base);
+    if (importType && (ext === ".csv" || ext === ".xlsx")) {
+      const file = await inventoryFile(batchId, { fileName: base, importType, buffer }, actorUserId);
+      results.push({ fileName: base, importType, disposition: file?.disposition ?? "pending", rows: file?.rowCount ?? 0 });
+    } else if (ATTACHMENT_EXTENSIONS.has(ext)) {
+      const key = `${orgId}/migration/${batchId}/attachments/${Date.now()}-${base.replace(/[^\w.()-]+/g, "_")}`;
+      await documentStorage.putObject({ key, body: buffer, contentType: "application/octet-stream" });
+      await prisma.legacyDocument.create({
+        data: { orgId, batchId, fileName: base, sha256: sha256Hex(buffer), sizeBytes: buffer.length, storageKey: key }
+      });
+      await prisma.accountingImportFile.create({
+        data: {
+          orgId,
+          batchId,
+          fileName: base,
+          importType: "attachment",
+          sha256: sha256Hex(buffer),
+          sizeBytes: buffer.length,
+          storageKey: key,
+          disposition: "archived",
+          dispositionNote: DISPOSITION_REASONS.attachment
+        }
+      });
+      attachments += 1;
+      results.push({ fileName: base, importType: "attachment", disposition: "archived", rows: 0 });
+    } else {
+      unknown.push(name);
+    }
+  }
+  if (unknown.length) {
+    throw new Error(`Unclassified package members (rename them to start with a known import type): ${unknown.join(", ")}`);
+  }
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId: actorUserId ?? null,
+      action: "migration.zip_inventoried",
+      entityType: "AccountingImportBatch",
+      entityId: batchId,
+      metadata: { fileName: input.fileName, members: results.length, attachments } as Prisma.InputJsonValue
+    }
+  });
+  return { files: results, attachments };
+}
+
+// ---------------------------------------------------------------------------
 // Strict validation: unknown referenced entities are invalid, never created.
 // ---------------------------------------------------------------------------
 
@@ -427,6 +760,11 @@ export async function validateBatch(batchId: string) {
     if (p.sku) productKeys.add(normKey(p.sku));
   }
   const batchInvoiceNumbers = new Set(rowsOf("invoices").map((r) => normKey((r.payloadJson as CsvRow).number)));
+  const batchBillNumbers = new Set(rowsOf("bills").map((r) => normKey((r.payloadJson as CsvRow).number)));
+  const orgBillNumbers = new Set(
+    (await prisma.bill.findMany({ select: { number: true } })).map((b) => normKey(b.number))
+  );
+  const isCutover = batch.migrationMode === "cutover";
 
   // Lineage: rows already committed by an earlier import of the same source
   // are duplicates to skip, not errors.
@@ -467,7 +805,13 @@ export async function validateBatch(batchId: string) {
         case "vendors": {
           const set = type === "customers" ? customerNames : supplierNames;
           // In-batch duplicates of the same display name collapse at commit.
-          if (!set.has(normKey(p.displayName))) await invalidate(row.id, "Name is required.");
+          if (!set.has(normKey(p.displayName))) {
+            await invalidate(row.id, "Name is required.");
+            break;
+          }
+          if (isCutover && normalizeCurrency(p.openingBalance) !== 0) {
+            await invalidate(row.id, "Cutover mode: AR/AP opening balances come from open documents, not master-data balance fields.");
+          }
           break;
         }
         case "accounts": {
@@ -487,12 +831,20 @@ export async function validateBatch(batchId: string) {
             await invalidate(row.id, `Invoice number "${p.number}" already exists in your books.`);
             break;
           }
+          if (isCutover && normalizeCurrency(p.balance || p.total) <= 0) {
+            await invalidate(row.id, "Cutover mode imports open documents only — this invoice is fully paid.");
+            break;
+          }
           await requireAccount(row.id, undefined, "Sales", "Income");
           break;
         }
         case "bills": {
           if (!supplierNames.has(normKey(p.supplierName))) {
             await invalidate(row.id, `Vendor "${p.supplierName}" not found. Import vendors first.`);
+            break;
+          }
+          if (isCutover && normalizeCurrency(p.balance || p.total) <= 0) {
+            await invalidate(row.id, "Cutover mode imports open documents only — this bill is fully paid.");
             break;
           }
           await requireAccount(row.id, undefined, "Cost of Goods Sold", "Expense");
@@ -532,6 +884,42 @@ export async function validateBatch(batchId: string) {
           await requireAccount(row.id, p.accountName, "", "Opening balance");
           break;
         }
+        case "journal_entries": {
+          await requireAccount(row.id, p.accountName, "", "Journal");
+          break;
+        }
+        case "transfers": {
+          const ok = await requireAccount(row.id, p.fromAccountName, "", "Source");
+          if (ok) await requireAccount(row.id, p.toAccountName, "", "Destination");
+          break;
+        }
+        case "bill_payments": {
+          if (!supplierNames.has(normKey(p.supplierName))) {
+            await invalidate(row.id, `Vendor "${p.supplierName}" not found. Import vendors first.`);
+            break;
+          }
+          const ok = await requireAccount(row.id, p.sourceAccountName, "Checking", "Source");
+          if (!ok) break;
+          if (String(p.billNumber ?? "").trim()) {
+            const num = normKey(p.billNumber);
+            if (!orgBillNumbers.has(num) && !batchBillNumbers.has(num)) {
+              await invalidate(row.id, `Bill "${p.billNumber}" not found for payment application. Import bills first.`);
+            }
+          }
+          break;
+        }
+        case "sales_receipts": {
+          if (!customerNames.has(normKey(p.customerName))) {
+            await invalidate(row.id, `Customer "${p.customerName}" not found. Import customers first.`);
+            break;
+          }
+          if (invoiceNumbers.has(normKey(p.number))) {
+            await invalidate(row.id, `Document number "${p.number}" already exists in your books.`);
+            break;
+          }
+          await requireAccount(row.id, p.depositAccountName, "Undeposited Funds", "Deposit");
+          break;
+        }
       }
     }
     const counts = await prisma.accountingImportRow.groupBy({
@@ -566,7 +954,7 @@ export async function approveBatch(batchId: string, actorUserId?: string) {
 // Atomic commit
 // ---------------------------------------------------------------------------
 
-async function nextNumberInTx(tx: Tx, model: "invoice" | "bill" | "payment" | "expense" | "deposit", prefix: string): Promise<string> {
+async function nextNumberInTx(tx: Tx, model: "invoice" | "bill" | "payment" | "expense" | "deposit" | "billPayment", prefix: string): Promise<string> {
   const delegate = tx[model] as unknown as {
     findFirst: (args: unknown) => Promise<{ number: string } | null>;
   };
@@ -648,6 +1036,10 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
 
       const openingEntries: Array<{ accountId: string; code: string; name: string; balance: number }> = [];
       const arApCodes = new Set(["1100", "2000"]);
+      // AR/AP control totals claimed by the source rows this batch actually
+      // creates (reconciled against what landed below).
+      let expectedAr = 0;
+      let expectedAp = 0;
 
       for (const file of orderedFiles) {
         const type = file.importType as MigrationImportType;
@@ -748,6 +1140,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                 });
                 await postJournal(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
                 await createRef(tx, batchId, batch.sourceSystem, "customer_opening", row.sourceRef, "Invoice", invoice.id);
+                expectedAr = round2(expectedAr + ob);
               }
               break;
             }
@@ -803,6 +1196,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                 });
                 await postJournal(tx, buildBillReceivedJournal(bill, accounts.accountsPayable, accounts.taxPayable), actorUserId);
                 await createRef(tx, batchId, batch.sourceSystem, "vendor_opening", row.sourceRef, "Bill", bill.id);
+                expectedAp = round2(expectedAp + ob);
               }
               break;
             }
@@ -896,6 +1290,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
             });
             await postJournal(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, sourceRef, "Invoice", invoice.id);
+            expectedAr = round2(expectedAr + round2(total - amountPaid));
             for (const gr of group.rows) {
               const rowRec = pendingRows.find((r) => r.id === (gr as CsvRow).__rowId)!;
               await markRow(tx, rowRec, "committed", "Invoice", invoice.id);
@@ -949,6 +1344,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
             await tx.bill.update({ where: { id: bill.id }, data: { status: deriveStatus(TransactionStatus.open, total, amountPaid) } });
             await postJournal(tx, buildBillReceivedJournal(bill, accounts.accountsPayable, accounts.taxPayable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "Bill", bill.id);
+            expectedAp = round2(expectedAp + round2(total - amountPaid));
             await markRow(tx, row, "committed", "Bill", bill.id);
             bump(type, "committed");
             fileCommitted += 1;
@@ -1144,7 +1540,238 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
           }
         }
 
-        await tx.accountingImportFile.update({ where: { id: file.id }, data: { committedCount: fileCommitted } });
+        if (type === "bill_payments") {
+          for (const row of file.rows) {
+            const p = row.payloadJson as CsvRow;
+            const existing = await findRef(tx, batch.sourceSystem, type, row.sourceRef);
+            if (existing) {
+              await markRow(tx, row, "skipped_duplicate", existing.destinationType, existing.destinationId);
+              bump(type, "skipped");
+              continue;
+            }
+            const supplier = (await supplierByName(p.supplierName))!;
+            const sourceAccount = (await accountByName(p.sourceAccountName || "Checking"))!;
+            const amount = normalizeCurrency(p.amount);
+            let application: { billId: string; amount: number } | null = null;
+            const billNumber = String(p.billNumber ?? "").trim();
+            if (billNumber) {
+              const bill = await tx.bill.findFirst({
+                where: { number: { equals: billNumber, mode: "insensitive" } },
+                select: { id: true, total: true, amountPaid: true, balance: true, status: true }
+              });
+              if (bill && bill.balance > 0) {
+                application = { billId: bill.id, amount: round2(Math.min(amount, bill.balance)) };
+              }
+            }
+            const billPayment = await tx.billPayment.create({
+              data: {
+                orgId,
+                number: p.reference?.trim() || (await nextNumberInTx(tx, "billPayment", `BPT-${year}-`)),
+                supplierId: supplier.id,
+                paymentDate: normalizeDate(p.paymentDate) ?? asOf,
+                method: parsePaymentMethodLoose(p.method),
+                reference: p.reference ?? "",
+                amount,
+                applied: application?.amount ?? 0,
+                unapplied: round2(amount - (application?.amount ?? 0)),
+                sourceAccountId: sourceAccount.id,
+                applications: application
+                  ? { create: [{ orgId, billId: application.billId, amount: application.amount }] }
+                  : undefined
+              }
+            });
+            if (application) {
+              const bill = await tx.bill.findUniqueOrThrow({ where: { id: application.billId } });
+              const nextPaid = round2(bill.amountPaid + application.amount);
+              await tx.bill.update({
+                where: { id: bill.id },
+                data: {
+                  amountPaid: nextPaid,
+                  balance: round2(bill.total - nextPaid),
+                  status: deriveStatus(bill.status, bill.total, nextPaid)
+                }
+              });
+              expectedAp = round2(expectedAp - application.amount);
+            }
+            await postJournal(tx, buildBillPaymentJournal(billPayment, accounts.accountsPayable), actorUserId);
+            await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "BillPayment", billPayment.id);
+            await markRow(tx, row, "committed", "BillPayment", billPayment.id);
+            bump(type, "committed");
+            fileCommitted += 1;
+          }
+        }
+
+        if (type === "sales_receipts") {
+          // A sales receipt is a paid-on-receipt invoice: invoice (status paid)
+          // + payment fully applied, both posted through the engine.
+          const pendingRows = file.rows;
+          const groups = groupInvoiceRows(pendingRows.map((r) => ({ ...((r.payloadJson as CsvRow) ?? {}), number: (r.payloadJson as CsvRow).number, __rowId: r.id, __sourceRef: r.sourceRef })));
+          for (const group of groups) {
+            const firstRow = pendingRows.find((r) => r.id === (group.rows[0] as CsvRow).__rowId)!;
+            const sourceRef = firstRow.sourceRef;
+            const existing = await findRef(tx, batch.sourceSystem, type, sourceRef);
+            if (existing) {
+              for (const gr of group.rows) {
+                const rowRec = pendingRows.find((r) => r.id === (gr as CsvRow).__rowId)!;
+                await markRow(tx, rowRec, "skipped_duplicate", existing.destinationType, existing.destinationId);
+                bump(type, "skipped");
+              }
+              continue;
+            }
+            const first = group.rows[0] as CsvRow;
+            const customer = (await customerByName(first.customerName))!;
+            const depositAccount = (await accountByName(first.depositAccountName || "Undeposited Funds"))!;
+            const { lines, total } = invoiceLinesFromGroup(
+              group.rows.map((r) => {
+                const c = r as CsvRow;
+                return { ...c, total: c.amount ?? c.total, lineItemName: c.lineItemName };
+              }) as CsvRow[]
+            );
+            const income = (await accountByName("Sales"))!;
+            const receiptDate = normalizeDate(first.receiptDate) ?? asOf;
+            const invoice = await tx.invoice.create({
+              data: {
+                orgId,
+                number: group.number || (await nextNumberInTx(tx, "invoice", `INV-${year}-`)),
+                customerId: customer.id,
+                issueDate: receiptDate,
+                status: TransactionStatus.paid,
+                memo: `Sales receipt — ${batch.sourceSystem} migration`,
+                subtotal: total,
+                total,
+                amountPaid: total,
+                balance: 0,
+                lines: {
+                  create: lines.map((l, i) => ({
+                    orgId,
+                    position: i + 1,
+                    description: l.description,
+                    quantity: 1,
+                    unitPrice: l.amount,
+                    amount: l.amount,
+                    incomeAccountId: income.id
+                  }))
+                }
+              },
+              include: { lines: true }
+            });
+            await postJournal(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
+            const payment = await tx.payment.create({
+              data: {
+                orgId,
+                number: await nextNumberInTx(tx, "payment", `PMT-${year}-`),
+                customerId: customer.id,
+                paymentDate: receiptDate,
+                method: PaymentMethod.other,
+                reference: `Receipt ${group.number}`,
+                amount: total,
+                applied: total,
+                unapplied: 0,
+                depositAccountId: depositAccount.id,
+                applications: { create: [{ orgId, invoiceId: invoice.id, amount: total }] }
+              }
+            });
+            await postJournal(tx, buildPaymentReceivedJournal(payment, accounts.accountsReceivable), actorUserId);
+            await createRef(tx, batchId, batch.sourceSystem, type, sourceRef, "Invoice", invoice.id);
+            await createRef(tx, batchId, batch.sourceSystem, "sales_receipt_payment", sourceRef, "Payment", payment.id);
+            for (const gr of group.rows) {
+              const rowRec = pendingRows.find((r) => r.id === (gr as CsvRow).__rowId)!;
+              await markRow(tx, rowRec, "committed", "Invoice", invoice.id);
+              bump(type, "committed");
+            }
+            fileCommitted += 1;
+          }
+        }
+
+        if (type === "journal_entries") {
+          // Group lines by journal number; each group must balance or the whole
+          // batch rolls back (postJournal validates).
+          const groups = new Map<string, typeof file.rows>();
+          for (const row of file.rows) {
+            const key = String((row.payloadJson as CsvRow).number ?? "").trim() || `file:${file.id}`;
+            const list = groups.get(key) ?? [];
+            list.push(row);
+            groups.set(key, list);
+          }
+          for (const [key, groupRows] of groups) {
+            const firstRow = groupRows[0]!;
+            const existing = await findRef(tx, batch.sourceSystem, type, firstRow.sourceRef);
+            if (existing) {
+              for (const rowRec of groupRows) {
+                await markRow(tx, rowRec, "skipped_duplicate", existing.destinationType, existing.destinationId);
+                bump(type, "skipped");
+              }
+              continue;
+            }
+            const first = firstRow.payloadJson as CsvRow;
+            const lines = [] as Array<{ accountId: string; debit: number; credit: number; memo: string }>;
+            for (const rowRec of groupRows) {
+              const p = rowRec.payloadJson as CsvRow;
+              const account = (await accountByName(p.accountName))!;
+              lines.push({
+                accountId: account.id,
+                debit: normalizeCurrency(p.debit),
+                credit: normalizeCurrency(p.credit),
+                memo: p.memo || `Journal ${key}`
+              });
+            }
+            const posted = await postJournal(
+              tx,
+              {
+                sourceType: "migration_journal",
+                sourceId: `${file.id}:${key}`,
+                date: normalizeDate(first.journalDate) ?? asOf,
+                memo: `Journal ${key} — ${batch.sourceSystem} migration`,
+                lines
+              },
+              actorUserId
+            );
+            await createRef(tx, batchId, batch.sourceSystem, type, firstRow.sourceRef, "JournalEntry", posted.entryId);
+            for (const rowRec of groupRows) {
+              await markRow(tx, rowRec, "committed", "JournalEntry", posted.entryId);
+              bump(type, "committed");
+            }
+            fileCommitted += 1;
+          }
+        }
+
+        if (type === "transfers") {
+          for (const row of file.rows) {
+            const p = row.payloadJson as CsvRow;
+            const existing = await findRef(tx, batch.sourceSystem, type, row.sourceRef);
+            if (existing) {
+              await markRow(tx, row, "skipped_duplicate", existing.destinationType, existing.destinationId);
+              bump(type, "skipped");
+              continue;
+            }
+            const from = (await accountByName(p.fromAccountName))!;
+            const to = (await accountByName(p.toAccountName))!;
+            const amount = normalizeCurrency(p.amount);
+            const posted = await postJournal(
+              tx,
+              {
+                sourceType: "migration_transfer",
+                sourceId: row.id,
+                date: normalizeDate(p.transferDate) ?? asOf,
+                memo: `Transfer ${from.name} → ${to.name} — ${batch.sourceSystem} migration`,
+                lines: [
+                  { accountId: to.id, debit: amount, memo: p.memo || "Transfer in" },
+                  { accountId: from.id, credit: amount, memo: p.memo || "Transfer out" }
+                ]
+              },
+              actorUserId
+            );
+            await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "JournalEntry", posted.entryId);
+            await markRow(tx, row, "committed", "JournalEntry", posted.entryId);
+            bump(type, "committed");
+            fileCommitted += 1;
+          }
+        }
+
+        await tx.accountingImportFile.update({
+          where: { id: file.id },
+          data: { committedCount: fileCommitted, disposition: typeDisposition(type) === "importable" ? "imported" : file.disposition }
+        });
       }
 
       // One opening-balance journal per batch, offset to Opening Balance Equity.
@@ -1177,6 +1804,28 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
       const debits = round2(journals.flatMap((j) => j.lines).reduce((s, l) => s + Number(l.debit), 0));
       const credits = round2(journals.flatMap((j) => j.lines).reduce((s, l) => s + Number(l.credit), 0));
       reconciliationRows.push({ checkType: "trial_balance", scope: "batch journals", expected: debits, actual: credits });
+
+      // AR/AP controls: what the source rows claimed vs what actually landed.
+      if (expectedAr !== 0 || expectedAp !== 0) {
+        const invoiceRefs = await tx.externalSourceRef.findMany({
+          where: { batchId, destinationType: "Invoice" },
+          select: { destinationId: true }
+        });
+        const billRefs = await tx.externalSourceRef.findMany({
+          where: { batchId, destinationType: "Bill" },
+          select: { destinationId: true }
+        });
+        const actualAr = round2(
+          (await tx.invoice.findMany({ where: { id: { in: invoiceRefs.map((r) => r.destinationId) } }, select: { balance: true } }))
+            .reduce((s, i) => s + i.balance, 0)
+        );
+        const actualAp = round2(
+          (await tx.bill.findMany({ where: { id: { in: billRefs.map((r) => r.destinationId) } }, select: { balance: true } }))
+            .reduce((s, b) => s + b.balance, 0)
+        );
+        if (expectedAr !== 0) reconciliationRows.push({ checkType: "ar_balance", scope: "open receivables", expected: expectedAr, actual: actualAr });
+        if (expectedAp !== 0) reconciliationRows.push({ checkType: "ap_balance", scope: "open payables", expected: expectedAp, actual: actualAp });
+      }
       for (const rec of reconciliationRows) {
         await tx.migrationReconciliation.create({
           data: {
@@ -1281,7 +1930,8 @@ const DOC_SOURCE_TYPES: Record<string, string> = {
   Bill: "bill",
   Payment: "payment",
   Expense: "expense",
-  Deposit: "deposit_posted"
+  Deposit: "deposit_posted",
+  BillPayment: "bill_payment"
 };
 
 /**
@@ -1315,11 +1965,31 @@ export async function reverseBatch(batchId: string, actorUserId: string | undefi
       const depositLinks = await tx.depositLine.count({ where: { paymentId: { in: paymentIds } } });
       if (depositLinks > 0) throw new Error("Cannot reverse: imported payments are linked to deposit lines. Void those deposits first.");
     }
+    const billIds = byType("Bill");
+    if (billIds.length) {
+      const externalBillApps = await tx.billPaymentApplication.count({
+        where: { billId: { in: billIds }, billPayment: { id: { notIn: byType("BillPayment") } } }
+      });
+      if (externalBillApps > 0) throw new Error("Cannot reverse: imported bills have payments applied outside this batch. Reverse those payments first.");
+    }
 
-    // Reverse journals for every imported document + the opening journal.
+    // Reverse journals for every imported document + migration journals +
+    // the opening journal.
     for (const [destType, sourceType] of Object.entries(DOC_SOURCE_TYPES)) {
       for (const destId of byType(destType)) {
         await reverseJournal(tx, sourceType, destId, {
+          date: new Date(),
+          memo: `Migration reversal — batch ${batchId}`,
+          createdByUserId: actorUserId
+        });
+      }
+    }
+    // JournalEntry destinations carry their own sourceType (migration_journal /
+    // migration_transfer) — reverse by the journal's own key.
+    for (const journalId of byType("JournalEntry")) {
+      const je = await tx.journalEntry.findUnique({ where: { id: journalId }, select: { sourceType: true, sourceId: true } });
+      if (je) {
+        await reverseJournal(tx, je.sourceType, je.sourceId, {
           date: new Date(),
           memo: `Migration reversal — batch ${batchId}`,
           createdByUserId: actorUserId
@@ -1331,6 +2001,28 @@ export async function reverseBatch(batchId: string, actorUserId: string | undefi
       memo: `Migration reversal — batch ${batchId}`,
       createdByUserId: actorUserId
     });
+
+    // Restore bill balances for bill payments this batch applied.
+    const billPaymentIds = byType("BillPayment");
+    if (billPaymentIds.length) {
+      const apps = await tx.billPaymentApplication.findMany({
+        where: { billPaymentId: { in: billPaymentIds } },
+        select: { billId: true, amount: true }
+      });
+      for (const app of apps) {
+        const bill = await tx.bill.findUnique({ where: { id: app.billId } });
+        if (!bill) continue;
+        const nextPaid = round2(Math.max(0, bill.amountPaid - app.amount));
+        await tx.bill.update({
+          where: { id: bill.id },
+          data: {
+            amountPaid: nextPaid,
+            balance: round2(bill.total - nextPaid),
+            status: deriveStatus(bill.status, bill.total, nextPaid)
+          }
+        });
+      }
+    }
 
     // Restore invoice balances for payments this batch applied before the
     // payments (and their application rows) are deleted.
@@ -1356,6 +2048,7 @@ export async function reverseBatch(batchId: string, actorUserId: string | undefi
 
     // Delete transactional documents (line/application rows cascade).
     if (paymentIds.length) await tx.payment.deleteMany({ where: { id: { in: paymentIds } } });
+    if (billPaymentIds.length) await tx.billPayment.deleteMany({ where: { id: { in: billPaymentIds } } });
     if (byType("Deposit").length) await tx.deposit.deleteMany({ where: { id: { in: byType("Deposit") } } });
     if (byType("Expense").length) await tx.expense.deleteMany({ where: { id: { in: byType("Expense") } } });
     if (byType("Bill").length) await tx.bill.deleteMany({ where: { id: { in: byType("Bill") } } });
@@ -1426,4 +2119,76 @@ export async function acceptBatch(batchId: string, actorUserId?: string) {
     data: { status: "accepted", acceptedByUserId: actorUserId ?? null, acceptedAt: new Date() }
   });
   return prisma.accountingImportBatch.update({ where: { id: batchId }, data: { status: "accepted" } });
+}
+
+// ---------------------------------------------------------------------------
+// Exception report + owner sign-off (Batch 18, Gate 18)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every file/row that did NOT become live books, with its reason, plus any
+ * reconciliation discrepancies. Gate 18: all control differences are zero or
+ * individually explained and owner-approved — this CSV is the evidence.
+ */
+export async function buildExceptionReportCsv(batchId: string): Promise<string> {
+  const batch = await getBatchOrThrow(batchId);
+  const files = await prisma.accountingImportFile.findMany({
+    where: { batchId },
+    orderBy: { createdAt: "asc" }
+  });
+  const invalidCounts = await prisma.accountingImportRow.groupBy({
+    by: ["fileId"],
+    where: { file: { batchId }, status: "invalid" },
+    _count: { _all: true }
+  });
+  const invalidByFile = new Map(invalidCounts.map((c) => [c.fileId, c._count._all]));
+  const lines = ["section,file,type,disposition,reason,rows,invalid_rows,sha256"];
+  for (const f of files) {
+    if (f.disposition === "imported" && (invalidByFile.get(f.id) ?? 0) === 0) continue;
+    lines.push(
+      ["file", f.fileName, f.importType, f.disposition, f.dispositionNote, String(f.rowCount), String(invalidByFile.get(f.id) ?? 0), f.sha256]
+        .map(escapeCsv)
+        .join(",")
+    );
+  }
+  const discrepancies = await prisma.migrationReconciliation.findMany({
+    where: { batchId, status: { in: ["discrepancy", "accepted"] } },
+    orderBy: { createdAt: "asc" }
+  });
+  for (const d of discrepancies) {
+    lines.push(
+      ["reconciliation", d.scope, d.checkType, d.status, d.note, String(d.expected), String(d.actual), ""].map(escapeCsv).join(",")
+    );
+  }
+  lines.push(
+    ["batch", batch.label || batch.sourceSystem, batch.migrationMode, batch.status, "", String(files.length), "", batch.exceptionSignature ? "signed" : "unsigned"]
+      .map(escapeCsv)
+      .join(",")
+  );
+  return lines.join("\n") + "\n";
+}
+
+/** Owner sign-off on the exception report (typed signature, audit-logged). */
+export async function signExceptionReport(batchId: string, signatureText: string, actorUserId?: string) {
+  const orgId = requireOrgId();
+  const batch = await getBatchOrThrow(batchId);
+  if (!["reconciled", "accepted"].includes(batch.status)) {
+    throw new Error(`Exceptions can only be signed after commit (current: ${batch.status}).`);
+  }
+  if (!signatureText.trim()) throw new Error("A typed signature is required.");
+  const updated = await prisma.accountingImportBatch.update({
+    where: { id: batchId },
+    data: { exceptionSignature: signatureText.trim(), exceptionSignedByUserId: actorUserId ?? null, exceptionSignedAt: new Date() }
+  });
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId: actorUserId ?? null,
+      action: "migration.exceptions_signed",
+      entityType: "AccountingImportBatch",
+      entityId: batchId,
+      metadata: { signature: signatureText.trim() } as Prisma.InputJsonValue
+    }
+  });
+  return updated;
 }

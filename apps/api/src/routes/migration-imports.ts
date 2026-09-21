@@ -5,11 +5,14 @@ import {
   acceptBatch,
   approveBatch,
   buildErrorReportCsv,
+  buildExceptionReportCsv,
   commitBatch,
   createMigrationBatch,
   inventoryFile,
+  inventoryZip,
   mappingTemplateCsv,
   reverseBatch,
+  signExceptionReport,
   validateBatch,
   type MigrationImportType
 } from "../lib/migration-import.js";
@@ -56,6 +59,7 @@ export const migrationImportRoutes = new Hono<{ Variables: AuthVariables }>()
         {
           sourceSystem: String(body.sourceSystem ?? "excel_generic"),
           label: String(body.label ?? ""),
+          migrationMode: String(body.migrationMode ?? "full_detail"),
           asOfDate: normalizeDate(body.asOfDate) ?? undefined
         },
         c.get("userId")
@@ -79,10 +83,15 @@ export const migrationImportRoutes = new Hono<{ Variables: AuthVariables }>()
   .post("/batches/:id/files", authRequired, requireRole(...CAN_IMPORT), async (c) => {
     try {
       const body = await c.req.json<Record<string, unknown>>();
-      const importType = parseType(String(body.importType ?? ""));
-      if (!importType) return c.json({ error: "Unsupported import type." }, 400);
       const fileName = String(body.fileName ?? "").trim();
       if (!fileName) return c.json({ error: "fileName is required." }, 400);
+      if (fileName.toLowerCase().endsWith(".zip")) {
+        const buffer = readUploadBuffer({ ...body, fileName: "package.zip" });
+        const result = await inventoryZip(c.req.param("id"), { fileName, buffer }, c.get("userId"));
+        return c.json({ zip: result }, 201);
+      }
+      const importType = parseType(String(body.importType ?? ""));
+      if (!importType) return c.json({ error: "Unsupported import type." }, 400);
       const buffer = readUploadBuffer(body);
       const file = await inventoryFile(
         c.req.param("id"),
@@ -97,6 +106,25 @@ export const migrationImportRoutes = new Hono<{ Variables: AuthVariables }>()
       return c.json({ file }, 201);
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : "Could not inventory file." }, 400);
+    }
+  })
+  .get("/batches/:id/exception-report.csv", authRequired, requireRole(...CAN_IMPORT), async (c) => {
+    try {
+      const csv = await buildExceptionReportCsv(c.req.param("id"));
+      return new Response(csv, {
+        headers: { "content-type": "text/csv", "content-disposition": "attachment; filename=\"migration-exception-report.csv\"" }
+      });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Could not build exception report." }, 400);
+    }
+  })
+  .post("/batches/:id/sign-exceptions", authRequired, requireRole(...CAN_IMPORT), async (c) => {
+    try {
+      const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+      const batch = await signExceptionReport(c.req.param("id"), String(body.signatureText ?? ""), c.get("userId"));
+      return c.json({ batch });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Sign-off failed." }, 400);
     }
   })
   .get("/batches/:id/rows", authRequired, requireRole(...CAN_IMPORT), async (c) => {

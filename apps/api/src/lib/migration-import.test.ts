@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildErrorReportCsv,
+  CUTOVER_EXCLUDED_TYPES,
   deriveSourceRef,
   groupInvoiceRows,
+  inferImportTypeFromName,
   invoiceLinesFromGroup,
   mappingTemplateCsv,
   sha256Hex,
   signedOpeningBalance,
-  sniffUpload
+  sniffUpload,
+  suggestB18Mappings,
+  typeDisposition
 } from "./migration-import.js";
 import { buildOpeningBalanceJournal, validateJournalLines } from "./gl-posting.js";
 
@@ -124,4 +128,45 @@ test("mappingTemplateCsv covers every import type", () => {
     if (t === "payments") assert.ok(csv.includes("invoiceNumber"));
     if (t === "invoices") assert.ok(csv.includes("lineAmount"));
   }
+});
+
+test("typeDisposition classifies every B18 type", () => {
+  assert.equal(typeDisposition("invoices"), "importable");
+  assert.equal(typeDisposition("journal_entries"), "importable");
+  assert.equal(typeDisposition("bill_payments"), "importable");
+  assert.equal(typeDisposition("sales_receipts"), "importable");
+  assert.equal(typeDisposition("transfers"), "importable");
+  assert.equal(typeDisposition("estimates"), "archived");
+  assert.equal(typeDisposition("classes"), "archived");
+  assert.equal(typeDisposition("attachment"), "archived");
+  assert.equal(typeDisposition("credit_memos"), "unsupported");
+  assert.ok(CUTOVER_EXCLUDED_TYPES.includes("payments"));
+  assert.ok(CUTOVER_EXCLUDED_TYPES.includes("journal_entries"));
+  assert.ok(!CUTOVER_EXCLUDED_TYPES.includes("invoices"));
+});
+
+test("inferImportTypeFromName matches longest type first and refuses unknown", () => {
+  assert.equal(inferImportTypeFromName("bill_payments.csv"), "bill_payments");
+  assert.equal(inferImportTypeFromName("bills.csv"), "bills");
+  assert.equal(inferImportTypeFromName("exports/invoices_2026.csv"), "invoices");
+  assert.equal(inferImportTypeFromName("opening_balances_qbo.xlsx"), "opening_balances");
+  assert.equal(inferImportTypeFromName("journal_entries-Sept.csv"), "journal_entries");
+  assert.equal(inferImportTypeFromName("receipt-123.pdf"), null);
+  assert.equal(inferImportTypeFromName("random_data.csv"), null);
+});
+
+test("suggestB18Mappings maps headers by alias without reuse", () => {
+  const m = suggestB18Mappings("bill_payments", ["Date", "Vendor", "Amount", "Bank Account", "Bill No."]);
+  assert.equal(m["Date"], "paymentDate");
+  assert.equal(m["Vendor"], "supplierName");
+  assert.equal(m["Amount"], "amount");
+  assert.equal(m["Bank Account"], "sourceAccountName");
+  assert.equal(m["Bill No."], "billNumber");
+});
+
+test("deriveSourceRef covers B18 types", () => {
+  assert.equal(deriveSourceRef("quickbooks", "transfers", { fromAccountName: "Checking", toAccountName: "Savings", transferDate: "01/01/2026", amount: "100" }),
+    "quickbooks:transfers:checking:savings:01/01/2026:100");
+  assert.equal(deriveSourceRef("quickbooks", "journal_entries", { number: "JE-7" }), "quickbooks:journal_entries:je-7");
+  assert.equal(deriveSourceRef("quickbooks", "sales_receipts", { number: "SR-1" }), "quickbooks:sales_receipts:sr-1");
 });
