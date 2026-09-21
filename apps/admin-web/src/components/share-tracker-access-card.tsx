@@ -2,11 +2,13 @@
 
 import { apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { waMeLink } from "@/lib/whatsapp";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type TrackerShareRes = {
   employeeId: string;
+  phone: string | null;
   loginUrl: string;
   appHomeUrl: string;
   linkedUser: { email: string; status: string } | null;
@@ -64,6 +66,7 @@ export function ShareTrackerAccessCard({ employeeId, employeeName }: { employeeI
         if (fb) {
           setData({
             employeeId,
+            phone: null,
             loginUrl: `${fb}/login`,
             appHomeUrl: `${fb}/`,
             linkedUser: null
@@ -172,10 +175,21 @@ export function ShareTrackerAccessCard({ employeeId, employeeName }: { employeeI
             >
               WhatsApp
             </a>
+            {data.phone && waMeLink(data.phone, message) ? (
+              <a
+                href={waMeLink(data.phone, message)!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+              >
+                WhatsApp {employeeName.split(" ")[0]} directly
+              </a>
+            ) : null}
           </div>
           <p className="mt-3 text-xs leading-relaxed text-slate-500">
-            Email opens your mail app with a generic message. WhatsApp uses an official <code>api.whatsapp.com</code>{" "}
-            link with the same text — no passwords, tax IDs, or one-time codes are included.
+            Email opens your mail app with a generic message. WhatsApp uses official <code>api.whatsapp.com</code> /{" "}
+            <code>wa.me</code> links with the same text — no passwords, tax IDs, or one-time codes are included.
+            {data.phone ? "" : " Add a phone number to the employee record to enable the direct wa.me link."}
           </p>
         </>
       ) : null}

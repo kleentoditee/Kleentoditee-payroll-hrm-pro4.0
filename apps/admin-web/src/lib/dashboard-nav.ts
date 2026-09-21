@@ -84,6 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: "shield",
     items: [
       { label: "Users & roles", href: "/dashboard/users", icon: "user-check", description: "Manage access and permissions." },
+      { label: "Email queue", href: "/dashboard/email-queue", icon: "inbox", description: "Monitor transactional email delivery, retry failures." },
       { label: "Accounting import", href: "/dashboard/imports/accounting", icon: "cloud-upload", description: "Import accounting data from file exports." },
       { label: "Settings", href: "/dashboard/settings", icon: "settings", description: "Configure workspace settings." }
     ]

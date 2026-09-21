@@ -434,6 +434,9 @@ function WorkspaceChildGlyph({ href }: { href: string }) {
     case "/dashboard/users":
       inner = <IcoUserCheck className={iconXs} />;
       break;
+    case "/dashboard/email-queue":
+      inner = <IcoInbox className={iconXs} />;
+      break;
     case "/dashboard/time/entries":
       inner = <IcoClock className={iconXs} />;
       break;
