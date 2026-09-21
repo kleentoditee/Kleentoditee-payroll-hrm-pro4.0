@@ -122,7 +122,14 @@ const TENANT_MODELS = new Set([
   "AccountingImportRow",
   "ExternalSourceRef",
   "MigrationReconciliation",
-  "LegacyDocument"
+  "LegacyDocument",
+  "Department",
+  "Position",
+  "CostCentre",
+  "Location",
+  "WorkSchedule",
+  "EmploymentContract",
+  "EmployeeAsset"
 ]);
 
 type Args = Record<string, unknown>;

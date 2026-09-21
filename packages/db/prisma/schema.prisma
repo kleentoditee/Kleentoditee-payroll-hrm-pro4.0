@@ -256,6 +256,24 @@ model Employee {
   /// Applies the employer's annual payroll-tax exemption to this employee.
   payrollTaxExemptionEnabled    Boolean                 @default(true)
   notes                         String                  @default("")
+  /// Batch 19 HR structure assignments. Legacy `role`/`defaultSite` strings are kept for display;
+  /// these masters are the structured source going forward.
+  departmentId                  String?
+  department                    Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId                    String?
+  position                      Position?               @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  costCentreId                  String?
+  costCentre                    CostCentre?             @relation(fields: [costCentreId], references: [id], onDelete: SetNull)
+  locationId                    String?
+  location                      Location?               @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  workScheduleId                String?
+  workSchedule                  WorkSchedule?           @relation(fields: [workScheduleId], references: [id], onDelete: SetNull)
+  managerId                     String?
+  manager                       Employee?               @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports                 Employee[]              @relation("EmployeeManager")
+  managedContracts              EmploymentContract[]    @relation("ContractManager")
+  contracts                     EmploymentContract[]
+  assets                        EmployeeAsset[]
   templateId                    String
   template                      DeductionTemplate       @relation(fields: [templateId], references: [id], onDelete: Restrict)
   /// Owning organization (Batch 12).
@@ -278,6 +296,9 @@ model Employee {
   @@index([fullName])
   @@index([email])
   @@index([paySchedule, active])
+  @@index([departmentId])
+  @@index([costCentreId])
+  @@index([managerId])
   @@index([orgId])
 }
 
@@ -355,6 +376,8 @@ model EmployeeDocument {
   deletedAt        DateTime?
   uploadedByUserId String?
   uploadedBy       User?                @relation("DocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  /// Optional expiry (permit cards, contracts) — feeds the Batch 19 expiry reminders.
+  expiryDate       DateTime?
   /// Owning organization (Batch 12).
   orgId            String
 
@@ -556,16 +579,16 @@ model OrgSettings {
   statutorySignatureDataUrl String @default("")
 
   /// Filing identity + applicability (Batch 15, BVI filing support).
-  companyRegistrationNumber   String    @default("")
-  incorporationDate           DateTime?
-  registeredAgentName         String    @default("")
-  registeredOfficeAddress     String    @default("")
+  companyRegistrationNumber  String    @default("")
+  incorporationDate          DateTime?
+  registeredAgentName        String    @default("")
+  registeredOfficeAddress    String    @default("")
   /// Calendar month the financial year ends (12 = December).
-  fiscalYearEndMonth          Int       @default(12)
+  fiscalYearEndMonth         Int       @default(12)
   /// Applicability answers: does the company file a tax return + financial
   /// statements with Inland Revenue (annual-return exemption basis)?
-  filesIrFinancialStatements  Boolean   @default(false)
-  annualReturnExemptionBasis  String    @default("")
+  filesIrFinancialStatements Boolean   @default(false)
+  annualReturnExemptionBasis String    @default("")
 
   /// Pay calendar defaults used when creating new pay periods.
   defaultPaySchedule   PaySchedule @default(monthly)
@@ -644,6 +667,7 @@ model Account {
 
   bankStatementImports BankStatementImport[] @relation("BankStatementImportAccount")
   bankReconciliations  BankReconciliation[]  @relation("BankReconciliationAccount")
+  costCentres          CostCentre[]
 
   @@unique([orgId, code])
   @@index([type, active])
@@ -1385,18 +1409,18 @@ enum BankReconciliationStatus {
 /// One imported bank statement file (CSV). Header balances are optional and
 /// informational; the lines carry the truth.
 model BankStatementImport {
-  id                 String   @id @default(cuid())
-  createdAt          DateTime @default(now())
-  bankAccount        Account  @relation("BankStatementImportAccount", fields: [bankAccountId], references: [id], onDelete: Restrict)
+  id                 String    @id @default(cuid())
+  createdAt          DateTime  @default(now())
+  bankAccount        Account   @relation("BankStatementImportAccount", fields: [bankAccountId], references: [id], onDelete: Restrict)
   bankAccountId      String
-  fileName           String   @default("")
+  fileName           String    @default("")
   /// Statement window, when known from the file.
   statementStartDate DateTime?
   statementEndDate   DateTime?
   openingBalance     Float?
   closingBalance     Float?
-  rowCount           Int      @default(0)
-  duplicateCount     Int      @default(0)
+  rowCount           Int       @default(0)
+  duplicateCount     Int       @default(0)
   importedByUserId   String?
   /// Owning organization (Batch 12).
   orgId              String
@@ -1410,19 +1434,19 @@ model BankStatementImport {
 /// One transaction row from a bank statement. `amount` is signed:
 /// positive = money in, negative = money out.
 model BankStatementLine {
-  id          String                   @id @default(cuid())
-  createdAt   DateTime                 @default(now())
-  importId    String
-  import      BankStatementImport      @relation(fields: [importId], references: [id], onDelete: Cascade)
-  position    Int
-  date        DateTime
-  description String                   @default("")
-  reference   String                   @default("")
-  amount      Float
+  id                String                  @id @default(cuid())
+  createdAt         DateTime                @default(now())
+  importId          String
+  import            BankStatementImport     @relation(fields: [importId], references: [id], onDelete: Cascade)
+  position          Int
+  date              DateTime
+  description       String                  @default("")
+  reference         String                  @default("")
+  amount            Float
   /// sha256 over bankAccountId|date|amount|description|reference — the
   /// duplicate detector. Unique per org, so re-imports skip, never double-post.
-  fingerprint String
-  status      BankStatementLineStatus  @default(unmatched)
+  fingerprint       String
+  status            BankStatementLineStatus @default(unmatched)
   /// payment | deposit | expense | bill_payment | journal
   matchedEntityType String?
   matchedEntityId   String?
@@ -1479,14 +1503,14 @@ model BankReconciliation {
 /// line's date/description/amount so a completed reconciliation is
 /// reproducible even if the import row is later inspected or re-matched.
 model BankReconciliationLine {
-  id               String              @id @default(cuid())
-  createdAt        DateTime            @default(now())
+  id               String             @id @default(cuid())
+  createdAt        DateTime           @default(now())
   reconciliationId String
-  reconciliation   BankReconciliation  @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  reconciliation   BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
   statementLineId  String
-  statementLine    BankStatementLine   @relation(fields: [statementLineId], references: [id], onDelete: Cascade)
+  statementLine    BankStatementLine  @relation(fields: [statementLineId], references: [id], onDelete: Cascade)
   date             DateTime
-  description      String              @default("")
+  description      String             @default("")
   amount           Float
   /// Owning organization (Batch 12).
   orgId            String
@@ -1667,32 +1691,32 @@ enum YearEndCloseStatus {
 }
 
 model YearEndClose {
-  id                   String             @id @default(cuid())
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  year                 Int
-  status               YearEndCloseStatus @default(draft)
+  id                    String             @id @default(cuid())
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  year                  Int
+  status                YearEndCloseStatus @default(draft)
   /// Closing journal lines preview computed at draft time (per-account).
-  closingPreviewJson   Json?
+  closingPreviewJson    Json?
   closingJournalEntryId String?
-  reviewedByUserId     String?
-  reviewedAt           DateTime?
-  reviewNote           String             @default("")
-  approvedByUserId     String?
-  approvedAt           DateTime?
-  postedAt             DateTime?
-  postedByUserId       String?
+  reviewedByUserId      String?
+  reviewedAt            DateTime?
+  reviewNote            String             @default("")
+  approvedByUserId      String?
+  approvedAt            DateTime?
+  postedAt              DateTime?
+  postedByUserId        String?
   /// Sign-off text recorded at posting (typed signature).
-  signatureText        String             @default("")
+  signatureText         String             @default("")
   /// Revision chain: this close supersedes revisionOf when posted.
-  revisionOfId         String?
-  revisionOf           YearEndClose?      @relation("YearEndCloseRevision", fields: [revisionOfId], references: [id], onDelete: SetNull)
-  revisions            YearEndClose[]     @relation("YearEndCloseRevision")
-  supersededById       String?
-  revisionReason       String             @default("")
-  createdByUserId      String?
+  revisionOfId          String?
+  revisionOf            YearEndClose?      @relation("YearEndCloseRevision", fields: [revisionOfId], references: [id], onDelete: SetNull)
+  revisions             YearEndClose[]     @relation("YearEndCloseRevision")
+  supersededById        String?
+  revisionReason        String             @default("")
+  createdByUserId       String?
   /// Owning organization (Batch 12).
-  orgId                String
+  orgId                 String
 
   @@index([orgId, year])
 }
@@ -1720,33 +1744,33 @@ enum ImportBatchStatus {
 
 /// One legacy-system migration attempt (e.g. a QuickBooks export set).
 model AccountingImportBatch {
-  id                String            @id @default(cuid())
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                      String            @id @default(cuid())
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
   /// quickbooks | xero | wave | excel_generic (adapters are Batch 18).
-  sourceSystem      String            @default("excel_generic")
+  sourceSystem            String            @default("excel_generic")
   /// full_detail imports everything importable; cutover imports master data,
   /// open documents, and opening balances only (history via opening balances).
-  migrationMode     String            @default("full_detail")
-  status            ImportBatchStatus @default(uploaded)
-  label             String            @default("")
+  migrationMode           String            @default("full_detail")
+  status                  ImportBatchStatus @default(uploaded)
+  label                   String            @default("")
   /// Column mapping per import type, chosen at the mapped step.
-  mappingJson       Json?
-  approvedByUserId  String?
-  approvedAt        DateTime?
-  committedAt       DateTime?
-  committedByUserId String?
-  reversedAt        DateTime?
-  reversedByUserId  String?
-  reversalReason    String            @default("")
-  errorSummary      String            @default("")
+  mappingJson             Json?
+  approvedByUserId        String?
+  approvedAt              DateTime?
+  committedAt             DateTime?
+  committedByUserId       String?
+  reversedAt              DateTime?
+  reversedByUserId        String?
+  reversalReason          String            @default("")
+  errorSummary            String            @default("")
   /// Batch 18: typed sign-off on the migration exception report.
-  exceptionSignature       String   @default("")
-  exceptionSignedByUserId  String?
-  exceptionSignedAt        DateTime?
-  createdByUserId   String?
+  exceptionSignature      String            @default("")
+  exceptionSignedByUserId String?
+  exceptionSignedAt       DateTime?
+  createdByUserId         String?
   /// Owning organization.
-  orgId             String
+  orgId                   String
 
   files           AccountingImportFile[]
   reconciliations MigrationReconciliation[]
@@ -1757,28 +1781,28 @@ model AccountingImportBatch {
 /// One uploaded source file inside a batch. Content-hash + private storage key
 /// make the upload auditable and re-inventoriable.
 model AccountingImportFile {
-  id             String   @id @default(cuid())
-  createdAt      DateTime @default(now())
-  batchId        String
-  batch          AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  fileName       String
+  id              String                @id @default(cuid())
+  createdAt       DateTime              @default(now())
+  batchId         String
+  batch           AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  fileName        String
   /// customers|vendors|accounts|products|invoices|bills|expenses|payments|deposits|opening_balances
   /// + Batch 18: journal_entries|bill_payments|sales_receipts|transfers|estimates|purchase_orders|
   /// credit_memos|classes|locations|projects|product_categories|time_activities|attachment
-  importType     String
+  importType      String
   /// Batch 18: final disposition — pending|imported|archived|unsupported.
-  disposition    String   @default("pending")
-  dispositionNote String  @default("")
-  sha256         String
-  sizeBytes      Int
+  disposition     String                @default("pending")
+  dispositionNote String                @default("")
+  sha256          String
+  sizeBytes       Int
   /// Key in the private document storage (S3/R2 or local disk fallback).
-  storageKey     String   @default("")
-  rowCount       Int      @default(0)
-  validCount     Int      @default(0)
-  invalidCount   Int      @default(0)
-  committedCount Int      @default(0)
+  storageKey      String                @default("")
+  rowCount        Int                   @default(0)
+  validCount      Int                   @default(0)
+  invalidCount    Int                   @default(0)
+  committedCount  Int                   @default(0)
   /// Owning organization.
-  orgId          String
+  orgId           String
 
   rows AccountingImportRow[]
 
@@ -1788,21 +1812,21 @@ model AccountingImportFile {
 
 /// One parsed source row with its validation and destination lineage.
 model AccountingImportRow {
-  id              String   @id @default(cuid())
-  createdAt       DateTime @default(now())
+  id              String               @id @default(cuid())
+  createdAt       DateTime             @default(now())
   fileId          String
   file            AccountingImportFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
   /// 1-based row number in the source file (header excluded).
   rowIndex        Int
   payloadJson     Json
   /// Stable idempotency key derived from source ids or normalized content.
-  sourceRef       String   @default("")
+  sourceRef       String               @default("")
   /// pending|valid|invalid|committed|skipped_duplicate
-  status          String   @default("pending")
-  errorMessage    String   @default("")
+  status          String               @default("pending")
+  errorMessage    String               @default("")
   /// Destination model name (Customer, Invoice, JournalEntry, ...) once committed.
-  destinationType String   @default("")
-  destinationId   String   @default("")
+  destinationType String               @default("")
+  destinationId   String               @default("")
   /// Owning organization.
   orgId           String
 
@@ -1834,23 +1858,23 @@ model ExternalSourceRef {
 /// Post-commit proof that what landed matches what the source claimed:
 /// counts, totals, AR/AP balances. Discrepancies must be accepted explicitly.
 model MigrationReconciliation {
-  id           String   @id @default(cuid())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  batchId      String
-  batch        AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  id               String                @id @default(cuid())
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  batchId          String
+  batch            AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
   /// count|total|trial_balance|ar_balance|ap_balance
-  checkType    String
-  scope        String   @default("")
-  expected     Float    @default(0)
-  actual       Float    @default(0)
+  checkType        String
+  scope            String                @default("")
+  expected         Float                 @default(0)
+  actual           Float                 @default(0)
   /// pending|matched|discrepancy|accepted
-  status       String   @default("pending")
-  note         String   @default("")
+  status           String                @default("pending")
+  note             String                @default("")
   acceptedByUserId String?
-  acceptedAt   DateTime?
+  acceptedAt       DateTime?
   /// Owning organization.
-  orgId        String
+  orgId            String
 
   @@index([orgId, batchId])
   @@index([batchId])
@@ -1875,4 +1899,174 @@ model LegacyDocument {
 
   @@index([orgId, batchId])
   @@index([orgId, linkedType, linkedId])
+}
+
+// ---------------------------------------------------------------------------
+// Batch 19 — HR structure: departments, positions, cost centres, locations,
+// work schedules, effective-dated contracts (career history), assets.
+// HR department / accounting cost centre / customer job / operational site
+// stay distinct masters; mapping between them is optional and explicit.
+// ---------------------------------------------------------------------------
+
+enum EmploymentType {
+  full_time
+  part_time
+  casual
+  fixed_term
+}
+
+/// HR org unit. Hierarchy via parentId; independent from accounting cost centres.
+model Department {
+  id        String       @id @default(cuid())
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  code      String
+  name      String
+  parentId  String?
+  parent    Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Department[] @relation("DepartmentHierarchy")
+  active    Boolean      @default(true)
+  /// Owning organization (Batch 19).
+  orgId     String
+
+  employees Employee[]
+  contracts EmploymentContract[]
+
+  @@unique([orgId, code])
+  @@index([parentId])
+  @@index([orgId])
+}
+
+/// Job position master (structured replacement for the free-text Employee.role).
+model Position {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  code      String
+  name      String
+  active    Boolean  @default(true)
+  orgId     String
+
+  employees Employee[]
+  contracts EmploymentContract[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+}
+
+/// Accounting/reporting allocation dimension. Optionally mapped to a GL account;
+/// distinct from HR departments and operational sites.
+model CostCentre {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  code        String
+  name        String
+  glAccountId String?
+  glAccount   Account? @relation(fields: [glAccountId], references: [id], onDelete: SetNull)
+  active      Boolean  @default(true)
+  orgId       String
+
+  employees Employee[]
+  contracts EmploymentContract[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+}
+
+/// Operational site master (structured replacement for the free-text Employee.defaultSite).
+/// Customer sites/jobs used on work assignments remain separate.
+model Location {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  code      String
+  name      String
+  address   String   @default("")
+  active    Boolean  @default(true)
+  orgId     String
+
+  employees Employee[]
+  contracts EmploymentContract[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+}
+
+/// Reusable weekly work pattern (e.g. Mon–Fri 8h). Leave Policy v2 (Batch 20)
+/// consumes this; daily site assignments stay on WorkAssignment.
+model WorkSchedule {
+  id                   String   @id @default(cuid())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  name                 String
+  description          String   @default("")
+  /// Weekly pattern: [{ "day": "mon"|...|"sun", "hours": 8 }].
+  pattern              Json     @default("[]")
+  standardHoursPerWeek Float    @default(0)
+  active               Boolean  @default(true)
+  orgId                String
+
+  employees Employee[]
+  contracts EmploymentContract[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+/// Effective-dated employment terms — the career ledger. History is immutable:
+/// corrections are new effective-dated records, never overwrites. The Employee's
+/// current assignment FKs mirror the latest record for fast reads.
+model EmploymentContract {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  employeeId      String
+  employee        Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  employmentType  EmploymentType @default(full_time)
+  departmentId    String?
+  department      Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId      String?
+  position        Position?      @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  costCentreId    String?
+  costCentre      CostCentre?    @relation(fields: [costCentreId], references: [id], onDelete: SetNull)
+  locationId      String?
+  location        Location?      @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  workScheduleId  String?
+  workSchedule    WorkSchedule?  @relation(fields: [workScheduleId], references: [id], onDelete: SetNull)
+  managerId       String?
+  manager         Employee?      @relation("ContractManager", fields: [managerId], references: [id], onDelete: SetNull)
+  basePayType     PayBasis?
+  dailyRate       Float?
+  hourlyRate      Float?
+  fixedPay        Float?
+  notes           String         @default("")
+  createdByUserId String?
+  /// Owning organization (Batch 19).
+  orgId           String
+
+  @@index([employeeId, effectiveFrom])
+  @@index([orgId])
+}
+
+/// Issued company property (uniforms, keys, phones) with return tracking.
+model EmployeeAsset {
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  name         String
+  assetTag     String    @default("")
+  serialNumber String    @default("")
+  condition    String    @default("")
+  issuedAt     DateTime
+  returnedAt   DateTime?
+  notes        String    @default("")
+  /// Owning organization (Batch 19).
+  orgId        String
+
+  @@index([employeeId, returnedAt])
+  @@index([orgId])
 }
