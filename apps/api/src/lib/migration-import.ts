@@ -50,7 +50,8 @@ import {
   ensureControlAccounts,
   postJournal,
   reverseJournal,
-  round2
+  round2,
+  CONTROL_ACCOUNTS
 } from "./gl-posting.js";
 import { deriveStatus } from "./finance-transactions.js";
 import { documentStorage } from "./document-storage.js";
@@ -443,6 +444,10 @@ export async function validateBatch(batchId: string) {
   const requireAccount = async (rowId: string, name: string | undefined, fallback: string, fieldLabel: string) => {
     const key = normKey(name || fallback);
     if (!accountNames.has(key)) {
+      // GL control accounts (e.g. Undeposited Funds) are auto-provisioned at
+      // commit time by ensureControlAccounts, so they validate by name.
+      const autoProvisioned = Object.values(CONTROL_ACCOUNTS).some((a) => normKey(a.name) === key);
+      if (autoProvisioned) return key;
       await invalidate(rowId, `${fieldLabel} account "${name || fallback}" not found in the chart of accounts. Import accounts first.`);
       return null;
     }
@@ -1221,7 +1226,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
 function parseAccountTypeLoose(value: string | undefined): AccountType | null {
   const v = String(value ?? "").trim().toLowerCase();
   if (v.includes("bank") || v.includes("asset") || v.includes("receivable")) return AccountType.asset;
-  if (v.includes("liability") || v.includes("payable") || v.includes("credit card")) return AccountType.liability;
+  if (v.includes("liability") || v.includes("payable") || v.includes("credit card") || v.includes("loan")) return AccountType.liability;
   if (v.includes("equity")) return AccountType.equity;
   if (v.includes("income") || v.includes("revenue") || v.includes("sales")) return AccountType.revenue;
   if (v.includes("expense") || v.includes("cost")) return AccountType.expense;
@@ -1326,6 +1331,28 @@ export async function reverseBatch(batchId: string, actorUserId: string | undefi
       memo: `Migration reversal — batch ${batchId}`,
       createdByUserId: actorUserId
     });
+
+    // Restore invoice balances for payments this batch applied before the
+    // payments (and their application rows) are deleted.
+    if (paymentIds.length) {
+      const apps = await tx.paymentApplication.findMany({
+        where: { paymentId: { in: paymentIds } },
+        select: { invoiceId: true, amount: true }
+      });
+      for (const app of apps) {
+        const inv = await tx.invoice.findUnique({ where: { id: app.invoiceId } });
+        if (!inv) continue;
+        const nextPaid = round2(Math.max(0, inv.amountPaid - app.amount));
+        await tx.invoice.update({
+          where: { id: inv.id },
+          data: {
+            amountPaid: nextPaid,
+            balance: round2(inv.total - nextPaid),
+            status: deriveStatus(inv.status, inv.total, nextPaid)
+          }
+        });
+      }
+    }
 
     // Delete transactional documents (line/application rows cascade).
     if (paymentIds.length) await tx.payment.deleteMany({ where: { id: { in: paymentIds } } });
