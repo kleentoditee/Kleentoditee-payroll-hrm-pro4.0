@@ -7,6 +7,7 @@ import {
   isLeaveRequestType,
   listLeaveBalances
 } from "../lib/leave.js";
+import { releaseLeaveEventForRequest, syncLeaveEventForRequest } from "../lib/leave-v2.js";
 import { parseYearInput } from "../lib/payroll-ytd-import.js";
 
 const SELF_ROLES = [Role.employee_tracker_user] as const;
@@ -574,6 +575,29 @@ export const staffRequestRoutes = new Hono<{ Variables: AuthVariables }>()
         before: { status: before.status, reviewNote: before.reviewNote },
         after: { status: row.status, reviewNote: row.reviewNote }
       });
+      // Batch 20: keep the leave event ledger in sync with leave approvals so
+      // balances reproduce from source events (Gate 20).
+      try {
+        const enteredUsed =
+          (nextStatus === StaffRequestStatus.APPROVED || nextStatus === StaffRequestStatus.COMPLETED) &&
+          before.status !== StaffRequestStatus.APPROVED && before.status !== StaffRequestStatus.COMPLETED;
+        const leftUsed =
+          (before.status === StaffRequestStatus.APPROVED || before.status === StaffRequestStatus.COMPLETED) &&
+          nextStatus !== StaffRequestStatus.APPROVED && nextStatus !== StaffRequestStatus.COMPLETED;
+        if (enteredUsed) {
+          await syncLeaveEventForRequest({
+            id: row.id,
+            employeeId: row.employeeId,
+            type: row.type,
+            startDate: row.startDate,
+            endDate: row.endDate
+          });
+        } else if (leftUsed) {
+          await releaseLeaveEventForRequest(row.id, `Request moved to ${nextStatus}`);
+        }
+      } catch {
+        // ledger sync failure must not block the review workflow
+      }
       return c.json({ item: publicShape(row) });
     }
   );

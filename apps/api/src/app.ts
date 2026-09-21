@@ -20,6 +20,8 @@ import { financeJournalRoutes, fiscalPeriodRoutes } from "./routes/finance-journ
 import { financePaymentsRoutes } from "./routes/finance-payments.js";
 import { peopleRoutes } from "./routes/people.js";
 import { hrStructureRoutes } from "./routes/hr-structure.js";
+import { leaveV2Routes } from "./routes/leave-v2.js";
+import { bulkPayrollRoutes } from "./routes/bulk-payroll.js";
 import { payrollRoutes } from "./routes/payroll.js";
 import { quickBooksImportRoutes } from "./routes/quickbooks-imports.js";
 import { migrationImportRoutes } from "./routes/migration-imports.js";
@@ -164,5 +166,7 @@ app.route("/settings", settingsRoutes);
 app.route("/time", timeRoutes);
 app.route("/staff", staffRoutes);
 app.route("/", staffRequestRoutes);
+app.route("/", leaveV2Routes);
+app.route("/", bulkPayrollRoutes);
 
 export { app };

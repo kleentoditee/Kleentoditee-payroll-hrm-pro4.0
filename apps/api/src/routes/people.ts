@@ -202,7 +202,9 @@ function bodyHasNonEmptySensitivePii(body: Record<string, unknown>): boolean {
     "socialSecurityNumber",
     "nationalHealthInsuranceNumber",
     "inlandRevenueDepartmentNumber",
-    "workPermitNumber"
+    "workPermitNumber",
+    "bankAccountNumber",
+    "bankTransitNumber"
   ];
   for (const k of keys) {
     if (body[k] !== undefined) {
@@ -699,6 +701,9 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
         payrollTaxExemptionEnabled:
           body.payrollTaxExemptionEnabled === undefined ? true : Boolean(body.payrollTaxExemptionEnabled),
         notes: String(body.notes ?? ""),
+        bankName: String(body.bankName ?? "").trim().slice(0, 60),
+        bankAccountNumber: String(body.bankAccountNumber ?? "").trim().slice(0, 60),
+        bankTransitNumber: String(body.bankTransitNumber ?? "").trim().slice(0, 60),
         templateId,
         ...createAssignment.data
       },
@@ -794,6 +799,11 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     if (body.notes !== undefined) {
       data.notes = String(body.notes);
+    }
+    for (const field of ["bankName", "bankAccountNumber", "bankTransitNumber"] as const) {
+      if (body[field] !== undefined) {
+        data[field] = String(body[field] ?? "").trim().slice(0, 60);
+      }
     }
     if (body.templateId !== undefined) {
       const templateId = String(body.templateId);
