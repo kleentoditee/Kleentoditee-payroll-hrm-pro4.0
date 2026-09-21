@@ -110,6 +110,8 @@ const TENANT_MODELS = new Set([
   "BankStatementLine",
   "BankReconciliation",
   "BankReconciliationLine",
+  "ReportSnapshot",
+  "YearEndClose",
   "StatutoryRateVersion",
   "PayrollYtdOpeningBalance",
   "LeavePolicy",

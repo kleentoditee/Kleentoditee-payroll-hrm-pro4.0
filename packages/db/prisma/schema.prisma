@@ -555,6 +555,18 @@ model OrgSettings {
   /// PNG data URL used only on authenticated statutory-form exports.
   statutorySignatureDataUrl String @default("")
 
+  /// Filing identity + applicability (Batch 15, BVI filing support).
+  companyRegistrationNumber   String    @default("")
+  incorporationDate           DateTime?
+  registeredAgentName         String    @default("")
+  registeredOfficeAddress     String    @default("")
+  /// Calendar month the financial year ends (12 = December).
+  fiscalYearEndMonth          Int       @default(12)
+  /// Applicability answers: does the company file a tax return + financial
+  /// statements with Inland Revenue (annual-return exemption basis)?
+  filesIrFinancialStatements  Boolean   @default(false)
+  annualReturnExemptionBasis  String    @default("")
+
   /// Pay calendar defaults used when creating new pay periods.
   defaultPaySchedule   PaySchedule @default(monthly)
   defaultPayDayOfMonth Int         @default(0)
@@ -1572,4 +1584,82 @@ model LeavePolicy {
   @@unique([orgId, code])
   @@unique([orgId, requestType])
   @@index([orgId])
+}
+
+// --- Financial statements + year-end close (Batch 15) ---
+// Snapshots freeze a computed statement (params + payload + hash) so exports
+// always reproduce exactly what was locked. The year-end close moves the
+// year's revenue/expense balances into Retained Earnings through one closing
+// journal, behind draft -> reviewed -> approved -> posted with signature;
+// corrections are revisions that supersede, never edits.
+
+enum ReportSnapshotType {
+  profit_loss
+  balance_sheet
+  cash_flow
+  changes_in_equity
+  aging
+  payroll_liabilities
+  annual_return
+}
+
+/// An immutable, reproducible statement snapshot. Exports are generated from
+/// the stored payload, never recomputed, so they always match what was locked.
+model ReportSnapshot {
+  id              String             @id @default(cuid())
+  createdAt       DateTime           @default(now())
+  type            ReportSnapshotType
+  label           String             @default("")
+  /// Statement parameters (from/to/asOf/compare flag).
+  paramsJson      Json
+  /// Full computed statement payload.
+  payloadJson     Json
+  /// sha256 of the canonical payload — tamper check.
+  hash            String
+  createdByUserId String?
+  /// Owning organization (Batch 12).
+  orgId           String
+
+  @@index([orgId, type])
+}
+
+enum YearEndCloseStatus {
+  draft
+  reviewed
+  approved
+  /// Closing journal posted; signature recorded.
+  posted
+  /// Replaced by a newer revision (never edited in place).
+  superseded
+}
+
+model YearEndClose {
+  id                   String             @id @default(cuid())
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  year                 Int
+  status               YearEndCloseStatus @default(draft)
+  /// Closing journal lines preview computed at draft time (per-account).
+  closingPreviewJson   Json?
+  closingJournalEntryId String?
+  reviewedByUserId     String?
+  reviewedAt           DateTime?
+  reviewNote           String             @default("")
+  approvedByUserId     String?
+  approvedAt           DateTime?
+  postedAt             DateTime?
+  postedByUserId       String?
+  /// Sign-off text recorded at posting (typed signature).
+  signatureText        String             @default("")
+  /// Revision chain: this close supersedes revisionOf when posted.
+  revisionOfId         String?
+  revisionOf           YearEndClose?      @relation("YearEndCloseRevision", fields: [revisionOfId], references: [id], onDelete: SetNull)
+  revisions            YearEndClose[]     @relation("YearEndCloseRevision")
+  supersededById       String?
+  revisionReason       String             @default("")
+  createdByUserId      String?
+  /// Owning organization (Batch 12).
+  orgId                String
+
+  @@index([orgId, year])
 }
