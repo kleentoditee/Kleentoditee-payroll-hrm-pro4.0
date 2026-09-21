@@ -3,6 +3,7 @@
  * Posted journal lines are the single source of truth; aggregation is pure.
  */
 import { prisma } from "@kleentoditee/db";
+import type { Prisma } from "@kleentoditee/db";
 import { round2 } from "./gl-posting.js";
 
 export type AccountRef = { id: string; code: string; name: string; type: string; subtype: string; active: boolean };
@@ -203,5 +204,42 @@ export async function listJournalEntries(opts: { from?: Date; to?: Date; sourceT
       credit: Number(l.credit),
       memo: l.memo
     }))
+  }));
+}
+
+/**
+ * Per-account signed balances (debit-positive) over an optional date window,
+ * counting posted + void entries (Batch 15 statement engine input).
+ */
+export async function loadAccountBalances(
+  from?: Date,
+  to?: Date,
+  opts?: { excludeSourceTypes?: string[]; client?: Prisma.TransactionClient }
+) {
+  const client = opts?.client ?? prisma;
+  const [lines, accounts] = await Promise.all([
+    client.journalLine.findMany({
+      where: {
+        entry: {
+          status: COUNTED,
+          ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+          ...(opts?.excludeSourceTypes?.length ? { sourceType: { notIn: opts.excludeSourceTypes } } : {})
+        }
+      },
+      select: { accountId: true, debit: true, credit: true }
+    }),
+    client.account.findMany({ select: { id: true, code: true, name: true, type: true, subtype: true } })
+  ]);
+  const byAccount = new Map<string, number>();
+  for (const l of lines) {
+    byAccount.set(l.accountId, round2((byAccount.get(l.accountId) ?? 0) + Number(l.debit) - Number(l.credit)));
+  }
+  return accounts.map((a) => ({
+    accountId: a.id,
+    code: a.code,
+    name: a.name,
+    type: a.type,
+    subtype: a.subtype,
+    balance: round2(byAccount.get(a.id) ?? 0)
   }));
 }

@@ -27,7 +27,9 @@ const ACC = {
   otherDeductionsPayable: "oth",
   undepositedFunds: "uf",
   wagesExpense: "wages",
-  employerStatutoryExpense: "estat"
+  employerStatutoryExpense: "estat",
+  retainedEarnings: "re",
+  ownerEquity: "eq"
 } as const;
 
 test("validateJournalLines rejects unbalanced and single-line journals", () => {

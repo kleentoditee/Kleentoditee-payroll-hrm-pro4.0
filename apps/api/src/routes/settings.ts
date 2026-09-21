@@ -90,6 +90,38 @@ export const settingsRoutes = new Hono<{ Variables: AuthVariables }>()
       data.statutorySignatureDataUrl = value;
     }
 
+    // Filing identity + applicability (Batch 15).
+    if (body.companyRegistrationNumber !== undefined) {
+      data.companyRegistrationNumber = String(body.companyRegistrationNumber ?? "").trim();
+    }
+    if (body.registeredAgentName !== undefined) {
+      data.registeredAgentName = String(body.registeredAgentName ?? "").trim();
+    }
+    if (body.registeredOfficeAddress !== undefined) {
+      data.registeredOfficeAddress = String(body.registeredOfficeAddress ?? "").trim();
+    }
+    if (body.annualReturnExemptionBasis !== undefined) {
+      data.annualReturnExemptionBasis = String(body.annualReturnExemptionBasis ?? "").trim();
+    }
+    if (body.incorporationDate !== undefined) {
+      const raw = String(body.incorporationDate ?? "").trim();
+      const d = raw ? new Date(raw.length === 10 ? `${raw}T00:00:00.000Z` : raw) : null;
+      if (raw && (!d || Number.isNaN(d.getTime()))) {
+        return c.json({ error: "incorporationDate must be a valid date." }, 400);
+      }
+      data.incorporationDate = d;
+    }
+    if (body.fiscalYearEndMonth !== undefined) {
+      const m = Number(body.fiscalYearEndMonth);
+      if (!Number.isInteger(m) || m < 1 || m > 12) {
+        return c.json({ error: "fiscalYearEndMonth must be an integer between 1 and 12." }, 400);
+      }
+      data.fiscalYearEndMonth = m;
+    }
+    if (body.filesIrFinancialStatements !== undefined) {
+      data.filesIrFinancialStatements = Boolean(body.filesIrFinancialStatements);
+    }
+
     if (body.defaultPaySchedule !== undefined) {
       const schedule = parseSchedule(body.defaultPaySchedule);
       if (!schedule) {

@@ -30,7 +30,9 @@ export type ControlAccountKey =
   | "otherDeductionsPayable"
   | "undepositedFunds"
   | "wagesExpense"
-  | "employerStatutoryExpense";
+  | "employerStatutoryExpense"
+  | "retainedEarnings"
+  | "ownerEquity";
 
 export const CONTROL_ACCOUNTS: Record<
   ControlAccountKey,
@@ -46,7 +48,9 @@ export const CONTROL_ACCOUNTS: Record<
   otherDeductionsPayable: { code: "2600", name: "Other Payroll Deductions Payable", type: "liability", subtype: "Payroll Liabilities" },
   undepositedFunds: { code: "1150", name: "Undeposited Funds", type: "asset", subtype: "Cash and Cash Equivalents" },
   wagesExpense: { code: "6100", name: "Wages & Salaries", type: "expense", subtype: "Payroll" },
-  employerStatutoryExpense: { code: "6200", name: "Employer Statutory Contributions", type: "expense", subtype: "Payroll" }
+  employerStatutoryExpense: { code: "6200", name: "Employer Statutory Contributions", type: "expense", subtype: "Payroll" },
+  retainedEarnings: { code: "3100", name: "Retained Earnings", type: "equity", subtype: "Equity" },
+  ownerEquity: { code: "3000", name: "Owner's Equity", type: "equity", subtype: "Equity" }
 };
 
 // ---------------------------------------------------------------------------
@@ -370,6 +374,49 @@ export function buildDepositPostedJournal(input: {
     sourceId: input.id,
     date: input.depositDate,
     memo: `Deposit ${input.number}`,
+    lines
+  };
+}
+
+/**
+ * Year-end closing journal (Batch 15): zero every revenue account (Dr) and
+ * expense account (Cr) with a balance, and move the net into Retained
+ * Earnings. After posting, P&L account balances for the year are zero and
+ * equity carries the year's result.
+ */
+export function buildYearEndClosingJournal(input: {
+  closeId: string;
+  year: number;
+  closeDate: Date;
+  retainedEarningsAccountId: string;
+  /** Per-account signed balances (debit-positive) at the close date. */
+  balances: Array<{ accountId: string; code: string; name: string; type: string; balance: number }>;
+}): GlJournalInput {
+  const lines: GlLineInput[] = [];
+  let netToRE = 0; // credit-positive into retained earnings
+  for (const b of input.balances) {
+    const amount = round2(Math.abs(b.balance));
+    if (amount <= 0) continue;
+    if (b.type === "revenue" && b.balance < 0) {
+      lines.push({ accountId: b.accountId, debit: amount, memo: `Close ${b.code} ${b.name} to retained earnings` });
+      netToRE = round2(netToRE + amount);
+    } else if (b.type === "expense" && b.balance > 0) {
+      lines.push({ accountId: b.accountId, credit: amount, memo: `Close ${b.code} ${b.name} to retained earnings` });
+      netToRE = round2(netToRE - amount);
+    }
+  }
+  if (Math.abs(netToRE) > 0) {
+    lines.push(
+      netToRE > 0
+        ? { accountId: input.retainedEarningsAccountId, credit: netToRE, memo: `Net income ${input.year}` }
+        : { accountId: input.retainedEarningsAccountId, debit: Math.abs(netToRE), memo: `Net loss ${input.year}` }
+    );
+  }
+  return {
+    sourceType: "year_end_close",
+    sourceId: input.closeId,
+    date: input.closeDate,
+    memo: `Year-end close ${input.year} — revenue/expense to retained earnings`,
     lines
   };
 }
