@@ -1,6 +1,7 @@
 "use client";
 
 import { apiBase } from "@/lib/api";
+import { RunMutationsPanel } from "@/components/run-mutations-panel";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -364,6 +365,8 @@ export default function PayrollRunDetailPage() {
           </div>
         )}
       </section>
+
+      <RunMutationsPanel runId={run.id} runStatus={run.status} />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="font-serif text-xl text-slate-900">Exports</h3>

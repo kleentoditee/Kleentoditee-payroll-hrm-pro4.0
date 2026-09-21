@@ -64,6 +64,9 @@ type EmployeeFromApi = {
   nhiUnemployedSpouse: boolean;
   inlandRevenueDepartmentNumber: string;
   workPermitNumber: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankTransitNumber: string;
   workAuthorizationStatus: WorkAuthorizationStatus;
   employmentStartDate: string | null;
   employmentEndDate: string | null;
@@ -190,6 +193,9 @@ export default function EditEmployeePage() {
   const [nhiUnemployedSpouse, setNhiUnemployedSpouse] = useState(false);
   const [ird, setIrd] = useState("");
   const [workPermit, setWorkPermit] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [bankTransit, setBankTransit] = useState("");
   const [empStart, setEmpStart] = useState("");
   const [empEnd, setEmpEnd] = useState("");
   const [employmentStatus, setEmploymentStatus] = useState<"current" | "ended">("current");
@@ -247,6 +253,9 @@ export default function EditEmployeePage() {
     setNhiUnemployedSpouse(Boolean(e.nhiUnemployedSpouse));
     setIrd(e.inlandRevenueDepartmentNumber ?? "");
     setWorkPermit(e.workPermitNumber ?? "");
+    setBankName(e.bankName ?? "");
+    setBankAccount(e.bankAccountNumber ?? "");
+    setBankTransit(e.bankTransitNumber ?? "");
     setEmpStart(isoToDateInput(e.employmentStartDate));
     setEmpEnd(isoToDateInput(e.employmentEndDate));
     setEmploymentStatus(e.employmentEndDate ? "ended" : "current");
@@ -399,6 +408,9 @@ export default function EditEmployeePage() {
         body.nationalHealthInsuranceNumber = nhi;
         body.inlandRevenueDepartmentNumber = ird;
         body.workPermitNumber = workAuthorizationStatus === "WORK_PERMIT" ? workPermit : "";
+        body.bankName = bankName;
+        body.bankAccountNumber = bankAccount;
+        body.bankTransitNumber = bankTransit;
       }
       const res = await fetch(`${apiBase()}/people/employees/${id}`, {
         method: "PATCH",
@@ -651,6 +663,35 @@ export default function EditEmployeePage() {
               <input type="checkbox" checked={nhiUnemployedSpouse} onChange={(e) => setNhiUnemployedSpouse(e.target.checked)} disabled={formDisabledPii} />
               Include unemployed spouse NHI contribution
             </label>
+          </div>
+          <h4 className="pt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Bank payout details</h4>
+          <p className="text-xs text-slate-500">Used for the BVI bank-payment export of finalized pay runs. Account and transit numbers are sensitive payroll data.</p>
+          <div className="grid gap-4 sm:grid-cols-1">
+            <label className="block text-sm">
+              <span className="text-slate-700">Bank name</span>
+              <input
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                disabled={formDisabledPii}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+              />
+            </label>
+            <RevealableField
+              id="bankAccount"
+              label="Bank account number"
+              value={bankAccount}
+              onChange={setBankAccount}
+              disabled={formDisabledPii}
+              canReveal={sensitiveExposed && canEditPii}
+            />
+            <RevealableField
+              id="bankTransit"
+              label="Bank transit / branch number"
+              value={bankTransit}
+              onChange={setBankTransit}
+              disabled={formDisabledPii}
+              canReveal={sensitiveExposed && canEditPii}
+            />
           </div>
           </section>
         ) : null}

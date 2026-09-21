@@ -1,6 +1,7 @@
 "use client";
 
 import { EmployeeAvatar } from "@/components/employee-avatar";
+import { BulkOnboardingCard } from "@/components/bulk-onboarding";
 import { apiBase } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -213,6 +214,8 @@ export default function EmployeesListPage() {
           ))}
         </ul>
       )}
+
+      <BulkOnboardingCard />
     </div>
   );
 }
