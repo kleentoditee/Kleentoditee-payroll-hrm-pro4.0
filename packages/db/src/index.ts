@@ -116,7 +116,13 @@ const TENANT_MODELS = new Set([
   "PayrollYtdOpeningBalance",
   "LeavePolicy",
   "UserInvitation",
-  "OrganizationMembership"
+  "OrganizationMembership",
+  "AccountingImportBatch",
+  "AccountingImportFile",
+  "AccountingImportRow",
+  "ExternalSourceRef",
+  "MigrationReconciliation",
+  "LegacyDocument"
 ]);
 
 type Args = Record<string, unknown>;

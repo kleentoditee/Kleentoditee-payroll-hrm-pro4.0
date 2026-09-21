@@ -1696,3 +1696,171 @@ model YearEndClose {
 
   @@index([orgId, year])
 }
+
+// --- Accounting migration safety (Batch 17) ---
+// Lifecycle: uploaded -> inventoried -> mapped -> validated -> approved ->
+// importing -> reconciled -> accepted. Failure exits: rejected (validation),
+// failed (commit error, zero partial data), reversed (post-commit undo).
+// A commit is a single DB transaction: destination documents + journals +
+// ExternalSourceRef lineage + row outcomes all land or none do.
+
+enum ImportBatchStatus {
+  uploaded
+  inventoried
+  mapped
+  validated
+  approved
+  importing
+  reconciled
+  accepted
+  rejected
+  failed
+  reversed
+}
+
+/// One legacy-system migration attempt (e.g. a QuickBooks export set).
+model AccountingImportBatch {
+  id                String            @id @default(cuid())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  /// quickbooks | xero | wave | excel_generic (adapters are Batch 18).
+  sourceSystem      String            @default("excel_generic")
+  status            ImportBatchStatus @default(uploaded)
+  label             String            @default("")
+  /// Column mapping per import type, chosen at the mapped step.
+  mappingJson       Json?
+  approvedByUserId  String?
+  approvedAt        DateTime?
+  committedAt       DateTime?
+  committedByUserId String?
+  reversedAt        DateTime?
+  reversedByUserId  String?
+  reversalReason    String            @default("")
+  errorSummary      String            @default("")
+  createdByUserId   String?
+  /// Owning organization.
+  orgId             String
+
+  files           AccountingImportFile[]
+  reconciliations MigrationReconciliation[]
+
+  @@index([orgId, status])
+}
+
+/// One uploaded source file inside a batch. Content-hash + private storage key
+/// make the upload auditable and re-inventoriable.
+model AccountingImportFile {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  batchId        String
+  batch          AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  fileName       String
+  /// customers|vendors|accounts|products|invoices|bills|expenses|payments|deposits|opening_balances
+  importType     String
+  sha256         String
+  sizeBytes      Int
+  /// Key in the private document storage (S3/R2 or local disk fallback).
+  storageKey     String   @default("")
+  rowCount       Int      @default(0)
+  validCount     Int      @default(0)
+  invalidCount   Int      @default(0)
+  committedCount Int      @default(0)
+  /// Owning organization.
+  orgId          String
+
+  rows AccountingImportRow[]
+
+  @@index([orgId, batchId])
+  @@index([batchId])
+}
+
+/// One parsed source row with its validation and destination lineage.
+model AccountingImportRow {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  fileId          String
+  file            AccountingImportFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  /// 1-based row number in the source file (header excluded).
+  rowIndex        Int
+  payloadJson     Json
+  /// Stable idempotency key derived from source ids or normalized content.
+  sourceRef       String   @default("")
+  /// pending|valid|invalid|committed|skipped_duplicate
+  status          String   @default("pending")
+  errorMessage    String   @default("")
+  /// Destination model name (Customer, Invoice, JournalEntry, ...) once committed.
+  destinationType String   @default("")
+  destinationId   String   @default("")
+  /// Owning organization.
+  orgId           String
+
+  @@unique([fileId, rowIndex])
+  @@index([orgId, fileId])
+  @@index([orgId, sourceRef])
+}
+
+/// Cross-system lineage: "legacy X with id Y became our Z". The unique key is
+/// org-scoped so two tenants importing the same legacy file never collide.
+model ExternalSourceRef {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  sourceSystem    String
+  /// customer|vendor|account|product|invoice|bill|expense|payment|deposit|journal
+  sourceType      String
+  sourceId        String
+  destinationType String
+  destinationId   String
+  batchId         String?
+  /// Owning organization.
+  orgId           String
+
+  @@unique([orgId, sourceSystem, sourceType, sourceId])
+  @@index([orgId, destinationType, destinationId])
+  @@index([batchId])
+}
+
+/// Post-commit proof that what landed matches what the source claimed:
+/// counts, totals, AR/AP balances. Discrepancies must be accepted explicitly.
+model MigrationReconciliation {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  batchId      String
+  batch        AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  /// count|total|trial_balance|ar_balance|ap_balance
+  checkType    String
+  scope        String   @default("")
+  expected     Float    @default(0)
+  actual       Float    @default(0)
+  /// pending|matched|discrepancy|accepted
+  status       String   @default("pending")
+  note         String   @default("")
+  acceptedByUserId String?
+  acceptedAt   DateTime?
+  /// Owning organization.
+  orgId        String
+
+  @@index([orgId, batchId])
+  @@index([batchId])
+}
+
+/// A binary artifact kept from the legacy system (attachment, statement scan,
+/// export ZIP member). Stored in private document storage with its hash.
+model LegacyDocument {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  batchId     String?
+  fileName    String
+  sha256      String
+  sizeBytes   Int
+  contentType String   @default("")
+  storageKey  String
+  /// Optional link to the destination record it supports (Invoice, Bill...).
+  linkedType  String   @default("")
+  linkedId    String   @default("")
+  /// Owning organization.
+  orgId       String
+
+  @@index([orgId, batchId])
+  @@index([orgId, linkedType, linkedId])
+}
