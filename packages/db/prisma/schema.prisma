@@ -244,6 +244,10 @@ model Employee {
   workAuthorizationStatus       WorkAuthorizationStatus @default(NOT_SPECIFIED)
   workPermitNumber              String                  @default("")
   workPermitExpiryDate          DateTime?
+  /// Bank payout details (Batch 20) — masked for non-HR viewers like other identifiers.
+  bankName                      String                  @default("")
+  bankAccountNumber             String                  @default("")
+  bankTransitNumber             String                  @default("")
   basePayType                   PayBasis                @default(daily)
   dailyRate                     Float                   @default(0)
   hourlyRate                    Float                   @default(0)
@@ -288,6 +292,8 @@ model Employee {
   staffRequests      StaffRequest[]
   workAssignments    WorkAssignment[]
   staffQuizAttempts  StaffQuizAttempt[]
+  leaveAssignments   LeavePolicyAssignment[]
+  leaveEvents        LeaveEvent[]
   rewardLedgers      RewardLedger[]
   notificationLogs   NotificationLog[]          @relation("NotificationLogEmployee")
 
@@ -468,6 +474,8 @@ model PayRun {
   statutorySnapshot   Json?
   items               PayRunItem[]
   exports             PayrollExport[]
+  mutationBatches     PayrollMutationBatch[]
+  mutations           PayrollMutation[]
   /// Owning organization (Batch 12).
   orgId               String
 
@@ -1633,10 +1641,24 @@ model LeavePolicy {
   paid                Boolean          @default(true)
   /// Business days per calendar year per employee; 0 means untracked/unlimited.
   annualAllowanceDays Float            @default(0)
+  /// Batch 20 — Leave Policy v2.
+  /// Unit of account for allowance/accrual/events: "days" or "hours".
+  basis                 String           @default("days")
+  /// Units accrued per completed month of assignment; 0 = full allowance up front.
+  accrualPerMonth       Float            @default(0)
+  /// Max unused units carried into the next year; 0 = no carryover.
+  carryoverCap          Float            @default(0)
+  /// Hard balance ceiling (accruals stop at the cap); 0 = uncapped.
+  maxBalance            Float            @default(0)
+  /// Skip BVI public holidays when counting leave days.
+  excludePublicHolidays Boolean          @default(true)
   active              Boolean          @default(true)
   sortOrder           Int              @default(0)
   /// Owning organization (Batch 12).
   orgId               String
+
+  assignments LeavePolicyAssignment[]
+  events      LeaveEvent[]
 
   @@unique([orgId, code])
   @@unique([orgId, requestType])
@@ -2068,5 +2090,142 @@ model EmployeeAsset {
   orgId        String
 
   @@index([employeeId, returnedAt])
+  @@index([orgId])
+}
+
+// --- Leave Policy v2, bulk onboarding, payroll mutations, bank payout (Batch 20) ---
+
+enum LeaveEventKind {
+  accrual
+  carryover
+  usage
+  usage_release
+  adjustment
+  time_for_time
+}
+
+/// BVI public holiday (org-editable; seeded from the official gazette pattern,
+/// owner verifies yearly). Leave day counting skips these when the policy says so.
+model PublicHoliday {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  date      DateTime
+  name      String
+  /// Owning organization (Batch 20).
+  orgId     String
+
+  @@unique([orgId, date])
+  @@index([orgId])
+}
+
+/// Which leave policy applies to which employee from when. No assignment row
+/// means the org-wide policy applies (legacy behavior).
+model LeavePolicyAssignment {
+  id            String      @id @default(cuid())
+  createdAt     DateTime    @default(now())
+  policyId      String
+  policy        LeavePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  /// Owning organization (Batch 20).
+  orgId         String
+
+  @@unique([policyId, employeeId, effectiveFrom])
+  @@index([employeeId])
+  @@index([orgId])
+}
+
+/// Append-only leave ledger. Every balance change (accrual, carryover, usage
+/// from approved requests, releases, manual adjustments, time-for-time credit)
+/// is a signed event in the policy's basis units, so any balance can be
+/// reproduced exactly by replaying the events (Gate 20).
+model LeaveEvent {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  kind            LeaveEventKind
+  employeeId      String
+  employee        Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  policyId        String
+  policy          LeavePolicy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  /// Signed amount in the policy's basis units (usage negative, credits positive).
+  amount          Float
+  eventDate       DateTime
+  /// staff_request | accrual_run | carryover_run | manual | time_for_time | backfill
+  sourceType      String
+  sourceId        String?
+  note            String         @default("")
+  createdByUserId String?
+  /// Owning organization (Batch 20).
+  orgId           String
+
+  @@index([orgId, employeeId, policyId])
+  @@index([sourceType, sourceId])
+}
+
+/// Bulk employee onboarding from CSV. Reversal deletes exactly the employees
+/// the batch created — only while they have no payroll/time/request history.
+model OnboardingBatch {
+  id                 String    @id @default(cuid())
+  createdAt          DateTime  @default(now())
+  fileName           String
+  sha256             String
+  rowCount           Int       @default(0)
+  createdCount       Int       @default(0)
+  /// committed | reversed
+  status             String    @default("committed")
+  createdEmployeeIds Json
+  reversedAt         DateTime?
+  reversedByUserId   String?
+  createdByUserId    String?
+  /// Owning organization (Batch 20).
+  orgId              String
+
+  @@index([orgId])
+}
+
+/// Reusable payroll-mutation import (CSV of additions/deductions) applied to a
+/// DRAFT pay run. Every row is traceable to a PayRunItem delta and the whole
+/// batch reverses while the run is still draft.
+model PayrollMutationBatch {
+  id               String            @id @default(cuid())
+  createdAt        DateTime          @default(now())
+  runId            String
+  run              PayRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  fileName         String
+  rowCount         Int               @default(0)
+  appliedCount     Int               @default(0)
+  /// applied | reversed
+  status           String            @default("applied")
+  reversedAt       DateTime?
+  reversedByUserId String?
+  createdByUserId  String?
+  /// Owning organization (Batch 20).
+  orgId            String
+
+  mutations PayrollMutation[]
+
+  @@index([orgId])
+  @@index([runId])
+}
+
+model PayrollMutation {
+  id         String               @id @default(cuid())
+  createdAt  DateTime             @default(now())
+  batchId    String
+  batch      PayrollMutationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  runId      String
+  run        PayRun               @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId String
+  /// addition | deduction
+  kind       String
+  label      String
+  amount     Float
+  /// Owning organization (Batch 20).
+  orgId      String
+
+  @@index([batchId])
+  @@index([runId, employeeId])
   @@index([orgId])
 }
