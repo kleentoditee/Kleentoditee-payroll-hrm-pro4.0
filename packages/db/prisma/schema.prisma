@@ -1725,6 +1725,9 @@ model AccountingImportBatch {
   updatedAt         DateTime          @updatedAt
   /// quickbooks | xero | wave | excel_generic (adapters are Batch 18).
   sourceSystem      String            @default("excel_generic")
+  /// full_detail imports everything importable; cutover imports master data,
+  /// open documents, and opening balances only (history via opening balances).
+  migrationMode     String            @default("full_detail")
   status            ImportBatchStatus @default(uploaded)
   label             String            @default("")
   /// Column mapping per import type, chosen at the mapped step.
@@ -1737,6 +1740,10 @@ model AccountingImportBatch {
   reversedByUserId  String?
   reversalReason    String            @default("")
   errorSummary      String            @default("")
+  /// Batch 18: typed sign-off on the migration exception report.
+  exceptionSignature       String   @default("")
+  exceptionSignedByUserId  String?
+  exceptionSignedAt        DateTime?
   createdByUserId   String?
   /// Owning organization.
   orgId             String
@@ -1756,7 +1763,12 @@ model AccountingImportFile {
   batch          AccountingImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
   fileName       String
   /// customers|vendors|accounts|products|invoices|bills|expenses|payments|deposits|opening_balances
+  /// + Batch 18: journal_entries|bill_payments|sales_receipts|transfers|estimates|purchase_orders|
+  /// credit_memos|classes|locations|projects|product_categories|time_activities|attachment
   importType     String
+  /// Batch 18: final disposition — pending|imported|archived|unsupported.
+  disposition    String   @default("pending")
+  dispositionNote String  @default("")
   sha256         String
   sizeBytes      Int
   /// Key in the private document storage (S3/R2 or local disk fallback).
