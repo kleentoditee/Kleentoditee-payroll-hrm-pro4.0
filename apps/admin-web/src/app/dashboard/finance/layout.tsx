@@ -20,6 +20,10 @@ const links = [
   { href: "/dashboard/finance/statements", label: "Bank statements" },
   { href: "/dashboard/finance/reconciliations", label: "Reconciliation" },
   { href: "/dashboard/finance/register", label: "Bank register" },
+  { href: "/dashboard/finance/financial-statements", label: "Financial statements" },
+  { href: "/dashboard/finance/aging", label: "Aging" },
+  { href: "/dashboard/finance/year-end", label: "Year-end close" },
+  { href: "/dashboard/finance/filing", label: "Filing support" },
   { href: "/dashboard/finance/trial-balance", label: "Trial balance" },
   { href: "/dashboard/reports", label: "Reports" }
 ] as const;
