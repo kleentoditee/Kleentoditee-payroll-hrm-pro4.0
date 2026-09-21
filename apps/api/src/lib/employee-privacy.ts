@@ -87,6 +87,12 @@ export type EmployeeListRow = {
   template: { name: string };
   hasProfilePhoto: boolean;
   linkedUser: { email: string; status: string } | null;
+  departmentId: string | null;
+  positionId: string | null;
+  costCentreId: string | null;
+  locationId: string | null;
+  workScheduleId: string | null;
+  managerId: string | null;
 };
 
 export function toListEmployee(emp: Employee & { template: Template; linkedUser?: ListLinked }): EmployeeListRow {
@@ -102,7 +108,13 @@ export function toListEmployee(emp: Employee & { template: Template; linkedUser?
     paySchedule: emp.paySchedule,
     template: { name: emp.template.name },
     hasProfilePhoto: Boolean(emp.profilePhotoPath),
-    linkedUser: emp.linkedUser ?? null
+    linkedUser: emp.linkedUser ?? null,
+    departmentId: emp.departmentId,
+    positionId: emp.positionId,
+    costCentreId: emp.costCentreId,
+    locationId: emp.locationId,
+    workScheduleId: emp.workScheduleId,
+    managerId: emp.managerId
   };
 }
 
@@ -170,6 +182,12 @@ export function toDetailPayload(
     workPermitNumber: expose ? emp.workPermitNumber : maskIdentifier(emp.workPermitNumber),
     sensitiveExposed: expose,
     hasProfilePhoto: Boolean(emp.profilePhotoPath),
+    departmentId: emp.departmentId,
+    positionId: emp.positionId,
+    costCentreId: emp.costCentreId,
+    locationId: emp.locationId,
+    workScheduleId: emp.workScheduleId,
+    managerId: emp.managerId,
     documents: activeDocs.map((d) => documentDto(emp.id, d)),
     linkedUser: emp.linkedUser ?? null
   };

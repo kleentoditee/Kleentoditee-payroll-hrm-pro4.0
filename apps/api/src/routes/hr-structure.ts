@@ -57,7 +57,8 @@ export const hrStructureRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/masters/:kind", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const kind = c.req.param("kind") as MasterKind;
     if (!MASTER_KINDS.includes(kind)) return c.json({ error: "Unknown master type." }, 404);
-    const rows = await masterModel(kind).findMany({ orderBy: { code: "asc" } });
+    const orderBy = kind === "work-schedules" ? { name: "asc" } : { code: "asc" };
+    const rows = await masterModel(kind).findMany({ orderBy });
     return c.json({ rows });
   })
   .post("/masters/:kind", authRequired, requireRole(...CAN_EDIT), async (c) => {
@@ -67,12 +68,19 @@ export const hrStructureRoutes = new Hono<{ Variables: AuthVariables }>()
     const orgId = c.get("orgId");
     const code = String(body.code ?? "").trim();
     const name = String(body.name ?? "").trim();
-    if (!code || !name) return c.json({ error: "Code and name are required." }, 400);
+    // Work schedules are keyed by name only (no code column).
+    if (kind !== "work-schedules" && !code) return c.json({ error: "Code is required." }, 400);
+    if (!name) return c.json({ error: "Name is required." }, 400);
     const model = masterModel(kind);
-    if (await model.findFirst({ where: { OR: [{ code }, { name: { equals: name, mode: "insensitive" } }] } })) {
+    const dupeWhere =
+      kind === "work-schedules"
+        ? { name: { equals: name, mode: "insensitive" } }
+        : { OR: [{ code }, { name: { equals: name, mode: "insensitive" } }] };
+    if (await model.findFirst({ where: dupeWhere })) {
       return c.json({ error: `A ${kind.replace(/-/g, " ")} with that code or name already exists.` }, 409);
     }
-    const data: Record<string, unknown> = { orgId, code, name };
+    const data: Record<string, unknown> = { orgId, name };
+    if (kind !== "work-schedules") data.code = code;
     if (kind === "departments" && body.parentId) {
       const parent = await prisma.department.findFirst({ where: { id: String(body.parentId) }, select: { id: true } });
       if (!parent) return c.json({ error: "Parent department not found in this organization." }, 400);

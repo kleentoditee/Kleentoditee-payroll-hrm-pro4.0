@@ -23,6 +23,7 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: "users",
     items: [
       { label: "Employees", href: "/dashboard/people/employees", icon: "users", description: "Manage employee records and payroll setup." },
+      { label: "HR structure", href: "/dashboard/people/structure", icon: "building", description: "Departments, positions, cost centres, locations, schedules, contracts." },
       { label: "Staff requests", href: "/dashboard/people/requests", icon: "inbox", description: "Review employee requests and submissions." },
       { label: "Deduction templates", href: "/dashboard/people/templates", icon: "file-text", description: "Configure deductions used in payroll." },
       { label: "Leave balances", href: "/dashboard/people/leave", icon: "calendar", description: "Track annual, sick, and unpaid leave allowances and usage." }

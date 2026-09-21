@@ -1,6 +1,7 @@
 "use client";
 
 import { EmployeeAvatar } from "@/components/employee-avatar";
+import { EmployeeStructureSection } from "@/components/employee-structure";
 import { ProfilePhotoEditor } from "@/components/profile-photo-editor";
 import { ShareTrackerAccessCard } from "@/components/share-tracker-access-card";
 import { apiBase } from "@/lib/api";
@@ -12,11 +13,12 @@ import { useCallback, useEffect, useState } from "react";
 
 type Template = { id: string; name: string };
 type WorkAuthorizationStatus = "NOT_SPECIFIED" | "WORK_PERMIT" | "BELONGER" | "RESIDENT" | "BV_ISLANDER";
-type FormTab = "profile" | "employment" | "payroll" | "ids" | "documents" | "notes" | "access";
+type FormTab = "profile" | "employment" | "structure" | "payroll" | "ids" | "documents" | "notes" | "access";
 
 const tabs: Array<{ id: FormTab; label: string }> = [
   { id: "profile", label: "Profile" },
   { id: "employment", label: "Employment" },
+  { id: "structure", label: "Assignment & contracts" },
   { id: "payroll", label: "Payroll" },
   { id: "ids", label: "Government IDs" },
   { id: "documents", label: "Documents" },
@@ -69,6 +71,12 @@ type EmployeeFromApi = {
   sensitiveExposed: boolean;
   documents: DocumentRow[];
   linkedUser: { email: string; status: string } | null;
+  departmentId: string | null;
+  positionId: string | null;
+  costCentreId: string | null;
+  locationId: string | null;
+  workScheduleId: string | null;
+  managerId: string | null;
 };
 
 function isoToDateInput(iso: string | null | undefined): string {
@@ -191,6 +199,14 @@ export default function EditEmployeePage() {
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [profilePhotoViewUrl, setProfilePhotoViewUrl] = useState("");
   const [photoToCrop, setPhotoToCrop] = useState<File | null>(null);
+  const [assignment, setAssignment] = useState({
+    departmentId: null as string | null,
+    positionId: null as string | null,
+    costCentreId: null as string | null,
+    locationId: null as string | null,
+    workScheduleId: null as string | null,
+    managerId: null as string | null
+  });
 
   const canPii = canViewEmployeePii(meRoles ?? undefined) && meRoles != null;
   const canEditPii = canPii;
@@ -240,6 +256,14 @@ export default function EditEmployeePage() {
     setDocuments(e.documents ?? []);
     setHasPhoto(e.hasProfilePhoto === true);
     setProfilePhotoViewUrl(e.profilePhotoViewUrl || `/people/employees/${e.id}/profile-photo`);
+    setAssignment({
+      departmentId: e.departmentId ?? null,
+      positionId: e.positionId ?? null,
+      costCentreId: e.costCentreId ?? null,
+      locationId: e.locationId ?? null,
+      workScheduleId: e.workScheduleId ?? null,
+      managerId: e.managerId ?? null
+    });
   }, [id]);
 
   useEffect(() => {
@@ -836,6 +860,10 @@ export default function EditEmployeePage() {
           <p className="text-xs text-slate-500">Employee records are retained for payroll history. To end employment, choose Employment ended and save an end date.</p>
         ) : null}
       </form>
+
+      {tab === "structure" ? (
+        <EmployeeStructureSection employeeId={id} assignment={assignment} />
+      ) : null}
 
       {tab === "access" ? (
         <ShareTrackerAccessCard employeeId={id} employeeName={fullName.trim() || "this employee"} />
