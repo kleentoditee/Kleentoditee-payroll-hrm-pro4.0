@@ -1119,6 +1119,39 @@ model NotificationLog {
   @@index([orgId])
 }
 
+enum EmailMessageStatus {
+  QUEUED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+/// Transactional email outbox (Batch 16). Messages are queued first and sent
+/// by the background worker with retry/backoff; the table is the delivery log.
+/// orgId is nullable because some transactional mail (password reset) can be
+/// requested before an organization context exists.
+model EmailMessage {
+  id            String             @id @default(cuid())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  orgId         String?
+  toEmail       String
+  subject       String
+  textBody      String
+  htmlBody      String?
+  template      String
+  status        EmailMessageStatus @default(QUEUED)
+  attempts      Int                @default(0)
+  maxAttempts   Int                @default(5)
+  lastError     String?
+  nextAttemptAt DateTime           @default(now())
+  sentAt        DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([orgId])
+  @@index([createdAt])
+}
+
 model StaffQuizQuestion {
   id           String             @id @default(cuid())
   createdAt    DateTime           @default(now())
