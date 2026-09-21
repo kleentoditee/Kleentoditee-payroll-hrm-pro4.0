@@ -305,7 +305,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .get("/employees/:id/tracker-share", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const id = c.req.param("id");
-    const row = await prisma.employee.findUnique({ where: { id }, select: { id: true } });
+    const row = await prisma.employee.findUnique({ where: { id }, select: { id: true, phone: true } });
     if (!row) {
       return c.json({ error: "Not found" }, 404);
     }
@@ -318,6 +318,7 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     });
     return c.json({
       employeeId: id,
+      phone: row.phone || null,
       loginUrl,
       appHomeUrl,
       linkedUser: linked
@@ -449,6 +450,12 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!canDownloadDocumentByType(roles, doc.type)) {
       return c.json({ error: "Forbidden" }, 403);
     }
+    // Private storage: hand out a short-lived presigned URL when the provider
+    // supports it (S3/R2); otherwise stream through this authenticated route.
+    const signed = await documentStorage.getSignedUrl(doc.storagePath).catch(() => null);
+    if (signed) {
+      return c.redirect(signed, 302);
+    }
     const stored = await documentStorage.getObject(doc.storagePath);
     return new Response(stored.body as never, {
       status: 200,
@@ -465,6 +472,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
     const employee = await prisma.employee.findUnique({ where: { id: eid }, select: { profilePhotoPath: true } });
     if (!employee?.profilePhotoPath) {
       return c.json({ error: "No profile photo" }, 404);
+    }
+    const signed = await documentStorage.getSignedUrl(employee.profilePhotoPath).catch(() => null);
+    if (signed) {
+      return c.redirect(signed, 302);
     }
     const stored = await documentStorage.getObject(employee.profilePhotoPath);
     const ct = contentTypeForPath(employee.profilePhotoPath);

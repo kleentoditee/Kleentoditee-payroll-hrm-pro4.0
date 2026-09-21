@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { isEmailDeliveryConfigured } from "./lib/email.js";
+import { adminEmailRoutes } from "./routes/admin-email.js";
 import { adminUserRoutes } from "./routes/admin-users.js";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
@@ -88,10 +89,18 @@ app.get("/health", (c) =>
 app.get("/health/ready", async (c) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
+    const [queued, failed] = await Promise.all([
+      prisma.emailMessage.count({ where: { status: "QUEUED" } }),
+      prisma.emailMessage.count({ where: { status: "FAILED" } })
+    ]);
     return c.json({
       ok: true,
       database: "ready",
-      passwordResetEmail: isEmailDeliveryConfigured() ? "configured" : "not_configured",
+      email: {
+        delivery: isEmailDeliveryConfigured() ? "configured" : "not_configured",
+        queued,
+        failed
+      },
       documentStorage: process.env.OBJECT_STORAGE_PROVIDER?.trim() || "local"
     });
   } catch {
@@ -128,6 +137,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 app.route("/auth", authRoutes);
+app.route("/admin", adminEmailRoutes);
 app.route("/admin", adminUserRoutes);
 app.route("/admin", adminStaffRoutes);
 app.route("/audit", auditRoutes);

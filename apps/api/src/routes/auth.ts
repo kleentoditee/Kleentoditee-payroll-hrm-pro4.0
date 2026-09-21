@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { writeAudit } from "../lib/audit.js";
-import { sendPasswordResetEmail } from "../lib/email.js";
+import { isEmailDeliveryConfigured, queueEmail } from "../lib/email.js";
 import { emailCanonical } from "../lib/email-normalize.js";
 import { isEnvTruthy } from "../lib/env-flags.js";
 import {
@@ -56,17 +56,18 @@ function issueSessionCookies(c: CookieHeaderSetter, token: string): string {
 
 async function deliverPasswordResetLink(email: string, link: string): Promise<void> {
   try {
-    if (await sendPasswordResetEmail(email, link)) {
+    await queueEmail({ to: email, template: "password_reset", url: link });
+    if (isEmailDeliveryConfigured()) {
       return;
     }
   } catch (error) {
-    console.error("[auth] Password reset email delivery failed.", error);
+    console.error("[auth] Password reset email queueing failed.", error);
     return;
   }
   if (process.env.NODE_ENV !== "production") {
-    console.info(`[auth] Development password reset link for ${email}: ${link}`);
+    console.info(`[auth] SMTP not configured; queued. Development password reset link for ${email}: ${link}`);
   } else {
-    console.error("[auth] Password reset email requested, but SMTP is not configured.");
+    console.error("[auth] Password reset email queued, but SMTP is not configured — it will not deliver until configured.");
   }
 }
 

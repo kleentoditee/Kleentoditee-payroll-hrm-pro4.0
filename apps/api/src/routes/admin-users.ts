@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { emailCanonical } from "../lib/email-normalize.js";
-import { isEmailDeliveryConfigured, sendUserInvitationEmail } from "../lib/email.js";
+import { isEmailDeliveryConfigured, queueEmail } from "../lib/email.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { isValidResetPassword, resetPasswordRuleMessage } from "../lib/password-reset.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
@@ -270,19 +270,30 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
       const mapped = mapUser(userFull as UserRow);
       const path = `/accept-invite?token=${encodeURIComponent(result.rawToken)}`;
       const acceptUrl = `${adminPublicBaseUrl()}${path}`;
-      const delivered = await sendUserInvitationEmail(result.user.email, acceptUrl).catch((error) => {
-        console.error("[user admin] Invitation email delivery failed.", error);
-        return false;
-      });
-      if (isProduction() && !delivered) {
+      if (isProduction() && !isEmailDeliveryConfigured()) {
         return c.json(
           {
             error:
-              "The invitation was created, but the email could not be delivered. Cancel this invitation and try again after checking SMTP settings."
+              "The invitation was created, but email delivery is not configured. Cancel this invitation and try again after checking SMTP settings."
           },
           502
         );
       }
+      // Queued delivery (Batch 16): the worker retries with backoff; the
+      // EmailMessage table is the delivery log. In non-prod without SMTP the
+      // row stays queued and the dev URL is surfaced below.
+      const queued = await queueEmail({
+        to: result.user.email,
+        template: "user_invitation",
+        url: acceptUrl,
+        orgId: requireOrgId()
+      }).then(
+        () => true,
+        (error) => {
+          console.error("[user admin] Invitation email queueing failed.", error);
+          return false;
+        }
+      );
       await writeAudit({
         actorUserId: c.get("userId"),
         action: "user.admin.invite",
@@ -298,10 +309,10 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
       } = { user: mapped };
       if (!isProduction()) {
         resBody.devInvitePath = path;
-        resBody.devMessage = delivered
-          ? "Invitation created and emailed."
+        resBody.devMessage = queued && isEmailDeliveryConfigured()
+          ? "Invitation created and queued for email delivery."
           : `Invitation created. Development accept URL path: ${path}`;
-        if (!delivered) console.log(`[user admin] dev invite (no email): ${acceptUrl}`);
+        if (!isEmailDeliveryConfigured()) console.log(`[user admin] dev invite (email queued, SMTP not configured): ${acceptUrl}`);
       }
       return c.json(resBody, 201);
     } catch (e) {
