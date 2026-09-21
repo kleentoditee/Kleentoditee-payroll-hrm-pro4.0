@@ -17,6 +17,8 @@ type BatchFile = {
   validCount: number;
   invalidCount: number;
   committedCount: number;
+  disposition?: string;
+  dispositionNote?: string;
 };
 
 type Reconciliation = {
@@ -35,13 +37,18 @@ type Batch = {
   status: BatchStatus;
   label: string;
   errorSummary: string;
+  migrationMode?: string;
+  exceptionSignature?: string;
   files?: BatchFile[];
   reconciliations?: Reconciliation[];
 };
 
 const IMPORT_TYPES = [
   "accounts", "customers", "vendors", "products",
-  "invoices", "bills", "expenses", "payments", "deposits", "opening_balances"
+  "invoices", "bills", "expenses", "payments", "bill_payments", "deposits",
+  "sales_receipts", "journal_entries", "transfers", "opening_balances",
+  "estimates", "purchase_orders", "credit_memos", "classes", "locations",
+  "projects", "product_categories", "time_activities"
 ] as const;
 
 const STATUS_STYLE: Record<string, string> = {
@@ -75,6 +82,7 @@ export default function MigrationCenterPage() {
   const [sourceSystem, setSourceSystem] = useState("quickbooks");
   const [label, setLabel] = useState("");
   const [asOfDate, setAsOfDate] = useState("");
+  const [migrationMode, setMigrationMode] = useState<"full_detail" | "cutover">("full_detail");
   const [importType, setImportType] = useState<(typeof IMPORT_TYPES)[number]>("customers");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -120,7 +128,7 @@ export default function MigrationCenterPage() {
 
   const createBatch = () =>
     run(async () => {
-      await post("/imports/migration/batches", { sourceSystem, label, ...(asOfDate ? { asOfDate } : {}) });
+      await post("/imports/migration/batches", { sourceSystem, label, migrationMode, ...(asOfDate ? { asOfDate } : {}) });
       setLabel("");
       await loadBatches();
       setNotice("Batch created. Upload your export files next.");
@@ -140,7 +148,7 @@ export default function MigrationCenterPage() {
       setNotice(`Inventoried ${file.name}.`);
     });
 
-  const action = (verb: "validate" | "approve" | "commit" | "reverse" | "accept", body: Record<string, unknown> = {}) =>
+  const action = (verb: "validate" | "approve" | "commit" | "reverse" | "accept" | "sign-exceptions", body: Record<string, unknown> = {}) =>
     run(async () => {
       if (!selected) return;
       await post(`/imports/migration/batches/${selected.id}/${verb}`, body);
@@ -181,6 +189,13 @@ export default function MigrationCenterPage() {
               <label className="block">
                 <span className="font-semibold text-slate-600">Label</span>
                 <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. QuickBooks export 2026-09" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="block">
+                <span className="font-semibold text-slate-600">Migration mode</span>
+                <select value={migrationMode} onChange={(e) => setMigrationMode(e.target.value as "full_detail" | "cutover")} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+                  <option value="full_detail">Full detail — import all history</option>
+                  <option value="cutover">Cutover — open documents + opening balances only</option>
+                </select>
               </label>
               <label className="block">
                 <span className="font-semibold text-slate-600">Opening balance date (optional)</span>
@@ -229,7 +244,10 @@ export default function MigrationCenterPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="font-bold text-slate-900">{selected.label || selected.sourceSystem}</h3>
-                    <p className="text-xs text-slate-500">Batch {selected.id.slice(0, 8)}… · {selected.sourceSystem}</p>
+                    <p className="text-xs text-slate-500">
+                      Batch {selected.id.slice(0, 8)}… · {selected.sourceSystem} · {selected.migrationMode === "cutover" ? "cutover" : "full detail"}
+                      {selected.exceptionSignature ? ` · exceptions signed by ${selected.exceptionSignature}` : ""}
+                    </p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_STYLE[selected.status] ?? ""}`}>{selected.status}</span>
                 </div>
@@ -277,6 +295,25 @@ export default function MigrationCenterPage() {
                   >
                     Download error report
                   </a>
+                  <a
+                    href={`${apiBase()}/imports/migration/batches/${selected.id}/exception-report.csv`}
+                    className="rounded-xl border border-slate-300 px-3 py-2 font-bold text-slate-600"
+                  >
+                    Exception report
+                  </a>
+                  {(selected.status === "reconciled" || selected.status === "accepted") && !selected.exceptionSignature && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        const signatureText = window.prompt("Type your full name to sign the migration exception report:");
+                        if (signatureText) void action("sign-exceptions", { signatureText });
+                      }}
+                      className="rounded-xl bg-slate-800 px-3 py-2 font-bold text-white disabled:opacity-50"
+                    >
+                      Sign exceptions
+                    </button>
+                  )}
                 </div>
 
                 {["uploaded", "inventoried", "mapped", "rejected"].includes(selected.status) && (
@@ -291,10 +328,10 @@ export default function MigrationCenterPage() {
                         Download {importType.replace("_", " ")} template
                       </a>
                       <label className="cursor-pointer rounded-xl bg-slate-800 px-3 py-2 font-bold text-white">
-                        Upload file
+                        Upload file or ZIP
                         <input
                           type="file"
-                          accept=".csv,.xlsx"
+                          accept=".csv,.xlsx,.zip"
                           className="hidden"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
@@ -306,6 +343,7 @@ export default function MigrationCenterPage() {
                     </div>
                     <p className="mt-2 text-xs text-slate-500">
                       Upload order: accounts → customers/vendors → products → invoices/bills → payments → deposits → opening balances.
+                      A ZIP export package is expanded automatically — member names must start with the import type (e.g. invoices.csv, bill_payments.xlsx); other files are kept as attachments.
                     </p>
                   </div>
                 )}
@@ -318,6 +356,7 @@ export default function MigrationCenterPage() {
                     <tr className="text-xs uppercase tracking-wide text-slate-400">
                       <th className="py-2">File</th>
                       <th>Type</th>
+                      <th>Disposition</th>
                       <th>Rows</th>
                       <th>Valid</th>
                       <th>Invalid</th>
@@ -329,6 +368,22 @@ export default function MigrationCenterPage() {
                       <tr key={f.id} className="border-t border-slate-100">
                         <td className="py-2 font-semibold text-slate-700">{f.fileName}</td>
                         <td>{f.importType}</td>
+                        <td>
+                          <span
+                            title={f.dispositionNote ?? undefined}
+                            className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                              f.disposition === "imported"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : f.disposition === "archived"
+                                  ? "bg-slate-100 text-slate-600"
+                                  : f.disposition === "unsupported"
+                                    ? "bg-rose-100 text-rose-700"
+                                    : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {f.disposition}
+                          </span>
+                        </td>
                         <td>{f.rowCount}</td>
                         <td className="text-emerald-700">{f.validCount}</td>
                         <td className={f.invalidCount > 0 ? "font-bold text-rose-600" : ""}>{f.invalidCount}</td>
@@ -336,7 +391,7 @@ export default function MigrationCenterPage() {
                       </tr>
                     ))}
                     {(selected.files ?? []).length === 0 && (
-                      <tr><td colSpan={6} className="py-4 text-center text-slate-400">No files uploaded yet.</td></tr>
+                      <tr><td colSpan={7} className="py-4 text-center text-slate-400">No files uploaded yet.</td></tr>
                     )}
                   </tbody>
                 </table>
