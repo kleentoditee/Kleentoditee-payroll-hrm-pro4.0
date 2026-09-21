@@ -29,6 +29,52 @@ const CAN_VIEW = [
 
 const CAN_EDIT = [Role.platform_owner, Role.hr_admin, Role.payroll_admin] as const;
 
+const SEES_ALL_STAFF = [Role.platform_owner, Role.hr_admin, Role.payroll_admin, Role.finance_admin] as const;
+
+/**
+ * Batch 19: operations/site managers see only authorized staff — their direct
+ * reports plus themselves. Returns null when the caller is unrestricted; an
+ * empty set fails closed (manager login with no linked employee record).
+ */
+async function managerScopeIds(c: { get(key: "roles"): Role[]; get(key: "userId"): string }): Promise<Set<string> | null> {
+  const roles = c.get("roles");
+  if (roles.some((r) => (SEES_ALL_STAFF as readonly Role[]).includes(r))) return null;
+  if (!roles.includes(Role.operations_manager) && !roles.includes(Role.site_supervisor)) return null;
+  const user = await prisma.user.findUnique({ where: { id: c.get("userId") }, select: { employeeId: true } });
+  if (!user?.employeeId) return new Set<string>();
+  const reports = await prisma.employee.findMany({
+    where: { OR: [{ managerId: user.employeeId }, { id: user.employeeId }] },
+    select: { id: true }
+  });
+  return new Set(reports.map((r) => r.id));
+}
+
+/** Validate Batch 19 assignment FKs from a create/update body (org-scoped). */
+async function assignmentData(body: Record<string, unknown>): Promise<{ data: Record<string, unknown>; error?: string }> {
+  const data: Record<string, unknown> = {};
+  const fields = [
+    ["departmentId", "department", "Department"],
+    ["positionId", "position", "Position"],
+    ["costCentreId", "costCentre", "Cost centre"],
+    ["locationId", "location", "Location"],
+    ["workScheduleId", "workSchedule", "Work schedule"],
+    ["managerId", "employee", "Manager"]
+  ] as const;
+  for (const [field, model, label] of fields) {
+    const raw = body[field];
+    if (raw === undefined) continue;
+    if (raw === null || raw === "") {
+      data[field] = null;
+      continue;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const found = await (prisma as any)[model].findFirst({ where: { id: String(raw) }, select: { id: true } });
+    if (!found) return { data, error: `${label} not found in this organization.` };
+    data[field] = String(raw);
+  }
+  return { data };
+}
+
 /** Public base URL of the employee-tracker app (no trailing slash). Used for share links only. */
 function employeeTrackerPublicBase(): string {
   return (process.env.EMPLOYEE_TRACKER_PUBLIC_URL ?? "http://localhost:3001").replace(/\/$/, "");
@@ -282,9 +328,11 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/employees", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const q = (c.req.query("q") ?? "").trim();
     const status = c.req.query("status") === "archived" ? "archived" : "current";
+    const scope = await managerScopeIds(c);
     const items = await prisma.employee.findMany({
       where: {
         active: status === "current",
+        ...(scope ? { id: { in: [...scope] } } : {}),
         ...(q
           ? {
             OR: [
@@ -305,6 +353,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .get("/employees/:id/tracker-share", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const id = c.req.param("id");
+    const shareScope = await managerScopeIds(c);
+    if (shareScope && !shareScope.has(id)) {
+      return c.json({ error: "Not found" }, 404);
+    }
     const row = await prisma.employee.findUnique({ where: { id }, select: { id: true, phone: true } });
     if (!row) {
       return c.json({ error: "Not found" }, 404);
@@ -331,6 +383,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .get("/employees/:id/documents", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const id = c.req.param("id");
+    const docsScope = await managerScopeIds(c);
+    if (docsScope && !docsScope.has(id)) {
+      return c.json({ error: "Not found" }, 404);
+    }
     const row = await prisma.employee.findUnique({ where: { id }, select: { id: true } });
     if (!row) {
       return c.json({ error: "Not found" }, 404);
@@ -440,6 +496,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/employees/:id/documents/:docId/file", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const eid = c.req.param("id");
     const docId = c.req.param("docId");
+    const fileScope = await managerScopeIds(c);
+    if (fileScope && !fileScope.has(eid)) {
+      return c.json({ error: "Not found" }, 404);
+    }
     const doc = await prisma.employeeDocument.findFirst({
       where: { id: docId, employeeId: eid, deletedAt: null }
     });
@@ -469,6 +529,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .get("/employees/:id/profile-photo", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const eid = c.req.param("id");
+    const photoScope = await managerScopeIds(c);
+    if (photoScope && !photoScope.has(eid)) {
+      return c.json({ error: "Not found" }, 404);
+    }
     const employee = await prisma.employee.findUnique({ where: { id: eid }, select: { profilePhotoPath: true } });
     if (!employee?.profilePhotoPath) {
       return c.json({ error: "No profile photo" }, 404);
@@ -517,6 +581,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
   })
   .get("/employees/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const id = c.req.param("id");
+    const scope = await managerScopeIds(c);
+    if (scope && !scope.has(id)) {
+      return c.json({ error: "Not found" }, 404);
+    }
     const row = await prisma.employee.findUnique({
       where: { id },
       include: {
@@ -590,6 +658,10 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       }
       numericValues[field] = value;
     }
+    const createAssignment = await assignmentData(body);
+    if (createAssignment.error) {
+      return c.json({ error: createAssignment.error }, 400);
+    }
     const requestedActive = body.active !== undefined ? Boolean(body.active) : true;
     const row = await prisma.employee.create({
       data: {
@@ -627,7 +699,8 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
         payrollTaxExemptionEnabled:
           body.payrollTaxExemptionEnabled === undefined ? true : Boolean(body.payrollTaxExemptionEnabled),
         notes: String(body.notes ?? ""),
-        templateId
+        templateId,
+        ...createAssignment.data
       },
       include: { template: true, documents: true, linkedUser: { select: { email: true, status: true } } }
     });
@@ -730,6 +803,14 @@ export const peopleRoutes = new Hono<{ Variables: AuthVariables }>()
       }
       data.templateId = templateId;
     }
+    const assignment = await assignmentData(body);
+    if (assignment.error) {
+      return c.json({ error: assignment.error }, 400);
+    }
+    if (assignment.data.managerId === id) {
+      return c.json({ error: "An employee cannot be their own manager." }, 400);
+    }
+    Object.assign(data, assignment.data);
     if (body.socialSecurityNumber !== undefined) {
       data.socialSecurityNumber = String(body.socialSecurityNumber);
     }

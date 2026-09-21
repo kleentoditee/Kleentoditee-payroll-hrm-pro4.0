@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "tsx --test src/lib/payroll-utils.test.ts src/lib/payroll-calc.test.ts src/lib/payroll-service.test.ts src/lib/statutory-config.test.ts src/lib/statutory-forms.test.ts src/lib/official-statutory-pdf.test.ts src/lib/password-reset.test.ts src/lib/quickbooks-accounting-import.test.ts src/lib/work-time.test.ts src/env.test.ts src/lib/document-storage.test.ts src/lib/auth-cookies.test.ts src/lib/payroll-ytd-import.test.ts src/lib/payroll-reports.test.ts src/lib/leave.test.ts src/lib/gl-posting.test.ts src/lib/min-wage.test.ts src/lib/payroll-parallel.test.ts src/lib/org-resolution.test.ts src/lib/org-scope.test.ts src/lib/bank-statements.test.ts src/lib/financial-statements.test.ts src/lib/email.test.ts src/lib/migration-import.test.ts",
+    "test": "tsx --test src/lib/payroll-utils.test.ts src/lib/payroll-calc.test.ts src/lib/payroll-service.test.ts src/lib/statutory-config.test.ts src/lib/statutory-forms.test.ts src/lib/official-statutory-pdf.test.ts src/lib/password-reset.test.ts src/lib/quickbooks-accounting-import.test.ts src/lib/work-time.test.ts src/env.test.ts src/lib/document-storage.test.ts src/lib/auth-cookies.test.ts src/lib/payroll-ytd-import.test.ts src/lib/payroll-reports.test.ts src/lib/leave.test.ts src/lib/gl-posting.test.ts src/lib/min-wage.test.ts src/lib/payroll-parallel.test.ts src/lib/org-resolution.test.ts src/lib/org-scope.test.ts src/lib/bank-statements.test.ts src/lib/financial-statements.test.ts src/lib/email.test.ts src/lib/migration-import.test.ts src/lib/hr-structure.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
