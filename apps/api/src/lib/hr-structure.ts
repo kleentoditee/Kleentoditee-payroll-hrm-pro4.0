@@ -193,19 +193,21 @@ export async function addContract(employeeId: string, input: ContractInput, acto
       }
     });
 
-    // Re-sync current assignment from the contract in force today.
+    // Re-sync current assignment from the contract in force today. Null fields
+    // mean "not specified on this contract" — never clobber an existing value
+    // with null (same rule as the pay snapshot fields below).
     const all = await tx.employmentContract.findMany({ where: { employeeId } });
     const current = currentContract(all, new Date());
     if (current && current.id === contract.id) {
       await tx.employee.update({
         where: { id: employeeId },
         data: {
-          departmentId: current.departmentId,
-          positionId: current.positionId,
-          costCentreId: current.costCentreId,
-          locationId: current.locationId,
-          workScheduleId: current.workScheduleId,
-          managerId: current.managerId,
+          ...(current.departmentId ? { departmentId: current.departmentId } : {}),
+          ...(current.positionId ? { positionId: current.positionId } : {}),
+          ...(current.costCentreId ? { costCentreId: current.costCentreId } : {}),
+          ...(current.locationId ? { locationId: current.locationId } : {}),
+          ...(current.workScheduleId ? { workScheduleId: current.workScheduleId } : {}),
+          ...(current.managerId ? { managerId: current.managerId } : {}),
           ...(current.basePayType ? { basePayType: current.basePayType } : {}),
           ...(current.dailyRate != null ? { dailyRate: current.dailyRate } : {}),
           ...(current.hourlyRate != null ? { hourlyRate: current.hourlyRate } : {}),
