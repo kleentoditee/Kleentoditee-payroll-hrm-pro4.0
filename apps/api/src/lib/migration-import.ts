@@ -731,6 +731,25 @@ export async function validateBatch(batchId: string) {
     include: { rows: { orderBy: { rowIndex: "asc" } } }
   });
 
+  // Re-validation: rows a PREVIOUS validateBatch call invalidated carry the
+  // "validation" marker in destinationType. Reset those so fixing the org
+  // data (e.g. adding a missing account) lets the batch recover; rows that
+  // failed structural checks at inventory time keep their verdict — the
+  // source file itself must be fixed and re-uploaded for those.
+  await prisma.accountingImportRow.updateMany({
+    where: { file: { batchId }, status: "invalid", destinationType: "validation" },
+    data: { status: "valid", errorMessage: "", destinationType: "" }
+  });
+  for (const f of files) {
+    for (const r of f.rows) {
+      if (r.status === "invalid" && r.destinationType === "validation") {
+        r.status = "valid";
+        r.errorMessage = "";
+        r.destinationType = "";
+      }
+    }
+  }
+
   // Org-side lookup sets (org-scoped by the tenant middleware).
   const [orgCustomers, orgSuppliers, orgAccounts, orgProducts, orgInvoices] = await Promise.all([
     prisma.customer.findMany({ select: { displayName: true } }),
@@ -776,7 +795,10 @@ export async function validateBatch(batchId: string) {
   const knownSourceRefs = new Set(existingRefs.map((r) => r.sourceId));
 
   const invalidate = async (rowId: string, message: string) => {
-    await prisma.accountingImportRow.update({ where: { id: rowId }, data: { status: "invalid", errorMessage: message } });
+    await prisma.accountingImportRow.update({
+      where: { id: rowId },
+      data: { status: "invalid", errorMessage: message, destinationType: "validation" }
+    });
   };
 
   const requireAccount = async (rowId: string, name: string | undefined, fallback: string, fieldLabel: string) => {
@@ -1452,6 +1474,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                   status: deriveStatus(inv.status, inv.total, nextPaid)
                 }
               });
+              expectedAr = round2(expectedAr - application.amount);
             }
             await postJournal(tx, buildPaymentReceivedJournal(payment, accounts.accountsReceivable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "Payment", payment.id);
