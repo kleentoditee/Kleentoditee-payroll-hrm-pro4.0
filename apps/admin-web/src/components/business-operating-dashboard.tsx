@@ -2,6 +2,7 @@
 
 import { CREATE_ACTIONS } from "@/lib/dashboard-nav";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 const sw = 2.5;
@@ -318,6 +319,12 @@ const primaryActionClass =
 const secondaryActionClass =
   "inline-flex items-center rounded-xl border border-slate-300 bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition-all duration-[180ms] ease-out hover:-translate-y-px hover:scale-[1.01] hover:border-[#D6EEF0] hover:bg-[#F1F8F8] hover:shadow-md active:scale-[0.985] motion-reduce:transform-none motion-reduce:transition-none";
 
+function greetingForHour(hour: number): string {
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 function friendlyAdminName(name: string, email: string): string {
   const trimmedName = name.trim();
   const lowerName = trimmedName.toLowerCase();
@@ -488,6 +495,11 @@ export function BusinessOperatingDashboard({
   userEmail: string;
 }) {
   const createItems = CREATE_ACTIONS.filter((a) => !a.roles || a.roles.some((r) => userRoles.includes(r)));
+  // Greeting depends on the viewer's local hour — compute after mount to avoid a hydration mismatch.
+  const [greeting, setGreeting] = useState("Hello");
+  useEffect(() => {
+    setGreeting(greetingForHour(new Date().getHours()));
+  }, []);
   const pendingTimesheets = data.submittedTime ?? 0;
   const activeEmployees = data.activeEmployees ?? 0;
   const draftRuns = data.draftRuns ?? 0;
@@ -544,7 +556,7 @@ export function BusinessOperatingDashboard({
             <div className="min-w-0 w-full flex-1">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">Payroll Plus HRM</p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-                Good afternoon, {friendlyAdminName(userName, userEmail)}!
+                {greeting}, {friendlyAdminName(userName, userEmail)}!
               </h1>
               <p className="mt-3 text-base leading-relaxed text-slate-600">
                 Your payroll, HR, time, and finance workspace is ready.

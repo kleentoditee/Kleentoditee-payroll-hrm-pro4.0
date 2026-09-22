@@ -28,6 +28,9 @@ const links = [
   { href: "/dashboard/reports", label: "Reports" }
 ] as const;
 
+/** Exact-or-descendant match so /finance/journal doesn't also match /finance/journals. */
+const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
+
 export default function FinanceLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -37,7 +40,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       <label className="block text-sm font-medium text-slate-700 sm:hidden">
         Finance page
         <select
-          value={links.find((item) => pathname.startsWith(item.href))?.href ?? links[0].href}
+          value={links.find((item) => isActive(pathname, item.href))?.href ?? links[0].href}
           onChange={(e) => router.push(e.target.value)}
           className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2.5"
         >
@@ -46,7 +49,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       </label>
       <nav aria-label="Finance section" className="hidden flex-wrap gap-2 border-b border-slate-200 pb-3 sm:flex">
         {links.map(({ href, label }) => {
-          const active = pathname.startsWith(href);
+          const active = isActive(pathname, href);
           return (
             <Link
               key={href}

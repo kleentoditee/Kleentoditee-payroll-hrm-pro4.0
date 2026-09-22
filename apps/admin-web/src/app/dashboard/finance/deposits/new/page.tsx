@@ -89,7 +89,7 @@ export default function NewDepositPage() {
   const total = useMemo(
     () => round2(
       available.filter((p) => picked.has(p.id)).reduce((s, p) => s + p.amount, 0) +
-        adhoc.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+        adhoc.filter((l) => l.accountId && Number(l.amount) > 0).reduce((s, l) => s + Number(l.amount), 0)
     ),
     [picked, available, adhoc]
   );
@@ -347,7 +347,7 @@ export default function NewDepositPage() {
           </button>
           <button
             type="submit"
-            disabled={submitting || picked.size === 0}
+            disabled={submitting || (picked.size === 0 && !adhoc.some((l) => l.accountId && Number(l.amount) > 0))}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Saving…" : "Save draft deposit"}

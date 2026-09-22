@@ -2,7 +2,7 @@
 
 import { apiBase, readApiJson } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type EmployeeOpt = { id: string; fullName: string };
 
@@ -20,7 +20,11 @@ type Row = {
 };
 
 function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // Local calendar date: toISOString converts to UTC and rolls the date
+  // forward after 8pm in UTC-4 (BVI).
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 export default function ScheduleAdminPage() {
@@ -46,22 +50,32 @@ export default function ScheduleAdminPage() {
     return from && to && from <= to;
   }, [from, to]);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!rangeOk) {
       return;
     }
     setErr(null);
-    const res = await fetch(
-      `${apiBase()}/admin/schedules?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-      { headers: { ...authHeaders() } }
-    );
-    const { data, rawText } = await readApiJson<{ items?: Row[]; error?: string }>(res);
-    if (!res.ok) {
-      setErr(data?.error ?? rawText ?? `Error ${res.status}`);
-      setRows([]);
-      return;
+    const seq = ++loadSeq.current;
+    try {
+      const res = await fetch(
+        `${apiBase()}/admin/schedules?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+        { headers: { ...authHeaders() } }
+      );
+      const { data, rawText } = await readApiJson<{ items?: Row[]; error?: string }>(res);
+      if (seq !== loadSeq.current) return; // superseded by a newer range request
+      if (!res.ok) {
+        setErr(data?.error ?? rawText ?? `Error ${res.status}`);
+        setRows([]);
+        return;
+      }
+      setRows(data?.items ?? []);
+    } catch {
+      if (seq === loadSeq.current) {
+        setErr("Network error");
+        setRows([]);
+      }
     }
-    setRows(data?.items ?? []);
   }, [from, to, rangeOk]);
 
   useEffect(() => {
@@ -99,28 +113,32 @@ export default function ScheduleAdminPage() {
       return;
     }
     setSaving(true);
-    const res = await fetch(`${apiBase()}/admin/schedules`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({
-        employeeId: form.employeeId,
-        date: form.date,
-        startTime: form.startTime || null,
-        endTime: form.endTime || null,
-        locationName: form.locationName.trim(),
-        locationAddress: form.locationAddress.trim() || null,
-        notes: form.notes.trim() || null
-      })
-    });
-    const { data, rawText } = await readApiJson<{ error?: string }>(res);
-    if (!res.ok) {
-      setFormErr((data as { error?: string })?.error ?? rawText);
+    try {
+      const res = await fetch(`${apiBase()}/admin/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          employeeId: form.employeeId,
+          date: form.date,
+          startTime: form.startTime || null,
+          endTime: form.endTime || null,
+          locationName: form.locationName.trim(),
+          locationAddress: form.locationAddress.trim() || null,
+          notes: form.notes.trim() || null
+        })
+      });
+      const { data, rawText } = await readApiJson<{ error?: string }>(res);
+      if (!res.ok) {
+        setFormErr((data as { error?: string })?.error ?? rawText);
+        return;
+      }
+      setForm((f) => ({ ...f, locationName: "", locationAddress: "", notes: "" }));
+      await load();
+    } catch {
+      setFormErr("Network error");
+    } finally {
       setSaving(false);
-      return;
     }
-    setSaving(false);
-    setForm((f) => ({ ...f, locationName: "", locationAddress: "", notes: "" }));
-    await load();
   }
 
   async function cancelRow(id: string) {
@@ -128,16 +146,21 @@ export default function ScheduleAdminPage() {
       return;
     }
     setBusyId(id);
-    const res = await fetch(`${apiBase()}/admin/schedules/${id}/cancel`, {
-      method: "POST",
-      headers: { ...authHeaders() }
-    });
-    setBusyId(null);
-    if (!res.ok) {
-      const { data, rawText } = await readApiJson<{ error?: string }>(res);
-      setErr((data as { error?: string })?.error ?? rawText);
+    try {
+      const res = await fetch(`${apiBase()}/admin/schedules/${id}/cancel`, {
+        method: "POST",
+        headers: { ...authHeaders() }
+      });
+      if (!res.ok) {
+        const { data, rawText } = await readApiJson<{ error?: string }>(res);
+        setErr((data as { error?: string })?.error ?? rawText);
+      }
+      await load();
+    } catch {
+      setErr("Network error");
+    } finally {
+      setBusyId(null);
     }
-    await load();
   }
 
   return (

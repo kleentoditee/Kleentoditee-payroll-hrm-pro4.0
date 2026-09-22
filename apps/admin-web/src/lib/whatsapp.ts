@@ -7,12 +7,15 @@
 /** Normalize a stored phone to wa.me digits; null when unusable. */
 export function waMeDigits(phone: string | null | undefined): string | null {
   if (!phone) return null;
-  let digits = phone.replace(/[^\d+]/g, "");
-  if (digits.startsWith("+")) digits = digits.slice(1);
+  const trimmed = phone.trim();
+  // Accept only an optional leading plus with phone-format characters;
+  // extensions and other text are rejected instead of silently mangled.
+  if (!/^\+?[0-9][0-9\s().-]*$/.test(trimmed)) return null;
+  let digits = trimmed.replace(/\D/g, "");
   // BVI default: local 7-digit numbers get the +1-284 country/area code.
   if (digits.length === 7) digits = `1284${digits}`;
   if (digits.length === 10 && digits.startsWith("284")) digits = `1${digits}`;
-  return digits.length >= 10 ? digits : null;
+  return digits.length >= 10 && digits.length <= 15 ? digits : null;
 }
 
 /** Direct chat link: https://wa.me/<number>?text=... */

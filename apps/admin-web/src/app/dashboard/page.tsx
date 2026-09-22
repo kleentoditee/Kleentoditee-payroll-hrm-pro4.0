@@ -29,9 +29,8 @@ function bucketAuditLast7Days(
 ): AuditDay[] {
   const dayKeys: string[] = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
+    // bucket on the UTC calendar to match createdAt.slice(0, 10) from the API
+    const key = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
     dayKeys.push(key);
   }
   const counts = new Map<string, number>();

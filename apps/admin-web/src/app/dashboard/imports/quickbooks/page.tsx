@@ -2,7 +2,7 @@
 
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 type ImportType =
   | "customers"
@@ -103,6 +103,7 @@ export default function QuickBooksAccountingImportPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const previewSeq = useRef(0);
 
   const selected = importCards.find((card) => card.id === importType) ?? importCards[0];
   const activeStep = result ? 4 : plan?.validationErrors.length ? 3 : plan ? 2 : fileContent ? 1 : 0;
@@ -142,6 +143,7 @@ export default function QuickBooksAccountingImportPage() {
       setError("Choose an Excel or CSV accounting export file first.");
       return;
     }
+    const seq = ++previewSeq.current;
     setBusy(true);
     setError(null);
     setResult(null);
@@ -157,11 +159,12 @@ export default function QuickBooksAccountingImportPage() {
         })
       });
       const data = await readApiData<{ plan: Plan }>(res);
+      if (seq !== previewSeq.current) return; // a newer preview superseded this one
       setPlan(data.plan);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not preview this accounting export file.");
+      if (seq === previewSeq.current) setError(e instanceof Error ? e.message : "Could not preview this accounting export file.");
     } finally {
-      setBusy(false);
+      if (seq === previewSeq.current) setBusy(false);
     }
   }
 

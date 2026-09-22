@@ -1,6 +1,6 @@
 "use client";
 
-import { apiBase, apiFetch, readApiData } from "@/lib/api";
+import { apiFetch, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useCallback, useEffect, useState } from "react";
 
@@ -141,6 +141,33 @@ export default function PayrollReportsPage() {
     );
   }, [year, loadSummary]);
 
+  const [downloading, setDownloading] = useState(false);
+
+  async function downloadRegisterCsv() {
+    if (!runId) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/payroll/reports/register?runId=${encodeURIComponent(runId)}&format=csv`, {
+        headers: { ...authHeaders() }
+      });
+      if (!res.ok) throw new Error(`CSV download failed (${res.status}).`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `payroll-register-${runId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not download the register CSV.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-[1.35rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -180,12 +207,14 @@ export default function PayrollReportsPage() {
             </label>
           </div>
           {register && (
-            <a
-              href={`${apiBase()}/payroll/reports/register?runId=${encodeURIComponent(runId)}&format=csv`}
-              className="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white"
+            <button
+              type="button"
+              onClick={downloadRegisterCsv}
+              disabled={downloading}
+              className="rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              Download register CSV
-            </a>
+              {downloading ? "Preparing CSV…" : "Download register CSV"}
+            </button>
           )}
         </div>
 
@@ -223,8 +252,8 @@ export default function PayrollReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {register.lines.map((line) => (
-                    <tr key={line.employeeName} className="border-b border-slate-100">
+                  {register.lines.map((line, lineIndex) => (
+                    <tr key={`${line.employeeName}-${lineIndex}`} className="border-b border-slate-100">
                       <td className="py-2 pr-3">
                         {line.employeeName}
                         <span className="block text-xs text-slate-400">

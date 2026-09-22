@@ -19,9 +19,12 @@ export default function FirstOwnerSetupPage() {
   useEffect(() => {
     let cancelled = false;
     void fetch(`${apiBase()}/auth/setup-status`)
-      .then((res) => res.json())
-      .then((data: { needsSetup?: boolean }) => {
-        if (!cancelled && !data.needsSetup) router.replace("/login");
+      .then(async (res) => {
+        const { data } = await readApiJson<{ needsSetup?: boolean }>(res);
+        return { ok: res.ok, data };
+      })
+      .then(({ ok, data }) => {
+        if (!cancelled && ok && data?.needsSetup !== true) router.replace("/login");
       })
       .catch(() => {
         if (!cancelled) setError("Cannot reach the payroll server.");

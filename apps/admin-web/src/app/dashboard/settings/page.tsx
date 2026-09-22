@@ -73,6 +73,8 @@ export default function SettingsPage() {
     approvedBy: string;
   } | null>(null);
 
+  const [loaded, setLoaded] = useState(false);
+
   function applySettings(row: OrgSettings) {
     setCompanyLegalName(row.companyLegalName ?? "");
     setCompanyAddress(row.companyAddress ?? "");
@@ -93,6 +95,7 @@ export default function SettingsPage() {
     setPayrollTaxEmployerClass(row.payrollTaxEmployerClass ?? "NOT_SET");
     setPayrollTaxAnnualExemption(String(row.payrollTaxAnnualExemption ?? 10000));
     setStatutoryEffectiveYear(String(row.statutoryEffectiveYear ?? 2026));
+    setLoaded(true);
   }
 
   useEffect(() => {
@@ -153,6 +156,27 @@ export default function SettingsPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Validate numeric fields before any Number() conversion - a blank input
+    // would otherwise silently save as 0 (e.g. wiping the SSB rate).
+    const numericInputs: Array<[string, string]> = [
+      ["Pay day of month", defaultPayDayOfMonth],
+      ["SSB employee rate", ssbEmployeeRate],
+      ["SSB employer rate", ssbEmployerRate],
+      ["SSB annual ceiling", ssbAnnualCeiling],
+      ["NHI employee rate", nhiEmployeeRate],
+      ["NHI employer rate", nhiEmployerRate],
+      ["NHI annual ceiling", nhiAnnualCeiling],
+      ["Payroll tax employee rate", payrollTaxEmployeeRate],
+      ["Payroll tax annual exemption", payrollTaxAnnualExemption],
+      ["Statutory effective year", statutoryEffectiveYear]
+    ];
+    for (const [label, value] of numericInputs) {
+      if (!String(value).trim() || !Number.isFinite(Number(value))) {
+        setError(`${label} must be a valid number.`);
+        setSuccess(null);
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -198,6 +222,23 @@ export default function SettingsPage() {
 
   if (loading) {
     return <p className="text-sm text-slate-600">Loading…</p>;
+  }
+
+
+  if (!loaded) {
+    // Load failed: never render the form on hardcoded defaults — a save here
+    // would overwrite live statutory settings with placeholders.
+    return (
+      <div className="mx-auto max-w-3xl">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <p className="font-semibold">Settings could not be loaded.</p>
+          <p className="mt-1">{error ?? "Load failed."}</p>
+          <button type="button" onClick={() => window.location.reload()} className="mt-2 rounded-md bg-rose-700 px-3 py-1.5 text-white">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

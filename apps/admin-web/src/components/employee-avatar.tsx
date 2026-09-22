@@ -13,7 +13,8 @@ type Props = {
 };
 
 function initials(n: string): string {
-  const p = n.trim().split(/\s+/);
+  // Filter empty tokens so blank names return "?" instead of "".
+  const p = n.trim().split(/\s+/).filter(Boolean);
   if (p.length === 0) {
     return "?";
   }

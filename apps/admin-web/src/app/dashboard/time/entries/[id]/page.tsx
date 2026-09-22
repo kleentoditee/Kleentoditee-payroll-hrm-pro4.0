@@ -536,7 +536,8 @@ export default function EditTimeEntryPage() {
             <button
               type="button"
               onClick={onDelete}
-              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+              disabled={saving || locked}
+              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Delete
             </button>

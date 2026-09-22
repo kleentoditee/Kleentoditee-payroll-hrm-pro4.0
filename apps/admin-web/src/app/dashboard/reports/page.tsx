@@ -3,7 +3,7 @@
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type BalanceRow = {
   id: string;
@@ -32,7 +32,10 @@ type ReportData = {
 };
 
 function ymd(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function currency(value: number): string {
@@ -59,18 +62,23 @@ export default function ReportsHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`${apiBase()}/finance/reports/summary?from=${from}&to=${to}`, {
         headers: { ...authHeaders() }
       });
-      setData(await readApiData<ReportData>(res, "Could not load reports."));
+      const report = await readApiData<ReportData>(res, "Could not load reports.");
+      if (seq !== loadSeq.current) return; // a newer load superseded this one
+      setData(report);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load reports.");
+      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : "Could not load reports.");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [from, to]);
 

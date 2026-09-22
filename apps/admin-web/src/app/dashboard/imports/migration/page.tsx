@@ -137,6 +137,9 @@ export default function MigrationCenterPage() {
   const uploadFile = (file: File) =>
     run(async () => {
       if (!selected) return;
+      if (file.size > 50 * 1024 * 1024) {
+        throw new Error(`${file.name} is too large (limit 50 MB). Split the export and upload smaller files.`);
+      }
       const payload = await readFilePayload(file);
       await post(`/imports/migration/batches/${selected.id}/files`, {
         fileName: file.name,

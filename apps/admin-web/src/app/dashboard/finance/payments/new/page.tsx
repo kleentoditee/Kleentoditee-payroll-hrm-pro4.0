@@ -151,7 +151,8 @@ export default function RecordPaymentPage() {
         return current;
       }
       const remaining = Math.max(amountNum - appliedTotal, 0);
-      const suggested = Math.min(invoice.balance, remaining || invoice.balance);
+      // suggest only what the entered payment can still cover; no balance fallback when nothing is left
+      const suggested = Math.min(invoice.balance, remaining);
       return { ...current, [invoice.id]: suggested > 0 ? suggested.toFixed(2) : "" };
     });
   }

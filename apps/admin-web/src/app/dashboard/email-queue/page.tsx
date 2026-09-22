@@ -2,7 +2,7 @@
 
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type EmailRow = {
   id: string;
@@ -38,15 +38,20 @@ export default function EmailQueuePage() {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<string>("");
 
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const res = await fetch(`${apiBase()}/admin/email-queue${filter ? `?status=${filter}` : ""}`, {
         headers: { ...authHeaders() }
       });
-      setData(await readApiData<QueueData>(res));
+      const queue = await readApiData<QueueData>(res);
+      if (seq !== loadSeq.current) return; // a newer load superseded this one
+      setData(queue);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load email queue");
+      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : "Failed to load email queue");
     }
   }, [filter]);
 
@@ -102,6 +107,7 @@ export default function EmailQueuePage() {
             <option value="QUEUED">Queued</option>
             <option value="SENT">Sent</option>
             <option value="FAILED">Failed</option>
+            <option value="CANCELLED">Cancelled</option>
           </select>
           <button
             disabled={busy}

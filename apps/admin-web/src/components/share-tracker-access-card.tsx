@@ -49,34 +49,41 @@ export function ShareTrackerAccessCard({ employeeId, employeeName }: { employeeI
   const load = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const res = await fetch(`${apiBase()}/people/employees/${encodeURIComponent(employeeId)}/tracker-share`, {
-      headers: { ...authHeaders() }
-    });
-    if (res.ok) {
-      setErr(null);
-      setData((await res.json()) as TrackerShareRes);
-    } else {
-      const raw = (await res.json().catch(() => ({}))) as { error?: string };
-      if (res.status === 404) {
-        setErr("Employee not found.");
-        setData(null);
+    try {
+      const res = await fetch(`${apiBase()}/people/employees/${encodeURIComponent(employeeId)}/tracker-share`, {
+        headers: { ...authHeaders() }
+      });
+      if (res.ok) {
+        setErr(null);
+        setData((await res.json()) as TrackerShareRes);
       } else {
-        setErr(raw.error ?? `Could not load tracker link (${res.status}).`);
-        const fb = publicFallbackBase();
-        if (fb) {
-          setData({
-            employeeId,
-            phone: null,
-            loginUrl: `${fb}/login`,
-            appHomeUrl: `${fb}/`,
-            linkedUser: null
-          });
-        } else {
+        const raw = (await res.json().catch(() => ({}))) as { error?: string };
+        if (res.status === 404) {
+          setErr("Employee not found.");
           setData(null);
+        } else {
+          setErr(raw.error ?? `Could not load tracker link (${res.status}).`);
+          const fb = publicFallbackBase();
+          if (fb) {
+            setData({
+              employeeId,
+              phone: null,
+              loginUrl: `${fb}/login`,
+              appHomeUrl: `${fb}/`,
+              linkedUser: null
+            });
+          } else {
+            setData(null);
+          }
         }
       }
+    } catch {
+      // network failure — fetch rejected before any response
+      setErr("Cannot reach the payroll server. Check that the API is running and try again.");
+      setData(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [employeeId]);
 
   useEffect(() => {

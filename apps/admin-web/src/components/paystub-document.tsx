@@ -114,7 +114,12 @@ export function PaystubDocument({
             <div className="flex items-center justify-between"><dt>NHI</dt><dd>{formatMoney(payload.deductions.nhi)}</dd></div>
             <div className="flex items-center justify-between"><dt>SSB</dt><dd>{formatMoney(payload.deductions.ssb)}</dd></div>
             <div className="flex items-center justify-between"><dt>Payroll tax</dt><dd>{formatMoney(payload.deductions.payrollTax)}</dd></div>
+            {payload.deductions.incomeTax ? <div className="flex items-center justify-between"><dt>Income tax</dt><dd>{formatMoney(payload.deductions.incomeTax)}</dd></div> : null}
             <div className="flex items-center justify-between"><dt>Manual deductions</dt><dd>{formatMoney(payload.deductions.manual)}</dd></div>
+            {payload.deductions.advance ? <div className="flex items-center justify-between"><dt>Advance repayment</dt><dd>{formatMoney(payload.deductions.advance)}</dd></div> : null}
+            {payload.deductions.withdrawal ? <div className="flex items-center justify-between"><dt>Withdrawal</dt><dd>{formatMoney(payload.deductions.withdrawal)}</dd></div> : null}
+            {payload.deductions.loan ? <div className="flex items-center justify-between"><dt>Loan repayment</dt><dd>{formatMoney(payload.deductions.loan)}</dd></div> : null}
+            {payload.deductions.other ? <div className="flex items-center justify-between"><dt>Other deductions</dt><dd>{formatMoney(payload.deductions.other)}</dd></div> : null}
             <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900"><dt>Total deductions</dt><dd>{formatMoney(payload.deductions.total)}</dd></div>
           </dl>
         </section>

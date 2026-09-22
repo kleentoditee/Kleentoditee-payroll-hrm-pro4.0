@@ -155,7 +155,11 @@ export default function HrStructurePage() {
       if (kind === "departments" && parentId) body.parentId = parentId;
       if (kind === "locations" && address) body.address = address;
       if (kind === "work-schedules") {
-        const perDay = Number(weeklyHours) / 5;
+        const weekly = Number(weeklyHours);
+        if (!Number.isFinite(weekly) || weekly <= 0) {
+          throw new Error("Weekly hours must be a positive number before creating a work schedule.");
+        }
+        const perDay = weekly / 5;
         body.pattern = ["mon", "tue", "wed", "thu", "fri"].map((day) => ({ day, hours: perDay }));
       }
       await send("POST", `/hr-structure/masters/${kind}`, body);

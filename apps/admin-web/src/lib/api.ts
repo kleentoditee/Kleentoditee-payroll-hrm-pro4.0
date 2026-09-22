@@ -81,11 +81,27 @@ export function installCsrfFetchGuard(): void {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const url =
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const isApiCall = url.startsWith(apiBase()) || url.startsWith("/__kleentoditee_api");
+    const isApiCall = (() => {
+      // Compare by origin + path so relative and absolute forms of the API
+      // base both match (bare startsWith breaks when one side is relative).
+      try {
+        const u = new URL(url, window.location.origin);
+        const base = new URL(apiBase(), window.location.origin);
+        const basePath = base.pathname.replace(/\/$/, "");
+        if (u.origin === base.origin && (u.pathname === basePath || u.pathname.startsWith(basePath + "/"))) {
+          return true;
+        }
+      } catch {
+        // fall through to the prefix check
+      }
+      return url.startsWith(apiBase()) || url.startsWith("/__kleentoditee_api");
+    })();
     if (isApiCall && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")) {
       const csrf = getCsrfCookie();
       if (csrf) {
-        const headers = new Headers(init?.headers);
+        // Preserve headers already present on a Request input when init
+        // carries none of its own.
+        const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
         headers.set("x-kt-csrf", csrf);
         init = { ...init, headers };
       }
