@@ -63,8 +63,12 @@ export type RenderedEmail = { subject: string; text: string; html: string };
 const SHELL = (inner: string) =>
   `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#14313a;max-width:560px">${inner}</div>`;
 
+/** Escape dynamic values before embedding in HTML markup/attributes. */
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 const BUTTON = (href: string, label: string) =>
-  `<a href="${href}" style="display:inline-block;background:#0f5965;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px;font-weight:700">${label}</a>`;
+  `<a href="${escapeHtml(href)}" style="display:inline-block;background:#0f5965;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px;font-weight:700">${escapeHtml(label)}</a>`;
 
 export function renderPasswordResetEmail(resetUrl: string): RenderedEmail {
   return {

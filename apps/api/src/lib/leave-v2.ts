@@ -468,13 +468,24 @@ export async function convertOvertimeToLeave(
   policyId: string,
   hours: number,
   note: string,
-  actorUserId?: string
+  actorUserId?: string,
+  idempotencyKey?: string
 ) {
   const policy = await prisma.leavePolicy.findFirst({ where: { id: policyId, active: true } });
   if (!policy) throw new Error("Leave policy not found.");
   if (policy.basis !== "hours") throw new Error("Time-for-time requires an hours-basis policy.");
   if (!Number.isFinite(hours) || hours <= 0 || hours > 500) throw new Error("Hours must be between 0 and 500.");
-  const sourceId = `tft-${employeeId}-${policyId}-${Date.now()}`;
+  const sourceId = idempotencyKey?.trim()
+    ? `tft-${idempotencyKey.trim()}`
+    : `tft-${employeeId}-${policyId}-${Date.now()}`;
+  // Retry-safe: a caller-supplied key makes repeated submissions return the
+  // original event instead of double-crediting.
+  if (idempotencyKey?.trim()) {
+    const existing = await prisma.leaveEvent.findFirst({
+      where: { sourceType: "time_for_time", sourceId, employeeId, policyId }
+    });
+    if (existing) return existing;
+  }
   return prisma.leaveEvent.create({
     data: {
       orgId: requireOrgId(),

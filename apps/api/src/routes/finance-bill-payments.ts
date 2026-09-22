@@ -16,6 +16,7 @@ import {
   reverseJournal
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -232,6 +233,9 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
       if (isUniqueConstraintError(e)) {
         return c.json({ error: "Bill payment number or application already exists." }, 409);
       }
+      if (e instanceof PeriodClosedError) {
+        return c.json({ error: e.message }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not record bill payment." }, 400);
     }
   })
@@ -303,26 +307,31 @@ export const financeBillPaymentsRoutes = new Hono<{ Variables: AuthVariables }>(
       return c.json({ error: "Not found" }, 404);
     }
 
-    await prisma.$transaction(async (tx) => {
-      for (const app of before.applications) {
-        const nextAmountPaid = round2(app.bill.amountPaid - app.amount);
-        const nextBalance = round2(app.bill.total - nextAmountPaid);
-        await tx.bill.update({
-          where: { id: app.billId },
-          data: {
-            amountPaid: nextAmountPaid,
-            balance: nextBalance,
-            status: deriveBillStatus(app.bill.status, app.bill.total, nextAmountPaid)
-          }
+    try {
+      await prisma.$transaction(async (tx) => {
+        for (const app of before.applications) {
+          const nextAmountPaid = round2(app.bill.amountPaid - app.amount);
+          const nextBalance = round2(app.bill.total - nextAmountPaid);
+          await tx.bill.update({
+            where: { id: app.billId },
+            data: {
+              amountPaid: nextAmountPaid,
+              balance: nextBalance,
+              status: deriveBillStatus(app.bill.status, app.bill.total, nextAmountPaid)
+            }
+          });
+        }
+        await reverseJournal(tx, "bill_payment", id, {
+          date: new Date(),
+          memo: `Supplier payment ${before.number} deleted — reversal`,
+          createdByUserId: c.get("userId")
         });
-      }
-      await reverseJournal(tx, "bill_payment", id, {
-        date: new Date(),
-        memo: `Supplier payment ${before.number} deleted — reversal`,
-        createdByUserId: c.get("userId")
+        await tx.billPayment.delete({ where: { id } });
       });
-      await tx.billPayment.delete({ where: { id } });
-    });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
 
     await writeAudit({
       actorUserId: c.get("userId"),

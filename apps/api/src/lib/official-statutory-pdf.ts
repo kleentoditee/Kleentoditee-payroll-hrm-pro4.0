@@ -51,6 +51,13 @@ function signatureBytes(dataUrl: string): Uint8Array | null {
   return match ? Buffer.from(match[1], "base64") : null;
 }
 
+/** Render-time guard for SVG previews: only a well-formed PNG data URL may
+ *  reach an <image href> (same rule as signatureBytes / settings input). */
+function safeSignatureDataUrl(dataUrl: string | null | undefined): string {
+  const value = (dataUrl ?? "").trim();
+  return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) ? value : "";
+}
+
 function drawAt(page: PDFPage, font: PDFFont, text: string, xPx: number, baselinePx: number, size = 7.5) {
   if (!text) return;
   page.drawText(text, { x: xPx * PX_SCALE, y: PAGE_HEIGHT - baselinePx * PX_SCALE, size, font, color: ink });
@@ -318,10 +325,11 @@ async function buildNhiPreview(data: FormsData, signedDate: string): Promise<str
     svgText(money(totals.contribution), 1292, 779, 11.7),
     svgText(money(totals.spouse), 1410, 779, 11.7)
   );
-  if (data.company.statutorySignatureDataUrl) {
+  const signatureDataUrl = safeSignatureDataUrl(data.company.statutorySignatureDataUrl);
+  if (signatureDataUrl) {
     const date = signedDateParts(signedDate);
     content.push(
-      `<image href="${data.company.statutorySignatureDataUrl}" x="225" y="785" width="250" height="70" preserveAspectRatio="xMidYMid meet"/>`,
+      `<image href="${signatureDataUrl}" x="225" y="785" width="250" height="70" preserveAspectRatio="xMidYMid meet"/>`,
       svgText(date.day, 575, 837, 17.5),
       svgText(date.month, 643, 837, 17.5),
       svgText(date.year, 710, 837, 17.5)
@@ -386,9 +394,10 @@ async function buildSsbPreview(data: FormsData, signedDate: string): Promise<str
         svgText(money(totals.contribution), 1333, offset + 814, 11.7),
         svgText(totals.weeks ? String(totals.weeks) : "", 1450, offset + 814, 11.7)
       );
-      if (data.company.statutorySignatureDataUrl) {
+      const ssbSignatureDataUrl = safeSignatureDataUrl(data.company.statutorySignatureDataUrl);
+      if (ssbSignatureDataUrl) {
         content.push(
-          `<image href="${data.company.statutorySignatureDataUrl}" x="255" y="${offset + 780}" width="330" height="75" preserveAspectRatio="xMidYMid meet"/>`,
+          `<image href="${ssbSignatureDataUrl}" x="255" y="${offset + 780}" width="330" height="75" preserveAspectRatio="xMidYMid meet"/>`,
           svgText(signedDateLabel(signedDate), 700, offset + 837, 17.5)
         );
       }

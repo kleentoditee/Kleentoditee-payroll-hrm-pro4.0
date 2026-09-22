@@ -16,6 +16,7 @@ import {
   reverseJournal
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -237,6 +238,9 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       if (isUniqueConstraintError(e)) {
         return c.json({ error: "Payment number or application already exists." }, 409);
       }
+      if (e instanceof PeriodClosedError) {
+        return c.json({ error: e.message }, 409);
+      }
       return c.json({ error: e instanceof Error ? e.message : "Could not record payment." }, 400);
     }
   })
@@ -431,27 +435,32 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      for (const app of before.applications) {
-        const nextAmountPaid = round2(app.invoice.amountPaid - app.amount);
-        const nextBalance = round2(app.invoice.total - nextAmountPaid);
-        await tx.invoice.update({
-          where: { id: app.invoiceId },
-          data: {
-            amountPaid: nextAmountPaid,
-            balance: nextBalance,
-            status: deriveInvoiceStatus(app.invoice.status, app.invoice.total, nextAmountPaid)
-          }
+    try {
+      await prisma.$transaction(async (tx) => {
+        for (const app of before.applications) {
+          const nextAmountPaid = round2(app.invoice.amountPaid - app.amount);
+          const nextBalance = round2(app.invoice.total - nextAmountPaid);
+          await tx.invoice.update({
+            where: { id: app.invoiceId },
+            data: {
+              amountPaid: nextAmountPaid,
+              balance: nextBalance,
+              status: deriveInvoiceStatus(app.invoice.status, app.invoice.total, nextAmountPaid)
+            }
+          });
+        }
+        // Reverse the receipt posting before removing the document.
+        await reverseJournal(tx, "payment", id, {
+          date: new Date(),
+          memo: `Payment ${before.number} deleted — reversal`,
+          createdByUserId: c.get("userId")
         });
-      }
-      // Reverse the receipt posting before removing the document.
-      await reverseJournal(tx, "payment", id, {
-        date: new Date(),
-        memo: `Payment ${before.number} deleted — reversal`,
-        createdByUserId: c.get("userId")
+        await tx.payment.delete({ where: { id } });
       });
-      await tx.payment.delete({ where: { id } });
-    });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
 
     await writeAudit({
       actorUserId: c.get("userId"),

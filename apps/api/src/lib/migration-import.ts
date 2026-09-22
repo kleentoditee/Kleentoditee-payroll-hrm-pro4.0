@@ -1057,6 +1057,17 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
         tx.supplier.findFirst({ where: { displayName: { equals: name, mode: "insensitive" } }, select: { id: true, displayName: true } });
 
       const openingEntries: Array<{ accountId: string; code: string; name: string; balance: number }> = [];
+      // Track every journal this batch posts so the trial-balance
+      // reconciliation uses THIS batch's entries exactly (never a
+      // memo/createdAt filter that can catch a concurrent batch's journals).
+      const postedJournalIds: string[] = [];
+      const postAndTrack = async (
+        ...args: Parameters<typeof postJournal>
+      ): ReturnType<typeof postJournal> => {
+        const posted = await postJournal(...args);
+        if (posted?.entryId) postedJournalIds.push(posted.entryId);
+        return posted;
+      };
       const arApCodes = new Set(["1100", "2000"]);
       // AR/AP control totals claimed by the source rows this batch actually
       // creates (reconciled against what landed below).
@@ -1160,7 +1171,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                   },
                   include: { lines: true }
                 });
-                await postJournal(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
+                await postAndTrack(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
                 await createRef(tx, batchId, batch.sourceSystem, "customer_opening", row.sourceRef, "Invoice", invoice.id);
                 expectedAr = round2(expectedAr + ob);
               }
@@ -1216,7 +1227,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                   },
                   include: { lines: true }
                 });
-                await postJournal(tx, buildBillReceivedJournal(bill, accounts.accountsPayable, accounts.taxPayable), actorUserId);
+                await postAndTrack(tx, buildBillReceivedJournal(bill, accounts.accountsPayable, accounts.taxPayable), actorUserId);
                 await createRef(tx, batchId, batch.sourceSystem, "vendor_opening", row.sourceRef, "Bill", bill.id);
                 expectedAp = round2(expectedAp + ob);
               }
@@ -1310,7 +1321,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               where: { id: invoice.id },
               data: { status: deriveStatus(TransactionStatus.open, total, amountPaid) }
             });
-            await postJournal(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
+            await postAndTrack(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, sourceRef, "Invoice", invoice.id);
             expectedAr = round2(expectedAr + round2(total - amountPaid));
             for (const gr of group.rows) {
@@ -1364,7 +1375,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               include: { lines: true }
             });
             await tx.bill.update({ where: { id: bill.id }, data: { status: deriveStatus(TransactionStatus.open, total, amountPaid) } });
-            await postJournal(tx, buildBillReceivedJournal(bill, accounts.accountsPayable, accounts.taxPayable), actorUserId);
+            await postAndTrack(tx, buildBillReceivedJournal(bill, accounts.accountsPayable, accounts.taxPayable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "Bill", bill.id);
             expectedAp = round2(expectedAp + round2(total - amountPaid));
             await markRow(tx, row, "committed", "Bill", bill.id);
@@ -1414,7 +1425,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               },
               include: { lines: true }
             });
-            await postJournal(tx, buildExpensePostedJournal(expense, accounts.taxPayable), actorUserId);
+            await postAndTrack(tx, buildExpensePostedJournal(expense, accounts.taxPayable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "Expense", expense.id);
             await markRow(tx, row, "committed", "Expense", expense.id);
             bump(type, "committed");
@@ -1476,7 +1487,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               });
               expectedAr = round2(expectedAr - application.amount);
             }
-            await postJournal(tx, buildPaymentReceivedJournal(payment, accounts.accountsReceivable), actorUserId);
+            await postAndTrack(tx, buildPaymentReceivedJournal(payment, accounts.accountsReceivable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "Payment", payment.id);
             await markRow(tx, row, "committed", "Payment", payment.id);
             bump(type, "committed");
@@ -1518,7 +1529,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               },
               include: { lines: true }
             });
-            await postJournal(
+            await postAndTrack(
               tx,
               buildDepositPostedJournal({
                 id: deposit.id,
@@ -1616,7 +1627,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               });
               expectedAp = round2(expectedAp - application.amount);
             }
-            await postJournal(tx, buildBillPaymentJournal(billPayment, accounts.accountsPayable), actorUserId);
+            await postAndTrack(tx, buildBillPaymentJournal(billPayment, accounts.accountsPayable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, row.sourceRef, "BillPayment", billPayment.id);
             await markRow(tx, row, "committed", "BillPayment", billPayment.id);
             bump(type, "committed");
@@ -1678,7 +1689,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
               },
               include: { lines: true }
             });
-            await postJournal(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
+            await postAndTrack(tx, buildInvoiceIssuedJournal(invoice, accounts.accountsReceivable, accounts.taxPayable), actorUserId);
             const payment = await tx.payment.create({
               data: {
                 orgId,
@@ -1694,7 +1705,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                 applications: { create: [{ orgId, invoiceId: invoice.id, amount: total }] }
               }
             });
-            await postJournal(tx, buildPaymentReceivedJournal(payment, accounts.accountsReceivable), actorUserId);
+            await postAndTrack(tx, buildPaymentReceivedJournal(payment, accounts.accountsReceivable), actorUserId);
             await createRef(tx, batchId, batch.sourceSystem, type, sourceRef, "Invoice", invoice.id);
             await createRef(tx, batchId, batch.sourceSystem, "sales_receipt_payment", sourceRef, "Payment", payment.id);
             for (const gr of group.rows) {
@@ -1738,7 +1749,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
                 memo: p.memo || `Journal ${key}`
               });
             }
-            const posted = await postJournal(
+            const posted = await postAndTrack(
               tx,
               {
                 sourceType: "migration_journal",
@@ -1770,7 +1781,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
             const from = (await accountByName(p.fromAccountName))!;
             const to = (await accountByName(p.toAccountName))!;
             const amount = normalizeCurrency(p.amount);
-            const posted = await postJournal(
+            const posted = await postAndTrack(
               tx,
               {
                 sourceType: "migration_transfer",
@@ -1805,7 +1816,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
       // One opening-balance journal per batch, offset to Opening Balance Equity.
       let openingJournalId = "";
       if (openingEntries.length) {
-        const posted = await postJournal(
+        const posted = await postAndTrack(
           tx,
           buildOpeningBalanceJournal({ batchId, asOfDate: asOf, openingBalanceEquityAccountId: accounts.openingBalanceEquity, entries: openingEntries }),
           actorUserId
@@ -1826,7 +1837,7 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
         });
       }
       const journals = await tx.journalEntry.findMany({
-        where: { memo: { contains: "migration" }, createdAt: { gte: batch.createdAt } },
+        where: { id: { in: postedJournalIds } },
         include: { lines: true }
       });
       const debits = round2(journals.flatMap((j) => j.lines).reduce((s, l) => s + Number(l.debit), 0));

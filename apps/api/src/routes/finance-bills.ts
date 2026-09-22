@@ -13,6 +13,7 @@ import {
   reverseJournal
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -320,16 +321,22 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.total <= 0) {
       return c.json({ error: "Bill total must be greater than zero before receiving." }, 409);
     }
-    const row = await prisma.$transaction(async (tx) => {
-      const updated = await tx.bill.update({
-        where: { id },
-        data: { status: TransactionStatus.open, receivedAt: new Date() }
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.bill.update({
+          where: { id },
+          data: { status: TransactionStatus.open, receivedAt: new Date() }
+        });
+        const withLines = await tx.bill.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+        const accounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildBillReceivedJournal(withLines, accounts.accountsPayable, accounts.taxPayable), c.get("userId"));
+        return updated;
       });
-      const withLines = await tx.bill.findUniqueOrThrow({ where: { id }, include: { lines: true } });
-      const accounts = await ensureControlAccounts(tx);
-      await postJournal(tx, buildBillReceivedJournal(withLines, accounts.accountsPayable, accounts.taxPayable), c.get("userId"));
-      return updated;
-    });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "bill.receive",
@@ -355,18 +362,24 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
         409
       );
     }
-    const row = await prisma.$transaction(async (tx) => {
-      const updated = await tx.bill.update({
-        where: { id },
-        data: { status: TransactionStatus.void, voidedAt: new Date() }
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.bill.update({
+          where: { id },
+          data: { status: TransactionStatus.void, voidedAt: new Date() }
+        });
+        await reverseJournal(tx, "bill", id, {
+          date: new Date(),
+          memo: `Bill ${before.number} voided — reversal`,
+          createdByUserId: c.get("userId")
+        });
+        return updated;
       });
-      await reverseJournal(tx, "bill", id, {
-        date: new Date(),
-        memo: `Bill ${before.number} voided — reversal`,
-        createdByUserId: c.get("userId")
-      });
-      return updated;
-    });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "bill.void",

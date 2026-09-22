@@ -15,12 +15,19 @@ export async function isAttemptBlocked(key: string, maxAttempts: number, now = n
 }
 
 export async function recordAttempt(key: string, windowMs: number, now = new Date()): Promise<void> {
-  const resetAt = new Date(now.getTime() + windowMs);
-  await prisma.authRateLimit.upsert({
-    where: { key },
-    create: { key, count: 1, resetAt },
-    update: { count: { increment: 1 }, resetAt }
-  });
+  // Fixed window: an active bucket keeps its original resetAt (repeated
+  // attempts must not extend the window); an expired bucket starts fresh.
+  const existing = await prisma.authRateLimit.findUnique({ where: { key } });
+  if (existing && existing.resetAt.getTime() > now.getTime()) {
+    await prisma.authRateLimit.update({ where: { key }, data: { count: { increment: 1 } } });
+  } else {
+    const resetAt = new Date(now.getTime() + windowMs);
+    await prisma.authRateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, resetAt },
+      update: { count: 1, resetAt }
+    });
+  }
   // Opportunistic prune of expired buckets (older than 1 hour past reset).
   await prisma.authRateLimit.deleteMany({
     where: { resetAt: { lt: new Date(now.getTime() - 60 * 60 * 1000) } }

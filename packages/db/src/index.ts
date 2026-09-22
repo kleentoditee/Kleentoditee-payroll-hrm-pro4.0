@@ -196,21 +196,27 @@ export function applyOrgScope(operation: string, args: Args | undefined, orgId: 
       return withOrgWhere(args, orgId);
     case "create": {
       const next: Args = { ...(args ?? {}) };
+      // Deep-clone so orgId injection never mutates the caller's payload
+      // (callers may retry or reuse payload objects across scopes).
+      next.data = structuredClone(next.data);
       injectCreate(next.data, orgId);
       return next;
     }
     case "createMany": {
       const next: Args = { ...(args ?? {}) };
+      next.data = structuredClone(next.data);
       injectCreate(next.data, orgId);
       return next;
     }
     case "createManyAndReturn": {
       const next: Args = { ...(args ?? {}) };
+      next.data = structuredClone(next.data);
       injectCreate(next.data, orgId);
       return next;
     }
     case "upsert": {
       const next = withOrgWhere(args, orgId);
+      next.create = structuredClone(next.create);
       injectCreate(next.create, orgId);
       return next;
     }

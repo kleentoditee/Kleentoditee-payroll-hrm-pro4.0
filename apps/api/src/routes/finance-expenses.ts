@@ -13,6 +13,7 @@ import {
   reverseJournal
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -301,16 +302,22 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.total <= 0) {
       return c.json({ error: "Expense total must be greater than zero before posting." }, 409);
     }
-    const row = await prisma.$transaction(async (tx) => {
-      const updated = await tx.expense.update({
-        where: { id },
-        data: { status: TransactionStatus.open, postedAt: new Date() }
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.expense.update({
+          where: { id },
+          data: { status: TransactionStatus.open, postedAt: new Date() }
+        });
+        const withLines = await tx.expense.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+        const accounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildExpensePostedJournal(withLines, accounts.taxPayable), c.get("userId"));
+        return updated;
       });
-      const withLines = await tx.expense.findUniqueOrThrow({ where: { id }, include: { lines: true } });
-      const accounts = await ensureControlAccounts(tx);
-      await postJournal(tx, buildExpensePostedJournal(withLines, accounts.taxPayable), c.get("userId"));
-      return updated;
-    });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "expense.post",
@@ -330,18 +337,24 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.status === TransactionStatus.void) {
       return c.json({ error: "Expense is already void." }, 409);
     }
-    const row = await prisma.$transaction(async (tx) => {
-      const updated = await tx.expense.update({
-        where: { id },
-        data: { status: TransactionStatus.void, voidedAt: new Date() }
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.expense.update({
+          where: { id },
+          data: { status: TransactionStatus.void, voidedAt: new Date() }
+        });
+        await reverseJournal(tx, "expense", id, {
+          date: new Date(),
+          memo: `Expense ${before.number} voided — reversal`,
+          createdByUserId: c.get("userId")
+        });
+        return updated;
       });
-      await reverseJournal(tx, "expense", id, {
-        date: new Date(),
-        memo: `Expense ${before.number} voided — reversal`,
-        createdByUserId: c.get("userId")
-      });
-      return updated;
-    });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "expense.void",

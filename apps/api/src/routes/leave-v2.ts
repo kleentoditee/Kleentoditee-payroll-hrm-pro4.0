@@ -188,7 +188,8 @@ export const leaveV2Routes = new Hono<{ Variables: AuthVariables }>()
         String(body.policyId ?? ""),
         Number(body.hours),
         String(body.note ?? ""),
-        c.get("userId")
+        c.get("userId"),
+        body.idempotencyKey !== undefined ? String(body.idempotencyKey) : undefined
       );
       await writeAudit({ actorUserId: c.get("userId"), action: "leave.time_for_time", entityType: "LeaveEvent", entityId: event.id, after: event });
       return c.json({ event }, 201);

@@ -27,7 +27,14 @@ export function parseCookies(header: string | undefined): Record<string, string>
     const name = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
     if (name) {
-      out[name] = decodeURIComponent(value);
+      // Malformed percent-encoding (e.g. a raw "%") must not throw here —
+      // a bad cookie would otherwise 500 every request. Fall back to the raw
+      // value; unknown/garbled sessions simply fail authentication.
+      try {
+        out[name] = decodeURIComponent(value);
+      } catch {
+        out[name] = value;
+      }
     }
   }
   return out;

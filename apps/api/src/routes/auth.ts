@@ -489,7 +489,9 @@ export const authRoutes = new Hono<{ Variables: AuthVariables }>()
       entityType: "User",
       entityId: userId
     });
-    c.header("Set-Cookie", expiredCookieValue(SESSION_COOKIE, true), { append: true });
+    // Match issueSessionCookies: in non-secure (dev/http) contexts a Secure
+    // expired cookie is ignored by browsers and the session survives logout.
+    c.header("Set-Cookie", expiredCookieValue(SESSION_COOKIE, cookiesSecure()), { append: true });
     c.header("Set-Cookie", expiredCookieValue(CSRF_COOKIE, false), { append: true });
     return c.json({ ok: true });
   })
