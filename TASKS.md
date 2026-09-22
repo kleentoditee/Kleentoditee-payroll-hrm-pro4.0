@@ -394,3 +394,8 @@ wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.
 - **Disclosed dependency finding (risk-accepted, not a blocker):** `npm audit --omit=dev` = 4 high, all inside Prisma's own tree (`deepmerge-ts` via `@prisma/config`; `mysql2` advisories — product is Postgres-only, driver never loaded). Fix needs breaking `prisma@6.19.3`; scheduled as a dedicated post-release upgrade batch with gate re-run.
 - Owner actions before announcing: configure production SMTP; schedule Prisma major upgrade; publish release notes with the onboarding shape + unaudited-statement positioning.
 - Shared files touched: none (docs only; `tmp/` gitignored).
+
+### Go-live package (2026-09-21)
+
+- `docs/RELEASE-NOTES-1.0.md`: subscriber-facing release notes — gate evidence table, operator-provisions-org onboarding shape, full feature list, honest positioning (unaudited statements, gazette-holiday verification, generic bank file layout, SMTP fail-safe), post-release items (Prisma major, QBO/Xero pull adapters, job costing).
+- `docs/GO-LIVE-CHECKLIST.md`: owner run-book in four phases — production environment (SMTP, bootstrap, backups), the REAL QuickBooks cutover (Gate C steps with live data + human signatures + QB read-only month-end cycle), per-subscriber onboarding, standing obligations (gazette holidays, monthly restore drill, Prisma batch).
