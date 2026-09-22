@@ -77,9 +77,10 @@ Gate C rehearsed this end-to-end (32/32). Repeat with live data:
 - [ ] **Keep the "management-prepared, unaudited" positioning** in any
   customer-facing material — do not represent outputs as audited or filed.
 - [ ] **Review the email queue** after any SMTP change (Admin → Email queue).
-- [ ] **Scheduled maintenance batch**: Prisma major upgrade (`prisma@6.19.3`,
-  breaking) to clear the 4 disclosed audit advisories — run the full gate
-  suite after it. See `docs/GATE-D-ACCEPTANCE-2026-09-21.md` §Known finding.
+- [ ] **Scheduled maintenance batch**: Prisma line upgrade to clear the 4
+  disclosed audit advisories — run the full gate suite after it. See
+  `docs/GATE-D-ACCEPTANCE-2026-09-21.md` §Known finding. (Audit's mechanical
+  `prisma@6.19.3` suggestion predates this repo's Prisma 7.10 line.)
 - [ ] **Monthly**: restore drill on the latest backup; confirm off-machine
   retention of `deployment-backups/`.
 

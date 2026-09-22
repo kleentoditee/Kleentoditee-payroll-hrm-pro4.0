@@ -71,10 +71,12 @@ shape, recorded here explicitly so the release notes state it honestly.
 through Prisma's bundled dependencies: `deepmerge-ts` stack exhaustion (inside
 `@prisma/config`, config-loading surface) and `mysql2` auth-downgrade/zlib
 advisories (Prisma's MySQL driver — **this product runs Postgres only; the
-mysql2 code path is never loaded**). Remediation requires the breaking
-`prisma@6.19.3` major upgrade. **Decision:** risk-accepted for subscriber
-release on the Postgres-only deployment; scheduled as post-release maintenance
-(upgrade Prisma major in a dedicated batch with a full migration + gate re-run).
+mysql2 code path is never loaded**). (Audit's mechanical suggestion of
+`prisma@6.19.3` predates this repo's Prisma 7.10 line — remediation means
+tracking the current Prisma line, not downgrading.) **Decision:** risk-accepted
+for subscriber release on the Postgres-only deployment; scheduled as
+post-release maintenance (Prisma line upgrade in a dedicated batch with a full
+migration + gate re-run).
 
 ## 4. Placeholders, dead controls, developer notes, compliance claims
 

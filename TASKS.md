@@ -391,7 +391,7 @@ wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.
 - Security/readiness: unauthenticated 401; HttpOnly session cookie; self-registration closed after bootstrap (403); tenant isolation — subscriber 403 on foreign org (uniform, no enumeration); `/health` 200; email transport monitor honest (SMTP unconfigured in dev; production invites hard-fail 503 by design); invite email persisted QUEUED (no silent drop); api tsc + admin-web tsc + employee-tracker tsc clean; **209/209 unit tests PASS**.
 - Placeholders/claims sweeps: zero TODO/FIXME/coming-soon/not-implemented hits in `apps/**/src` (one false-positive substring); zero unsupported compliance claims — only the correct "management-prepared, unaudited" disclaimers.
 - Product-shape finding (documented, intended): self-service register is the per-deployment first-user bootstrap only; new subscriber orgs are operator-provisioned and their first admin joins via email invitation. Release notes must state this.
-- **Disclosed dependency finding (risk-accepted, not a blocker):** `npm audit --omit=dev` = 4 high, all inside Prisma's own tree (`deepmerge-ts` via `@prisma/config`; `mysql2` advisories — product is Postgres-only, driver never loaded). Fix needs breaking `prisma@6.19.3`; scheduled as a dedicated post-release upgrade batch with gate re-run.
+- **Disclosed dependency finding (risk-accepted, not a blocker):** `npm audit --omit=dev` = 4 high, all inside Prisma's own tree (`deepmerge-ts` via `@prisma/config`; `mysql2` advisories — product is Postgres-only, driver never loaded). Scheduled as a dedicated post-release Prisma line upgrade batch with gate re-run (audit's mechanical `prisma@6.19.3` suggestion predates this repo's Prisma 7.10 line).
 - Owner actions before announcing: configure production SMTP; schedule Prisma major upgrade; publish release notes with the onboarding shape + unaudited-statement positioning.
 - Shared files touched: none (docs only; `tmp/` gitignored).
 
@@ -399,3 +399,9 @@ wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.
 
 - `docs/RELEASE-NOTES-1.0.md`: subscriber-facing release notes — gate evidence table, operator-provisions-org onboarding shape, full feature list, honest positioning (unaudited statements, gazette-holiday verification, generic bank file layout, SMTP fail-safe), post-release items (Prisma major, QBO/Xero pull adapters, job costing).
 - `docs/GO-LIVE-CHECKLIST.md`: owner run-book in four phases — production environment (SMTP, bootstrap, backups), the REAL QuickBooks cutover (Gate C steps with live data + human signatures + QB read-only month-end cycle), per-subscriber onboarding, standing obligations (gazette holidays, monthly restore drill, Prisma batch).
+
+### Merge prep (2026-09-21)
+
+- PR #6 opened: `cleanup/project-workflow-audit` → `codex/consolidate-live-build` — https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/6
+- Divergence check: integration branch 0 commits ahead, cleanup branch 62 ahead — clean merge, no conflicts possible. 317 files, +55,889/−3,983.
+- Doc correction folded in: audit's mechanical `prisma@6.19.3` suggestion predates the repo's Prisma 7.10 line; remediation wording fixed in Gate D record, release notes, checklist, and this board.

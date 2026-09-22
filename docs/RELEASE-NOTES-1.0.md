@@ -84,9 +84,10 @@ Readiness is evidence-backed end to end:
 - **Dependency maintenance**: `npm audit` reports 4 high-severity advisories,
   all inside Prisma's bundled dependencies (`deepmerge-ts` via `@prisma/config`,
   and `mysql2` — this product runs PostgreSQL only and never loads the MySQL
-  driver). Remediation requires the breaking `prisma@6.19.3` upgrade and is
-  scheduled as a dedicated post-release maintenance batch with a full gate
-  re-run. Risk-assessed as not exploitable on this deployment.
+  driver). Remediation is a Prisma line upgrade scheduled as a dedicated
+  post-release maintenance batch with a full gate re-run (audit's mechanical
+  `prisma@6.19.3` suggestion predates this repo's Prisma 7.10 line).
+  Risk-assessed as not exploitable on this deployment.
 - **QuickBooks/Xero API pull adapters** (direct sync instead of file upload)
   remain future work; file-based migration is the supported path.
 - **Project/job costing masters**: archived `projects` imports are retained as
