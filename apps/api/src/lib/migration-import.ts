@@ -1793,7 +1793,12 @@ export async function commitBatch(batchId: string, actorUserId?: string) {
 
         await tx.accountingImportFile.update({
           where: { id: file.id },
-          data: { committedCount: fileCommitted, disposition: typeDisposition(type) === "importable" ? "imported" : file.disposition }
+          // Preserve terminal dispositions set at inventory (archived /
+          // unsupported / cutover-excluded): only files still "pending"
+          // (genuinely importable) are stamped "imported". Marking
+          // cutover-excluded history "imported" would falsify the audit
+          // trail even though nothing was posted.
+          data: { committedCount: fileCommitted, disposition: file.disposition === "pending" ? "imported" : file.disposition }
         });
       }
 
