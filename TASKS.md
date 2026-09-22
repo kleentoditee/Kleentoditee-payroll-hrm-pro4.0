@@ -381,3 +381,16 @@ wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.
 - GATE C evidence (`tmp/gate-c-verify.mjs`, live, two orgs): **32/32 PASS**.
 - Shared files touched: none outside `apps/api/src/lib/migration-import.ts` + docs; `tmp/` artifacts are gitignored.
 - Remaining for the REAL cutover (owner actions): run the identical steps with the actual QuickBooks export, Owner + Accounting Reviewer sign the acceptance record, keep QuickBooks read-only for one month-end cycle, fresh backup + restore drill on cutover day.
+
+### Gate D results (2026-09-21) — subscriber release readiness (GATE D COMPLETE)
+
+- Acceptance record: `docs/GATE-D-ACCEPTANCE-2026-09-21.md`. Gate evidence `tmp/gate-d-verify.mjs` (live, two orgs): **53/53 PASS**, zero residue.
+- Clean subscriber journey, product APIs only (no developer DB writes after the org shell): operator invite → subscriber sets own password → own login; `PUT /settings/org` BVI statutory setup (CLASS_1); chart of accounts (1000 Checking, 6100 Wages); single + bulk-CSV employee onboarding; bank payout PII fields; time submit → bulk approve; pay period → run → rebuild → finalize → BVI bank payout export (**file TOTAL 6,457.50 == approved net exactly**) → downloadable → mark-paid; bank statement CSV preview/commit → reconciliation cleared + completed **in balance (difference 0)**, completed session refuses changes (409); trial balance debits == credits (14,035 == 14,035), P&L, balance sheet, AR/AP aging all render.
+- Backup/restore: fresh backup `deployment-backups/20260921-230351` (dump sha256 `f0b2b697…`, files zip `72e4a0af…`); restore drill PASSED (Users 2, Employees 7, Organizations 1).
+- Migration optional + gated: journey never used it; commit before validate/approve → 400, approve before validate → 400.
+- Security/readiness: unauthenticated 401; HttpOnly session cookie; self-registration closed after bootstrap (403); tenant isolation — subscriber 403 on foreign org (uniform, no enumeration); `/health` 200; email transport monitor honest (SMTP unconfigured in dev; production invites hard-fail 503 by design); invite email persisted QUEUED (no silent drop); api tsc + admin-web tsc + employee-tracker tsc clean; **209/209 unit tests PASS**.
+- Placeholders/claims sweeps: zero TODO/FIXME/coming-soon/not-implemented hits in `apps/**/src` (one false-positive substring); zero unsupported compliance claims — only the correct "management-prepared, unaudited" disclaimers.
+- Product-shape finding (documented, intended): self-service register is the per-deployment first-user bootstrap only; new subscriber orgs are operator-provisioned and their first admin joins via email invitation. Release notes must state this.
+- **Disclosed dependency finding (risk-accepted, not a blocker):** `npm audit --omit=dev` = 4 high, all inside Prisma's own tree (`deepmerge-ts` via `@prisma/config`; `mysql2` advisories — product is Postgres-only, driver never loaded). Fix needs breaking `prisma@6.19.3`; scheduled as a dedicated post-release upgrade batch with gate re-run.
+- Owner actions before announcing: configure production SMTP; schedule Prisma major upgrade; publish release notes with the onboarding shape + unaudited-statement positioning.
+- Shared files touched: none (docs only; `tmp/` gitignored).
