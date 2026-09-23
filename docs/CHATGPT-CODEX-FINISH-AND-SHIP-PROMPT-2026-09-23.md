@@ -1,9 +1,9 @@
 # ChatGPT Codex Finish-and-Ship Prompt
 
-**Created:** 2026-09-23  
-**Repository:** `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0`  
-**Current branch:** `kimi/finance-nav-responsive-rebuild`  
-**Current committed HEAD at review:** `4f1fdb156ffa46c68bd917efc91be84632e5d6dd`  
+**Created:** 2026-09-23
+**Repository:** `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0`
+**Current branch:** `kimi/finance-nav-responsive-rebuild`
+**Current committed HEAD at review:** `4f1fdb156ffa46c68bd917efc91be84632e5d6dd`
 **Completed implementation HEAD:** `8031a6d` (documentation commit follows)
 **Purpose:** Recover Kimi K3's unfinished finance/navigation batch, finish it safely, and continue through evidence-based release readiness in bounded Codex work sessions.
 
@@ -281,7 +281,7 @@ Update this section at the end of every Codex work window.
 | Batch 2: Sales responsive | Complete | `432de6e` | Typecheck, lint, build, and visual checks passed | None |
 | Batch 3: Banking/accounting responsive | Complete | `671644b` | Real bank paging, phone records, bounded tables, and balance semantics verified | None |
 | Batch 4: Browser/accessibility proof | Complete | `9bb29b8`, `8031a6d` | 48/48 full E2E; 16 finance tests at 390/768/1024/1440; every mapped route visited | None |
-| Batch 5: Documentation and merge | In progress | Documentation commit pending | Full local release gate passed; working tree clean before this update | Push branch, open PR, attach review, and record URL |
+| Batch 5: Documentation and merge | Local work complete | `2c726b2` plus follow-up record | Full local release gate passed | Obtain explicit owner approval for the GitHub destination, then push, open the PR, attach review, and record its URL |
 | Batch 6: Production ship blockers | Owner action required | — | Readiness endpoint works locally; migrations current | Configure SMTP, rehearse backup/restore, deploy reviewed branch, perform real QB cutover |
 
 ### Current Working-Tree Handoff
@@ -296,4 +296,5 @@ Update this section at the end of every Codex work window.
 - **Database state:** 19 migrations; schema up to date; readiness database check passes
 - **Configuration blockers:** SMTP not configured; document storage is local; production deployment and backup/restore are not yet rehearsed
 - **Security audit:** Four high transitive Prisma-chain advisories are disclosed and deferred to the separate breaking-upgrade batch
-- **Next single action:** Commit these records, push the branch, open the pull request into `codex/consolidate-live-build`, and complete review before merge
+- **Remote state:** GitHub CLI is not authenticated. The attempted Git push was blocked by the computer's external-source safety control pending explicit owner approval for `https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0.git`.
+- **Next single action:** After explicit owner approval, push this branch, open the pull request into `codex/consolidate-live-build`, and complete review before merge
