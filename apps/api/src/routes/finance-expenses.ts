@@ -14,7 +14,7 @@ import {
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { PeriodClosedError } from "../lib/fiscal-periods.js";
-import { paginationMeta, parseListQuery } from "../lib/pagination.js";
+import { caseInsensitiveContains, paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -112,11 +112,11 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
       ...(list.q
         ? {
             OR: [
-              { number: { contains: list.q } },
-              { reference: { contains: list.q } },
-              { payeeName: { contains: list.q } },
-              { memo: { contains: list.q } },
-              { supplier: { displayName: { contains: list.q } } }
+              { number: caseInsensitiveContains(list.q) },
+              { reference: caseInsensitiveContains(list.q) },
+              { payeeName: caseInsensitiveContains(list.q) },
+              { memo: caseInsensitiveContains(list.q) },
+              { supplier: { displayName: caseInsensitiveContains(list.q) } }
             ]
           }
         : {})

@@ -76,6 +76,13 @@ export async function supplierSummaries(supplierIds: string[]): Promise<Map<stri
 
 const THIRTY_DAYS_MS = 30 * 86_400_000;
 
+export function recentPaymentDateRange(now: Date) {
+  return {
+    gte: new Date(now.getTime() - THIRTY_DAYS_MS),
+    lte: now
+  };
+}
+
 export interface CustomerOverviewSummary {
   /** Sum of balance over all open/partial invoices. */
   totalOpenBalance: number;
@@ -148,7 +155,7 @@ export async function customerOverviewSummary(now = new Date()): Promise<Custome
       _count: { _all: true }
     }),
     prisma.payment.aggregate({
-      where: { paymentDate: { gte: new Date(now.getTime() - THIRTY_DAYS_MS) } },
+      where: { paymentDate: recentPaymentDateRange(now) },
       _sum: { amount: true }
     })
   ]);
@@ -172,7 +179,7 @@ export async function supplierOverviewSummary(now = new Date()): Promise<Supplie
       _count: { _all: true }
     }),
     prisma.billPayment.aggregate({
-      where: { paymentDate: { gte: new Date(now.getTime() - THIRTY_DAYS_MS) } },
+      where: { paymentDate: recentPaymentDateRange(now) },
       _sum: { amount: true }
     })
   ]);

@@ -4,7 +4,7 @@ import { Hono, type Context } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { assertPeriodOpen, fiscalPeriodLabel, PeriodClosedError } from "../lib/fiscal-periods.js";
 import { round2, sourceKey, validateJournalLines } from "../lib/gl-posting.js";
-import { paginationMeta, parseListQuery } from "../lib/pagination.js";
+import { caseInsensitiveContains, paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [Role.platform_owner, Role.finance_admin, Role.payroll_admin, Role.hr_admin] as const;
@@ -60,7 +60,7 @@ export const financeJournalRoutes = new Hono<{ Variables: AuthVariables }>()
       ...(status && ["draft", "approved", "posted", "void"].includes(status)
         ? { status: status as JournalEntryStatus }
         : {}),
-      ...(list.q ? { memo: { contains: list.q } } : {})
+      ...(list.q ? { memo: caseInsensitiveContains(list.q) } : {})
     };
     if (!list.paginated) {
       const items = await prisma.journalEntry.findMany({

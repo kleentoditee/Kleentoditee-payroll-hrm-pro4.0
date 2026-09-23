@@ -9,7 +9,7 @@ import {
   supplierOverviewSummary,
   supplierSummaries
 } from "../lib/finance-summary.js";
-import { paginationMeta, parseListQuery } from "../lib/pagination.js";
+import { caseInsensitiveContains, paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -59,7 +59,7 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         ? { active: activeParam === "true" }
         : {}),
       ...(list.q
-        ? { OR: [{ code: { contains: list.q } }, { name: { contains: list.q } }] }
+        ? { OR: [{ code: caseInsensitiveContains(list.q) }, { name: caseInsensitiveContains(list.q) }] }
         : {})
     };
     if (!list.paginated) {
@@ -256,9 +256,9 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
       ...(list.q
         ? {
             OR: [
-              { displayName: { contains: list.q } },
-              { companyName: { contains: list.q } },
-              { email: { contains: list.q } }
+              { displayName: caseInsensitiveContains(list.q) },
+              { companyName: caseInsensitiveContains(list.q) },
+              { email: caseInsensitiveContains(list.q) }
             ]
           }
         : {})
@@ -420,9 +420,9 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
       ...(list.q
         ? {
             OR: [
-              { displayName: { contains: list.q } },
-              { companyName: { contains: list.q } },
-              { email: { contains: list.q } }
+              { displayName: caseInsensitiveContains(list.q) },
+              { companyName: caseInsensitiveContains(list.q) },
+              { email: caseInsensitiveContains(list.q) }
             ]
           }
         : {})
@@ -579,9 +579,9 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
       ...(list.q
         ? {
             OR: [
-              { sku: { contains: list.q } },
-              { name: { contains: list.q } },
-              { description: { contains: list.q } }
+              { sku: caseInsensitiveContains(list.q) },
+              { name: caseInsensitiveContains(list.q) },
+              { description: caseInsensitiveContains(list.q) }
             ]
           }
         : {})

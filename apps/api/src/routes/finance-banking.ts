@@ -21,8 +21,8 @@ import {
   type StatementMapping
 } from "../lib/bank-statements.js";
 import { round2 } from "../lib/finance-transactions.js";
-import { loadAccountLedgerPage } from "../lib/gl-reports.js";
-import { paginationMeta, parseListQuery } from "../lib/pagination.js";
+import { loadAccountLedger, loadAccountLedgerPage } from "../lib/gl-reports.js";
+import { caseInsensitiveContains, paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -368,7 +368,12 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
       ...(status ? { status: status as BankStatementLineStatus } : {}),
       ...(!status && !includeExcluded ? { status: { not: BankStatementLineStatus.excluded } } : {}),
       ...(list.q
-        ? { OR: [{ description: { contains: list.q } }, { reference: { contains: list.q } }] }
+        ? {
+            OR: [
+              { description: caseInsensitiveContains(list.q) },
+              { reference: caseInsensitiveContains(list.q) }
+            ]
+          }
         : {})
     };
     const include = { import: { select: { id: true, fileName: true, bankAccountId: true } } };
@@ -802,15 +807,18 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
     const accountId = c.req.param("accountId");
     const from = parseDate(c.req.query("from"));
     const to = parseDate(c.req.query("to"));
-    const page = list.paginated ? list.page : 1;
-    const pageSize = list.paginated ? list.pageSize : 100;
-    const skip = list.paginated ? list.skip : 0;
-    const ledger = await loadAccountLedgerPage(accountId, {
-      from: from ?? undefined,
-      to: to ?? undefined,
-      skip,
-      take: pageSize
-    });
+    const pagedLedger = list.paginated
+      ? await loadAccountLedgerPage(accountId, {
+          from: from ?? undefined,
+          to: to ?? undefined,
+          skip: list.skip,
+          take: list.pageSize
+        })
+      : null;
+    const legacyLedger = list.paginated
+      ? null
+      : await loadAccountLedger(accountId, from ?? undefined, to ?? undefined);
+    const ledger = pagedLedger ?? legacyLedger;
     if (!ledger) return c.json({ error: "Account not found." }, 404);
 
     const mapSource = (sourceType: string): MatchEntityType | null => {
@@ -847,8 +855,11 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
         reconciled: entityType ? reconciledSet.has(`${entityType}:${row.sourceId}`) : false
       };
     });
+    if (!list.paginated || !pagedLedger) {
+      return c.json({ register: { ...ledger, rows } });
+    }
     return c.json({
-      register: { ...ledger, rows },
-      pagination: paginationMeta(page, pageSize, ledger.total)
+      register: { ...pagedLedger, rows },
+      pagination: paginationMeta(list.page, list.pageSize, pagedLedger.total)
     });
   });

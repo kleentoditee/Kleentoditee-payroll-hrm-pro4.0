@@ -5,7 +5,7 @@ import { buildDepositPostedJournal, ensureControlAccounts, postJournal, reverseJ
 import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { MONEY_TOLERANCE, nextDepositNumber, round2 } from "../lib/finance-transactions.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
-import { paginationMeta, parseListQuery } from "../lib/pagination.js";
+import { caseInsensitiveContains, paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -50,7 +50,9 @@ export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
     const statusFilter = status === "draft" || status === "open" || status === "void" ? status : null;
     const where: Prisma.DepositWhereInput = {
       ...(statusFilter ? { status: statusFilter } : {}),
-      ...(list.q ? { OR: [{ number: { contains: list.q } }, { memo: { contains: list.q } }] } : {})
+      ...(list.q
+        ? { OR: [{ number: caseInsensitiveContains(list.q) }, { memo: caseInsensitiveContains(list.q) }] }
+        : {})
     };
     const include = {
       bankAccount: { select: { id: true, code: true, name: true } },

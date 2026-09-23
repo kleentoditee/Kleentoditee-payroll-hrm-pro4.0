@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  recentPaymentDateRange,
   toCustomerOverviewSummary,
   toSupplierOverviewSummary
 } from "./finance-summary.js";
+
+test("recent-payment range includes the prior 30 days but excludes future payments", () => {
+  const now = new Date("2026-09-23T12:30:00.000Z");
+  assert.deepEqual(recentPaymentDateRange(now), {
+    gte: new Date("2026-08-24T12:30:00.000Z"),
+    lte: now
+  });
+});
 
 test("customer overview summary maps and rounds aggregates", () => {
   const out = toCustomerOverviewSummary({

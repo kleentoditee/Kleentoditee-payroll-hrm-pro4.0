@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   DEFAULT_PAGE_SIZE,
   PAGE_SIZE_OPTIONS,
+  caseInsensitiveContains,
   compareByOrderBy,
   paginationMeta,
   parseListQuery,
@@ -102,10 +103,11 @@ test("sort whitelist rejects unknown fields and bad sortDir", () => {
   assert.equal(badDir.ok, false);
 });
 
-test("q is trimmed and lowercased", () => {
+test("q is trimmed without changing the user's casing", () => {
   const list = parseListQuery(query({ q: "  AcMe Corp  " }), { sortable: SORTABLE, defaultSort: DEFAULT_SORT });
   assert.ok(list.ok);
-  assert.equal(list.q, "acme corp");
+  assert.equal(list.q, "AcMe Corp");
+  assert.deepEqual(caseInsensitiveContains(list.q), { contains: "AcMe Corp", mode: "insensitive" });
 });
 
 test("id tiebreaker is appended once and never duplicated", () => {

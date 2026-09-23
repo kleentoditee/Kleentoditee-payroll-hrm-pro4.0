@@ -39,7 +39,7 @@ export type ParsedListQuery =
   | {
       ok: true;
       paginated: false;
-      /** Trimmed, lowercased search text ("" when absent). */
+      /** Trimmed search text with the user's casing preserved ("" when absent). */
       q: string;
       orderBy: OrderByClause[];
     }
@@ -60,6 +60,11 @@ export interface ListQueryOptions {
   sortable?: readonly string[];
   /** Endpoint's existing default ordering (used when no `sort` param). */
   defaultSort: OrderByClause[];
+}
+
+/** Prisma string filter used by finance search predicates. */
+export function caseInsensitiveContains(value: string) {
+  return { contains: value, mode: "insensitive" as const };
 }
 
 function parsePage(raw: string | undefined): { ok: true; page: number } | { ok: false; error: string } {
@@ -135,7 +140,7 @@ export function parseListQuery(get: QueryGetter, opts: ListQueryOptions): Parsed
   const sortResult = parseSort(get("sort"), get("sortDir"), opts.sortable, opts.defaultSort);
   if (!sortResult.ok) return { ok: false, error: sortResult.error };
 
-  const q = (get("q") ?? "").trim().toLowerCase();
+  const q = (get("q") ?? "").trim();
   const { page } = pageResult;
   const { pageSize } = sizeResult;
 
