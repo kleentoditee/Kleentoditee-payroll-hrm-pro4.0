@@ -164,10 +164,6 @@ export default function NewBillPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">New bill</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Enter a bill from a supplier&rsquo;s invoice. Leave the number blank to auto-generate, or
-          enter the supplier&rsquo;s own reference.
-        </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">

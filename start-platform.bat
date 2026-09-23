@@ -1,66 +1,69 @@
 @echo off
-title KleenToDiTee - ONE-CLICK start (DB sync + API + Admin)
-cd /d "%~dp0"
+setlocal EnableExtensions
+title KleenToDiTee - start platform
+set "EXPECTED_ROOT=C:\Kleentoditee Payroll HRM"
+set "APP_DIR=%EXPECTED_ROOT%\Kleentoditee-payroll-hrm-pro4.0"
 
-call "%~dp0scripts\bootstrap-env.cmd"
-if errorlevel 1 goto :fail
-
-echo %CD% | findstr /I "OneDrive" >nul
-if not errorlevel 1 (
-  echo.
-  echo  *** WARNING: This folder is under OneDrive. Prisma can fail with EPERM on ***
-  echo  ***
-  echo  query_engine-windows.dll.node rename. If `db:sync` fails, use repair-prisma-generate.bat
-  echo  or move the project to e.g. C:\dev\kleentoditee-payroll-pro  ^(see README^).
-  echo.
+cd /d "%EXPECTED_ROOT%" 2>nul
+if /I not "%CD%"=="%EXPECTED_ROOT%" (
+  echo Wrong folder open. Please open C:\Kleentoditee Payroll HRM before continuing.
+  goto :fail
 )
 
+if not exist "%APP_DIR%\package.json" (
+  echo.
+  echo [X] Missing package.json:
+  echo     "%APP_DIR%\package.json"
+  echo.
+  echo This launcher only supports the approved workspace:
+  echo     "%EXPECTED_ROOT%"
+  goto :fail
+)
+
+cd /d "%APP_DIR%" || goto :fail
+
+call "%APP_DIR%\scripts\bootstrap-env.cmd"
+if errorlevel 1 goto :fail
+
 echo.
 echo  ============================================================
-echo   KLEENTODITEE - THIS IS THE ONLY FOLDER YOU USE FOR NPM:
-echo   %CD%
-echo   (NOT TRADE-DESK-SYSTEM - that is a different project.)
+echo   KLEENTODITEE PAYROLL HRM
+echo   App directory:
+echo   "%APP_DIR%"
 echo  ============================================================
 echo.
-echo  This will:  npm install (if needed)  -^>  db:sync  -^>  dev servers
-echo  Admin: http://localhost:3000     API: http://localhost:8787/health
-echo  A browser tab should open in ~6 seconds. If it does not, open that link yourself.
-echo  The window will NOT return to a prompt - that is normal. Servers run here.
-echo  Press Ctrl+C to stop BOTH servers.
+echo  This launcher delegates to the canonical npm workflow:
 echo.
-echo  First time with a login user? ^(With servers STOPPED, or if seed says DB locked.^)
-echo    Double-click seed-database.bat   ^(same as: npm run db:seed^)
-echo  ^(re-read README - seed resets users and demo data.^)
+echo    npm run start:local
+echo.
+echo  That workflow frees dev ports, waits for PostgreSQL, runs local
+echo  Prisma schema sync, seeds demo/dev data, and starts:
+echo.
+echo    Admin:            http://localhost:3000
+echo    Employee tracker: http://localhost:3001
+echo    API:              http://localhost:8787
+echo.
+echo  If PostgreSQL is not ready, the dev servers will not start.
 echo.
 
-if not exist "%~dp0node_modules\concurrently\package.json" (
-  echo [1/3] Installing dependencies...
+if not exist "%APP_DIR%\node_modules" (
+  echo [setup] node_modules missing - installing dependencies...
   call npm install
   if errorlevel 1 goto :fail
   echo.
 )
 
-echo [2/3] Syncing database schema (Prisma generate + db push)...
-call npm run db:sync
-if errorlevel 1 (
-  echo.
-  echo  db:sync failed. If you see Prisma EPERM: stop servers, then double-click:
-  echo    repair-prisma-generate.bat
-  echo  If you see MODULE_NOT_FOUND ^(e.g. @prisma/engines^): from this folder run:
-  echo    npm install
-  echo  Or move the repo out of OneDrive to e.g. C:\dev\kleentoditee-payroll-pro
-  echo  ^(OneDrive + node_modules is a common cause of rename errors.^)
-  goto :fail
-)
-echo.
-
-echo [3/3] Starting API + Admin...
-rem Open the default browser after Next is up ^(plain cmd + start - works when PowerShell is blocked^)
-start "open-admin" /min "%~dp0scripts\open-admin-delayed.cmd"
-call npm run dev:all
+call npm run start:local
 if errorlevel 1 goto :fail
-goto :eof
+
+endlocal
+exit /b 0
 
 :fail
 echo.
+echo [X] Startup failed. From the repo root, run:
+echo     npm run db:doctor
+echo.
 pause
+endlocal
+exit /b 1

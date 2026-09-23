@@ -1,16 +1,16 @@
-# PR handoff: local dev hardening, login, OneDrive, CodeRabbit
+# PR handoff: local dev hardening, login, workspace, CodeRabbit
 
 Use the **title** and **body** below when you open a pull request so **CodeRabbit** (and human reviewers) have full context.
 
 ## Suggested PR title
 
-`chore(dev): local Windows setup, admin API proxy, Prisma/OneDrive, emergency login, docs & scripts`
+`chore(dev): local Windows setup, admin API proxy, Prisma/workspace, emergency login, docs & scripts`
 
 ## Suggested PR body (copy for GitHub/GitLab)
 
 ### Summary
 
-Improves first-run and day-to-day local development on **Windows** (especially under **OneDrive**): one-click batch scripts, Prisma EPERM workarounds, **same-origin** admin→API in `next dev` to avoid CORS false failures, safer login/JSON handling, `dev` diagnostics on the API, optional **emergency** passwordless sign-in for local only (strictly gated), and README/tooling for moving the repo off OneDrive if needed.
+Improves first-run and day-to-day local development on **Windows** (especially in the approved workspace): one-click batch scripts, Prisma EPERM workarounds, **same-origin** admin→API in `next dev` to avoid CORS false failures, safer login/JSON handling, `dev` diagnostics on the API, optional **emergency** passwordless sign-in for local only (strictly gated), and README/tooling for using the approved workspace if needed.
 
 ### Security / product notes (please review)
 
@@ -26,14 +26,14 @@ Improves first-run and day-to-day local development on **Windows** (especially u
 | Admin web | `apps/admin-web/next.config.ts`, `apps/admin-web/src/lib/api.ts`, `apps/admin-web/src/app/login/page.tsx` |
 | DB / seed | `packages/db/prisma/seed.ts` |
 | Config / env | `.env.example` |
-| Root scripts | `start-platform.bat`, `restart-platform.bat`, `start-local.bat`, `seed-database.bat`, `repair-prisma-generate.bat`, `enable-emergency-login.bat` |
+| Root scripts | `start-platform.bat`, `restart-platform.bat`, `seed-database.bat`, `repair-prisma-generate.bat`, `enable-emergency-login.bat` |
 | `scripts/` | `bootstrap-env.cmd`, `open-admin-delayed.cmd`, `kill-dev-ports.ps1`, `patch-env-emergency.ps1`, `copy-project-to-c-dev.bat` |
 | Docs | `README.md` |
 | Meta | `PUSH-ME.txt` (git push instructions; optional to delete after merge) |
 
 ### How to test locally
 
-1. From repo root: `start-platform.bat` (or `npm run boot`).
+1. From repo root: `npm run db:doctor`, then `npm run start:local` (or double-click `start-platform.bat` for the batch launcher).
 2. `http://localhost:3000/login` — health via same-origin: `http://localhost:3000/__kleentoditee_api/health` (in dev, no `NEXT_PUBLIC_API_URL` in `.env` unless you intend direct 8787).
 3. `http://127.0.0.1:8787/health` — API without Next.
 4. Seed: stop servers, `seed-database.bat` or `npm run db:seed`, restart.

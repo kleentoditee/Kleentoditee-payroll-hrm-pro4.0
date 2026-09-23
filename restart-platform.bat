@@ -1,37 +1,34 @@
 @echo off
-title KleenToDiTee — Restart (kill ports + DB sync + dev)
-cd /d "%~dp0"
+setlocal EnableExtensions
+title KleenToDiTee - restart reliable platform
+set "EXPECTED_ROOT=C:\Kleentoditee Payroll HRM"
+set "APP_DIR=%EXPECTED_ROOT%\Kleentoditee-payroll-hrm-pro4.0"
 
-call "%~dp0scripts\bootstrap-env.cmd"
+cd /d "%EXPECTED_ROOT%" 2>nul
+if /I not "%CD%"=="%EXPECTED_ROOT%" (
+  echo Wrong folder open. Please open C:\Kleentoditee Payroll HRM in Cursor before continuing.
+  pause
+  exit /b 1
+)
+
+call "%APP_DIR%\scripts\bootstrap-env.cmd"
 if errorlevel 1 goto :fail
 
 echo.
-echo  FOLDER: %CD%
+echo  Workspace root: "%EXPECTED_ROOT%"
 echo.
-
-echo Stopping anything on ports 3000 and 8787...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\kill-dev-ports.ps1"
-timeout /t 1 /nobreak >nul
-
-if not exist "%~dp0node_modules\concurrently\package.json" (
-  echo Installing dependencies...
-  call npm install
-  if errorlevel 1 goto :fail
-  echo.
-)
-
-echo Syncing database schema...
-call npm run db:sync
+echo Stopping anything on ports 3000, 3001, 8787...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%\scripts\kill-dev-ports.ps1"
 if errorlevel 1 (
-  echo db:sync failed.
-  goto :fail
+  echo kill-dev-ports.ps1 reported an error; continuing anyway.
 )
-echo.
+timeout /t 2 /nobreak >nul
 
-echo Starting API + Admin — Ctrl+C stops BOTH.
-call npm run dev:all
-if errorlevel 1 goto :fail
-goto :eof
+call "%APP_DIR%\start-platform.bat"
+endlocal
+exit /b %ERRORLEVEL%
 
 :fail
 pause
+endlocal
+exit /b 1

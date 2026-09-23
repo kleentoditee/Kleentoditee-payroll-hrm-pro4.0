@@ -1,4 +1,4 @@
-import { AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import {
@@ -6,7 +6,14 @@ import {
   nextBillNumber,
   rollupTotals
 } from "../lib/finance-transactions.js";
+import {
+  buildBillReceivedJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -163,6 +170,7 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
 
       const row = await prisma.bill.create({
         data: {
+          orgId: requireOrgId(),
           number,
           supplierId,
           billDate,
@@ -174,7 +182,7 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
           total: totals.total,
           amountPaid: 0,
           balance: totals.balance,
-          lines: { create: resolvedLines }
+          lines: { create: resolvedLines.map((l) => ({ orgId: requireOrgId(), ...l })) }
         },
         include: {
           supplier: true,
@@ -268,7 +276,7 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
           await tx.billLine.deleteMany({ where: { billId: id } });
           await tx.bill.update({
             where: { id },
-            data: { ...data, lines: { create: nextLines } }
+            data: { ...data, lines: { create: nextLines.map((l) => ({ orgId: requireOrgId(), ...l })) } }
           });
         } else {
           await tx.bill.update({ where: { id }, data: data as never });
@@ -313,10 +321,22 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.total <= 0) {
       return c.json({ error: "Bill total must be greater than zero before receiving." }, 409);
     }
-    const row = await prisma.bill.update({
-      where: { id },
-      data: { status: TransactionStatus.open, receivedAt: new Date() }
-    });
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.bill.update({
+          where: { id },
+          data: { status: TransactionStatus.open, receivedAt: new Date() }
+        });
+        const withLines = await tx.bill.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+        const accounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildBillReceivedJournal(withLines, accounts.accountsPayable, accounts.taxPayable), c.get("userId"));
+        return updated;
+      });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "bill.receive",
@@ -342,10 +362,24 @@ export const financeBillsRoutes = new Hono<{ Variables: AuthVariables }>()
         409
       );
     }
-    const row = await prisma.bill.update({
-      where: { id },
-      data: { status: TransactionStatus.void, voidedAt: new Date() }
-    });
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.bill.update({
+          where: { id },
+          data: { status: TransactionStatus.void, voidedAt: new Date() }
+        });
+        await reverseJournal(tx, "bill", id, {
+          date: new Date(),
+          memo: `Bill ${before.number} voided — reversal`,
+          createdByUserId: c.get("userId")
+        });
+        return updated;
+      });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "bill.void",

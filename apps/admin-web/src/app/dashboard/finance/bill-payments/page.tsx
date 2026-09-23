@@ -58,10 +58,6 @@ export default function BillPaymentsListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Bill payments</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Payments made to suppliers. Record a disbursement and apply it to one or more open
-            bills.
-          </p>
         </div>
         <Link
           href="/dashboard/finance/bill-payments/new"

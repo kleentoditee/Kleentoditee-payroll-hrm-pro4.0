@@ -96,10 +96,6 @@ export default function UsersListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Access</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Users</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Invite people by email, assign roles, and link an employee for the mobile time tracker. Only platform
-            owners can use this page.
-          </p>
         </div>
         <Link
           href="/dashboard/users/new"

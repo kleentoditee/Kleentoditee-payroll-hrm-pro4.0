@@ -9,6 +9,8 @@ export async function writeAudit(params: {
   before?: unknown;
   after?: unknown;
   metadata?: unknown;
+  /** Explicit tenant tag for platform-level events outside an org scope (Batch 12). */
+  orgId?: string | null;
 }): Promise<void> {
   const data: Prisma.AuditLogUncheckedCreateInput = {
     action: params.action,
@@ -16,6 +18,9 @@ export async function writeAudit(params: {
     entityId: params.entityId ?? null,
     actorUserId: params.actorUserId ?? null
   };
+  if (params.orgId !== undefined) {
+    data.orgId = params.orgId;
+  }
   if (params.before !== undefined) {
     data.before = params.before as Prisma.InputJsonValue;
   }

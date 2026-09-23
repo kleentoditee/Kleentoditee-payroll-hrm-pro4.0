@@ -4,7 +4,7 @@ This repo is shared by Codex, Claude, Cursor, and the human owner. Follow these 
 
 ## Source Of Truth
 
-- Canonical repo: `C:\Users\HomePC\OneDrive\Documents\GitHub\Kleentoditee-payroll-hrm-pro4.0`
+- Canonical workspace: `C:\Kleentoditee Payroll HRM`
 - Main integration branch for current work: `codex/consolidate-live-build`
 - Use `TASKS.md` before starting. Claim one lane and stay inside its ownership boundary.
 - Prefer an isolated git worktree for every agent/lane. Do not switch the main repo between branches while another agent is active.
@@ -39,7 +39,7 @@ For every lane:
 4. Run CodeRabbit when available:
 
 ```powershell
-wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"
+wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"
 ```
 
 5. Commit only coherent, verified work.

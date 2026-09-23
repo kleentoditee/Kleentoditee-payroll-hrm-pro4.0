@@ -133,10 +133,6 @@ export default function ProductsListPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Products &amp; services</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Sellable items and services. Each maps to a revenue account for sales and, optionally, an
-          expense account for cost tracking.
-        </p>
       </div>
 
       {revenueAccounts.length === 0 ? (
@@ -258,9 +254,7 @@ export default function ProductsListPage() {
       {!items ? (
         <p className="text-sm text-slate-600">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">
-          No products or services yet. Add one above or seed the database.
-        </p>
+        <p className="text-sm text-slate-600">No products or services found.</p>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (

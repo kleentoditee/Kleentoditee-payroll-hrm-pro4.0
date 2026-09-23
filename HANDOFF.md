@@ -2,9 +2,9 @@
 
 ## Canonical workspace
 
-- Repo path: `C:\Users\HomePC\OneDrive\Documents\GitHub\Kleentoditee-payroll-hrm-pro4.0`
-- Treat this repo as the single source of truth for active work.
-- The old Playground copy is a backup only.
+- Workspace path: `C:\Kleentoditee Payroll HRM`
+- Treat this workspace as the single source of truth for active work.
+- Do not use old duplicate payroll folders.
 
 ## Current focus
 
@@ -18,22 +18,39 @@
   - employee pay schedules (`monthly`, `weekly`, `biweekly`)
   - date-ranged time entries for non-monthly payroll
 
+## Local dev quick links
+
+| What | URL |
+|------|-----|
+| API health | http://127.0.0.1:8787/health |
+| Admin login | http://127.0.0.1:3000/login |
+| Users admin | http://127.0.0.1:3000/dashboard/users |
+| Payroll periods | http://127.0.0.1:3000/dashboard/payroll/periods |
+| Employee tracker | http://127.0.0.1:3001 |
+
+`npm.cmd run start:local` is the normal startup path. It frees ports, waits for PostgreSQL, runs local schema sync, seeds demo/dev data, and starts API + admin + tracker. `dev:all` remains available for advanced/manual use after the database is ready.
+
 ## Key local commands
 
-- Start admin: `npm.cmd run dev:admin`
-- Start API: `npm.cmd --workspace api run start`
+- Check database and next steps: `npm.cmd run db:doctor`
+- Start the full local platform: `npm.cmd run start:local`
+- Start admin only: `npm.cmd run dev:admin`
+- Start API only: `npm.cmd run dev:api`
+- Start tracker only: `npm.cmd run dev:tracker`
 - Generate Prisma client: `npm.cmd run db:generate`
 - Push schema to local DB: `npm.cmd run db:push`
 - Seed local DB: `npm.cmd run db:seed`
-- Payroll helper test: `npm.cmd run test --workspace api`
+- API tests: `npm.cmd run test:api`
 - Full workspace lint: `npm.cmd run lint`
 - Full workspace typecheck: `npm.cmd run typecheck`
+- Full workspace build: `npm.cmd run build`
+- Tracker login diagnostic (API must be running): `npm.cmd run check:tracker-login`
 
 ## Important local env note
 
-- Local SQLite should stay off the OneDrive repo path.
+- PostgreSQL is the production-style local default. Native PostgreSQL and Docker PostgreSQL are both supported.
 - Working `DATABASE_URL` for local dev:
-  - `file:C:/Users/HomePC/AppData/Local/KleenToDiTeePayrollPro/dev.db`
+  - `postgresql://kleentoditee:kleentoditee@localhost:5432/kleentoditee?schema=public`
 
 ## User workflow preference
 
@@ -60,16 +77,18 @@
 - CodeRabbit PR auto-review is configured at repo level
 - Local `coderabbit` CLI works through WSL as user `kleentoditee`.
 - Local command:
-  - `wsl bash -lc "cd '/mnt/c/Users/HomePC/OneDrive/Documents/GitHub/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"`
+  - `wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0' && coderabbit review --agent -t uncommitted -c .coderabbit.yaml"`
 
 ## Expected next-step verification after pulling
 
-1. `npm.cmd run db:generate`
+1. `npm.cmd run db:doctor`
 2. `npm.cmd run db:push`
-3. `npm.cmd run test --workspace api`
-4. `npm.cmd run typecheck`
-5. `npm.cmd run lint`
-6. Start admin and API, then test:
+3. `npm.cmd run db:seed`
+4. `npm.cmd run test:api`
+5. `npm.cmd run typecheck`
+6. `npm.cmd run lint`
+7. `npm.cmd run build`
+8. `npm.cmd run start:local`, then test:
    - `/dashboard/payroll/periods`
    - create period
    - create draft run
@@ -87,5 +106,6 @@
 
 - Check API health: `http://127.0.0.1:8787/health`
 - Check DB status: `http://127.0.0.1:8787/dev/db-status`
+- Employee tracker: `npm.cmd run check:tracker-login` (uses seed tracker email by default; set `TRACKER_EMAIL` / `TRACKER_PASSWORD` if needed)
 - Admin should use same-origin proxy in dev:
   - `http://127.0.0.1:3000/__kleentoditee_api/...`

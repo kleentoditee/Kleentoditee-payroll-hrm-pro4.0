@@ -1,4 +1,4 @@
-import { AccountType, ProductKind, Role, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, ProductKind, Role, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
@@ -78,12 +78,13 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         return c.json({ error: "Parent account type must match child type." }, 400);
       }
     }
-    const existing = await prisma.account.findUnique({ where: { code } });
+    const existing = await prisma.account.findFirst({ where: { code } });
     if (existing) {
       return c.json({ error: `Account code "${code}" already exists.` }, 409);
     }
     const row = await prisma.account.create({
       data: {
+        orgId: requireOrgId(),
         code,
         name,
         type,
@@ -117,7 +118,7 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         return c.json({ error: "code cannot be empty." }, 400);
       }
       if (code !== before.code) {
-        const clash = await prisma.account.findUnique({ where: { code } });
+        const clash = await prisma.account.findFirst({ where: { code } });
         if (clash) {
           return c.json({ error: `Account code "${code}" already exists.` }, 409);
         }
@@ -244,12 +245,13 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!displayName) {
       return c.json({ error: "displayName is required." }, 400);
     }
-    const existing = await prisma.customer.findUnique({ where: { displayName } });
+    const existing = await prisma.customer.findFirst({ where: { displayName } });
     if (existing) {
       return c.json({ error: `Customer "${displayName}" already exists.` }, 409);
     }
     const row = await prisma.customer.create({
       data: {
+        orgId: requireOrgId(),
         displayName,
         companyName: str(body.companyName),
         primaryContact: str(body.primaryContact),
@@ -285,7 +287,7 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         return c.json({ error: "displayName cannot be empty." }, 400);
       }
       if (displayName !== before.displayName) {
-        const clash = await prisma.customer.findUnique({ where: { displayName } });
+        const clash = await prisma.customer.findFirst({ where: { displayName } });
         if (clash) {
           return c.json({ error: `Customer "${displayName}" already exists.` }, 409);
         }
@@ -371,12 +373,13 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!displayName) {
       return c.json({ error: "displayName is required." }, 400);
     }
-    const existing = await prisma.supplier.findUnique({ where: { displayName } });
+    const existing = await prisma.supplier.findFirst({ where: { displayName } });
     if (existing) {
       return c.json({ error: `Supplier "${displayName}" already exists.` }, 409);
     }
     const row = await prisma.supplier.create({
       data: {
+        orgId: requireOrgId(),
         displayName,
         companyName: str(body.companyName),
         primaryContact: str(body.primaryContact),
@@ -412,7 +415,7 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         return c.json({ error: "displayName cannot be empty." }, 400);
       }
       if (displayName !== before.displayName) {
-        const clash = await prisma.supplier.findUnique({ where: { displayName } });
+        const clash = await prisma.supplier.findFirst({ where: { displayName } });
         if (clash) {
           return c.json({ error: `Supplier "${displayName}" already exists.` }, 409);
         }
@@ -530,12 +533,13 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         return c.json({ error: "expenseAccountId must reference an expense account." }, 400);
       }
     }
-    const existing = await prisma.product.findUnique({ where: { sku } });
+    const existing = await prisma.product.findFirst({ where: { sku } });
     if (existing) {
       return c.json({ error: `Product SKU "${sku}" already exists.` }, 409);
     }
     const row = await prisma.product.create({
       data: {
+        orgId: requireOrgId(),
         sku,
         name,
         kind,
@@ -573,7 +577,7 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
         return c.json({ error: "sku cannot be empty." }, 400);
       }
       if (sku !== before.sku) {
-        const clash = await prisma.product.findUnique({ where: { sku } });
+        const clash = await prisma.product.findFirst({ where: { sku } });
         if (clash) {
           return c.json({ error: `Product SKU "${sku}" already exists.` }, 409);
         }

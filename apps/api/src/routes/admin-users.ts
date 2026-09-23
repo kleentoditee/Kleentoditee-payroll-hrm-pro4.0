@@ -1,10 +1,12 @@
-import { prisma, type Prisma, Role, UserStatus } from "@kleentoditee/db";
+import { requireOrgId, prisma, type Prisma, Role, UserStatus } from "@kleentoditee/db";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { emailCanonical } from "../lib/email-normalize.js";
+import { isEmailDeliveryConfigured, queueEmail } from "../lib/email.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { isValidResetPassword, resetPasswordRuleMessage } from "../lib/password-reset.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_MANAGE = [Role.platform_owner] as const;
@@ -48,8 +50,12 @@ function isValidEmail(s: string): boolean {
   return s.length > 0 && s.length < 256 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
-function devInviteBaseUrl(): string {
-  return (process.env.PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+function adminPublicBaseUrl(): string {
+  return (
+    process.env.ADMIN_WEB_PUBLIC_URL ??
+    process.env.PUBLIC_APP_URL ??
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 }
 
 function isProduction(): boolean {
@@ -194,6 +200,12 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!isValidEmail(email)) {
       return c.json({ error: "A valid email is required" }, 400);
     }
+    if (isProduction() && !isEmailDeliveryConfigured()) {
+      return c.json(
+        { error: "Email delivery is not configured. Add the SMTP settings before inviting users." },
+        503
+      );
+    }
     const roles = parseRoleArray(body.roles);
     if (!roles) {
       return c.json({ error: "roles must be a non-empty array of valid role values" }, 400);
@@ -236,6 +248,7 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         });
         const invRow = await tx.userInvitation.create({
           data: {
+            orgId: requireOrgId(),
             userId: user.id,
             tokenHash: await bcrypt.hash(`placeholder:${user.id}:${invSecret}`, 8),
             expiresAt
@@ -255,6 +268,32 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         select: userSelect
       });
       const mapped = mapUser(userFull as UserRow);
+      const path = `/accept-invite?token=${encodeURIComponent(result.rawToken)}`;
+      const acceptUrl = `${adminPublicBaseUrl()}${path}`;
+      if (isProduction() && !isEmailDeliveryConfigured()) {
+        return c.json(
+          {
+            error:
+              "The invitation was created, but email delivery is not configured. Cancel this invitation and try again after checking SMTP settings."
+          },
+          502
+        );
+      }
+      // Queued delivery (Batch 16): the worker retries with backoff; the
+      // EmailMessage table is the delivery log. In non-prod without SMTP the
+      // row stays queued and the dev URL is surfaced below.
+      const queued = await queueEmail({
+        to: result.user.email,
+        template: "user_invitation",
+        url: acceptUrl,
+        orgId: requireOrgId()
+      }).then(
+        () => true,
+        (error) => {
+          console.error("[user admin] Invitation email queueing failed.", error);
+          return false;
+        }
+      );
       await writeAudit({
         actorUserId: c.get("userId"),
         action: "user.admin.invite",
@@ -262,16 +301,18 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
         entityId: result.user.id,
         after: { email: result.user.email, name: result.user.name, status: result.user.status, roles }
       });
+      // Production: JSON must never include raw tokens or full accept URLs. Only non-prod may attach devInvitePath or log a URL.
       const resBody: {
         user: ReturnType<typeof mapUser>;
         devInvitePath?: string;
         devMessage?: string;
       } = { user: mapped };
       if (!isProduction()) {
-        const path = `/accept-invite?token=${encodeURIComponent(result.rawToken)}`;
         resBody.devInvitePath = path;
-        resBody.devMessage = `Invitation created. Dev accept URL path (append to admin app base): ${path}`;
-        console.log(`[user admin] dev invite (no email): ${devInviteBaseUrl()}${path}`);
+        resBody.devMessage = queued && isEmailDeliveryConfigured()
+          ? "Invitation created and queued for email delivery."
+          : `Invitation created. Development accept URL path: ${path}`;
+        if (!isEmailDeliveryConfigured()) console.log(`[user admin] dev invite (email queued, SMTP not configured): ${acceptUrl}`);
       }
       return c.json(resBody, 201);
     } catch (e) {
@@ -304,8 +345,8 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!name) {
       return c.json({ error: "name is required" }, 400);
     }
-    if (password.length < 8) {
-      return c.json({ error: "password must be at least 8 characters" }, 400);
+    if (!isValidResetPassword(password)) {
+      return c.json({ error: resetPasswordRuleMessage() }, 400);
     }
     const roles = parseRoleArray(body.roles);
     if (!roles) {
@@ -332,7 +373,8 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
           passwordHash,
           status: UserStatus.active,
           employeeId,
-          roles: { create: roles.map((role) => ({ role })) }
+          roles: { create: roles.map((role) => ({ role })) },
+          memberships: { create: [{ orgId: requireOrgId() }] }
         },
         select: userSelect
       });
@@ -431,8 +473,8 @@ export const adminUserRoutes = new Hono<{ Variables: AuthVariables }>()
     if (body.password !== undefined) {
       const password = String(body.password);
       if (password.length > 0) {
-        if (password.length < 8) {
-          return c.json({ error: "password must be at least 8 characters" }, 400);
+        if (!isValidResetPassword(password)) {
+          return c.json({ error: resetPasswordRuleMessage() }, 400);
         }
         if (before.status === UserStatus.invited) {
           return c.json({ error: "Set password through invitation acceptance, not admin PATCH" }, 400);

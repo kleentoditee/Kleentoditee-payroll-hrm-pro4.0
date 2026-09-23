@@ -101,10 +101,6 @@ export default function AccountsListPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Chart of accounts</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Master list of GL accounts. Products, invoices, and bills post into these. Keep numbering
-          consistent with your accountant&rsquo;s COA.
-        </p>
       </div>
 
       <form
@@ -177,10 +173,7 @@ export default function AccountsListPage() {
       {!items ? (
         <p className="text-sm text-slate-600">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">
-          No accounts yet. Add one above or run{" "}
-          <code className="rounded bg-slate-100 px-1">npm run db:seed</code> to load the starter COA.
-        </p>
+        <p className="text-sm text-slate-600">No accounts found.</p>
       ) : (
         <div className="space-y-6">
           {grouped?.map((group) => (

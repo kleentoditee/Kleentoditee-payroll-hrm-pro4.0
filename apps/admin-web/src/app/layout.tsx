@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { CsrfGuard } from "@/components/csrf-guard";
 
 export const metadata: Metadata = {
   title: "KleenToDiTee — Admin",
-  description: "Admin console (platform shell — Phase 1)"
+  description: "Payroll, HR, time, and accounting operations for KleenToDiTee"
 };
 
 export default function RootLayout({
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <CsrfGuard />
+        {children}
+      </body>
     </html>
   );
 }

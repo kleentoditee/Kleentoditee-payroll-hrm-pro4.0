@@ -1,0 +1,98 @@
+# Employee tracker — sharing and remote access
+
+## Purpose
+
+HR and payroll staff can direct employees to the **employee-tracker** app so they enter time from a phone or browser. This document describes how links are produced, what security guarantees apply, and how to configure production.
+
+## Architecture (no new auth system)
+
+- **Authentication** is unchanged: employees use the same **email + password** users as the rest of the platform (`POST /auth/login`), with an account that has the **employee_tracker_user** role and an `employeeId` link to their `Employee` record.
+- **No invite tokens** are placed in shared links. If you use the existing user-invite flow, that remains a separate step (admin sends the invite; the employee sets a password). The tracker link only opens the sign-in page.
+- **No unauthenticated write access**: all time APIs under `/time/self/*` require a valid JWT.
+
+## Tracker login requirements (all must be true)
+
+1. **User status `active`** — invited users must complete **`POST /auth/invite/accept`** (invite link) and set a password before `/auth/login` succeeds.
+2. **Role `employee_tracker_user`** — without it, the API returns **403** on `/time/self/*` even with a valid JWT.
+3. **`User.employeeId` set** — must point to an existing **Employee** row (HR links the login to payroll). Without it, `/time/self/profile` returns **403**.
+4. **Employee record usable** — the linked employee should be **active** (`Employee.active`); the tracker verifies after login.
+
+The tracker app calls the **same JSON API** as admin (`http://127.0.0.1:8787` in local dev). In Next dev on port **3001**, requests use **`/__kleentoditee_api/*`**, which is rewritten to **`http://127.0.0.1:8787/*`** (see `apps/employee-tracker/next.config.ts`). Optional: set **`NEXT_PUBLIC_API_URL`** to a full API origin (e.g. `http://127.0.0.1:8787`) if you intentionally bypass the proxy; the API must allow **CORS** from the tracker origin.
+
+## Diagnosing “login failed” locally
+
+Run from the repo root (API must be up and DB seeded):
+
+```bash
+npm run check:tracker-login
+```
+
+Optional env:
+
+- **`API_BASE`** — default `http://127.0.0.1:8787`
+- **`TRACKER_EMAIL`** / **`TRACKER_PASSWORD`** — override seed defaults
+
+The script prints **`/health`**, **`/auth/login`**, **`/auth/me`**, and **`/time/self/profile`** results (no password, no token). Exit code **1** if any step fails.
+
+If login still fails:
+
+- Confirm **`GET http://127.0.0.1:8787/health`** returns OK and the API uses the same **`DATABASE_URL`** as `npm run db:seed` (see **`GET /dev/db-status`** in non-production).
+- Re-run **`npm run db:seed`** (stop the API first if the database is busy).
+- **Invited-but-never-accepted** users cannot sign in until they complete the invite link; the API returns **`code: invitation_pending`** (not a password mismatch).
+
+## Admin: “Share tracker access” on the employee record
+
+On **People → Employee → detail** (`/dashboard/people/employees/[id]`), the **Share tracker access** card:
+
+1. Loads **`GET /people/employees/:id/tracker-share`** (requires the same roles as other People routes).
+2. Shows the **sign-in URL** for the tracker app (see below).
+3. Provides:
+   - **Copy link** — copies the sign-in URL only.
+   - **Email link** — `mailto:` with a generic subject/body (no passwords, no tax IDs).
+   - **WhatsApp** — opens `https://api.whatsapp.com/send?text=...` with the same generic text (suitable for the employee to pick a contact).
+
+If a **user account is linked** to the employee (`User.employeeId`), the card shows that user’s **email** and status so admins know which sign-in identity to reference in a separate, secure channel. That email is **not** auto-inserted into WhatsApp or mailto bodies.
+
+If no user is linked, the card points to **Invite user** so a platform owner can create and link an account.
+
+## API: tracker share metadata
+
+**`GET /people/employees/:id/tracker-share`**
+
+Returns JSON:
+
+| Field | Meaning |
+|-------|--------|
+| `employeeId` | Confirms which employee was requested (internal id; not a government id). |
+| `loginUrl` | Public URL of the tracker sign-in page (no query tokens). |
+| `appHomeUrl` | Public URL of the tracker home page. |
+| `linkedUser` | `null`, or `{ email, status }` for the user linked to this employee. |
+
+The **public base URL** of the tracker is read from the API environment variable:
+
+- **`EMPLOYEE_TRACKER_PUBLIC_URL`** — full origin, no trailing slash (e.g. `https://time.yourcompany.com` or `http://localhost:3001` for local dev).
+
+If unset, the API defaults to `http://localhost:3001` to match `npm run dev` in `apps/employee-tracker`.
+
+## Admin web: optional fallback URL
+
+If the API call fails (e.g. old server without the route), the admin card can still show a URL when **`NEXT_PUBLIC_EMPLOYEE_TRACKER_URL`** is set in the admin app’s environment. This does not replace server configuration for production; set **`EMPLOYEE_TRACKER_PUBLIC_URL`** on the API so the canonical link is consistent.
+
+## Employee tracker UX
+
+- **Landing (`/`)** when logged out explains remote time entry, monthly lines, and approval — and links to **Sign in**.
+- **Login (`/login`)** is styled for mobile; seed hints appear only in **development** (`NODE_ENV=development`).
+- After sign-in, the header shows **pay schedule** (weekly / biweekly / monthly) from `GET /time/self/profile`.
+- **Home (`/`)** when signed in: **Today** (work location/schedule from `GET /staff/self/schedule/today`), **Checklist** (placeholder), **Time** (monthly lines, unchanged), week **Schedule**, **Messages** (announcements from `GET /staff/self/announcements`), **Tips**, **Quiz** (server quiz or local practice; points from `RewardLedger` are not money). The **Requests** link goes to `/requests` (`/staff/self/requests*`) for Phase 2 job letters, leave, profile updates, etc. — see `docs/staff-requests.md`. **Announcements are in-app only** (no proof of email or WhatsApp delivery) — see `docs/staff-hub-schedule-messages-rewards.md`.
+
+## Security checklist
+
+- Shared text and URLs must **not** include passwords, NHI/SSN/IRD numbers, or one-time invite tokens.
+- The sign-in URL is **not** a magic link; employees must authenticate.
+- Prefer sending credentials through an existing secure channel, not inside the same WhatsApp thread as the link.
+
+## Known limitations
+
+- **Email** uses the client’s `mailto:` handler; there is no built-in transactional email provider in this repo.
+- **WhatsApp** opens the composer with prefilled text; it does not send automatically.
+- **Per-employee deep links** with tokens were intentionally avoided to prevent token-in-URL anti-patterns; all employees use the same app entry point and their own login.

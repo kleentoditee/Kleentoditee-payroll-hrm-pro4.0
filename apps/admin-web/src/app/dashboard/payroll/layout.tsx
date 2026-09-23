@@ -5,7 +5,11 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/dashboard/payroll/periods", label: "Pay periods" },
-  { href: "/dashboard/payroll/runs", label: "Pay runs" }
+  { href: "/dashboard/payroll/runs", label: "Pay runs" },
+  { href: "/dashboard/payroll/paystubs/preview", label: "Paystubs" },
+  { href: "/dashboard/payroll/forms", label: "Government forms" },
+  { href: "/dashboard/payroll/ytd-import", label: "YTD import" },
+  { href: "/dashboard/payroll/reports", label: "Reports" }
 ] as const;
 
 export default function PayrollLayout({ children }: { children: React.ReactNode }) {

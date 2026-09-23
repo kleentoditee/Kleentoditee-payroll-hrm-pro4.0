@@ -71,10 +71,6 @@ export default function BillsListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Bills</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Supplier bills (AP). Enter a draft from a supplier&rsquo;s invoice, then receive it to
-            start tracking the balance.
-          </p>
         </div>
         <Link
           href="/dashboard/finance/bills/new"

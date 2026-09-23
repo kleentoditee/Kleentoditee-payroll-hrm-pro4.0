@@ -1,16 +1,48 @@
 import type { NextConfig } from "next";
 
-// In `next dev`, send browser traffic to the API through this origin so fetches are same-origin
-// (avoids CORS and false "Cannot talk to the API" when the admin is opened on 127.0.0.1 or a LAN IP).
+const apiProxyTarget =
+  process.env.API_PROXY_TARGET?.replace(/\/$/, "") ||
+  (process.env.API_HOSTPORT ? `http://${process.env.API_HOSTPORT}` : "") ||
+  (process.env.NODE_ENV === "development" ? "http://127.0.0.1:8787" : "");
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "frame-src 'self' blob:",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'"
+].join("; ");
+
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   async rewrites() {
-    if (process.env.NODE_ENV !== "development") {
+    if (!apiProxyTarget) {
       return [];
     }
     return [
       {
         source: "/__kleentoditee_api/:path*",
-        destination: "http://127.0.0.1:8787/:path*"
+        destination: `${apiProxyTarget}/:path*`
+      }
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Content-Security-Policy", value: contentSecurityPolicy }
+        ]
       }
     ];
   }

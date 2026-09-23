@@ -1,0 +1,7 @@
+ALTER TABLE "Employee"
+ADD COLUMN "sex" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "nhiUnemployedSpouse" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "OrgSettings"
+ADD COLUMN "ssbEmployerNumber" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "nhiEmployerNumber" TEXT NOT NULL DEFAULT '';

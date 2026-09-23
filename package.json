@@ -8,25 +8,41 @@
   ],
   "scripts": {
     "db:generate": "npm run generate --workspace @kleentoditee/db",
+    "test:e2e": "playwright test",
+    "db:check": "npm run check:postgres --workspace @kleentoditee/db",
+    "db:doctor": "npm run doctor --workspace @kleentoditee/db",
+    "db:up": "node scripts/start-postgres.mjs",
+    "db:wait": "npm run wait:postgres --workspace @kleentoditee/db",
+    "db:down": "docker compose down",
+    "db:migrate:dev": "npm run migrate:dev --workspace @kleentoditee/db",
+    "db:migrate:deploy": "npm run migrate:deploy --workspace @kleentoditee/db",
     "db:push": "npm run push --workspace @kleentoditee/db",
     "db:push:loss": "npm run push:loss --workspace @kleentoditee/db",
     "db:seed": "npm run seed --workspace @kleentoditee/db",
     "db:studio": "npm run studio --workspace @kleentoditee/db",
-    "db:sync": "npm run db:generate && npm run db:push",
-    "boot": "npm run db:sync && npm run dev:all",
+    "dev:ports:free": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/kill-dev-ports.ps1",
+    "start:local": "npm run dev:ports:free && npm run db:wait && npm run db:push && npm run db:generate && npm run db:seed && npm run dev:all",
+    "start:work": "npm run dev:ports:free && npm run db:wait && npm run db:push && npm run db:generate && npm run dev:all",
     "dev": "npm run dev --workspace admin-web",
     "dev:admin": "npm run dev --workspace admin-web",
     "dev:tracker": "npm run dev --workspace employee-tracker",
     "dev:api": "npm run dev --workspace api",
-    "dev:all": "npm exec concurrently -- -k -n api,admin -c cyan,magenta \"npm run dev:api\" \"npm run dev\"",
-    "build": "npm run build --workspace admin-web && npm run build --workspace employee-tracker && npm run build --workspace api",
+    "dev:all": "node scripts/dev-all.mjs",
+    "build": "npm run build --workspace @kleentoditee/db && npm run build --workspace admin-web && npm run build --workspace employee-tracker && npm run build --workspace api",
     "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test:unit",
+    "test:api": "npm run test --workspace api",
+    "test:unit": "npm run test --workspaces --if-present",
+    "test:smoke": "node scripts/smoke-finance-a.mjs && node scripts/smoke-finance-b.mjs && node scripts/smoke-finance-c.mjs",
+    "ci": "npm run db:generate && npm run typecheck && npm run lint --if-present && npm run test:api && npm run build",
+    "check:tracker-login": "node scripts/check-tracker-login.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "concurrently": "^9.1.2"
   }
 }

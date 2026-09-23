@@ -4,28 +4,37 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
-    "postinstall": "prisma generate",
-    "generate": "prisma generate",
-    "push": "dotenv -e ../../.env -- prisma db push",
-    "push:loss": "dotenv -e ../../.env -- prisma db push --accept-data-loss",
-    "migrate": "dotenv -e ../../.env -- prisma migrate dev",
-    "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
-    "studio": "dotenv -e ../../.env -- prisma studio"
+    "postinstall": "node scripts/run-with-root-env.mjs prisma generate && node scripts/run-with-root-env.mjs tsc",
+    "build": "node scripts/run-with-root-env.mjs tsc",
+    "typecheck": "node scripts/run-with-root-env.mjs tsc --noEmit",
+    "check:postgres": "node scripts/check-postgres-env.mjs",
+    "doctor": "node scripts/db-doctor.mjs",
+    "wait:postgres": "node scripts/wait-for-postgres.mjs",
+    "generate": "node scripts/run-with-root-env.mjs prisma generate",
+    "push": "npm run check:postgres && node scripts/run-with-root-env.mjs prisma db push",
+    "push:loss": "npm run check:postgres && node scripts/run-with-root-env.mjs prisma db push --accept-data-loss",
+    "migrate": "npm run check:postgres && node scripts/run-with-root-env.mjs prisma migrate dev",
+    "migrate:dev": "npm run check:postgres && node scripts/run-with-root-env.mjs prisma migrate dev",
+    "migrate:deploy": "npm run check:postgres && node scripts/run-with-root-env.mjs prisma migrate deploy",
+    "seed": "npm run check:postgres && node scripts/run-with-root-env.mjs tsx prisma/seed.ts",
+    "studio": "node scripts/run-with-root-env.mjs prisma studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.3.0"
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0"
   },
   "devDependencies": {
     "bcryptjs": "^2.4.3",
+    "dotenv": "^16.6.1",
     "dotenv-cli": "^8.0.0",
-    "prisma": "^6.3.0",
-    "tsx": "^4.19.2",
+    "prisma": "^7.10.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.0"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   }
 }

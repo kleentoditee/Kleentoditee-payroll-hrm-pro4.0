@@ -68,10 +68,6 @@ export default function ExpensesListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Expenses</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Direct disbursements that aren&rsquo;t tied to a bill — card purchases, cash payouts,
-            ACH transfers. Posting an expense moves it onto the books immediately.
-          </p>
         </div>
         <Link
           href="/dashboard/finance/expenses/new"

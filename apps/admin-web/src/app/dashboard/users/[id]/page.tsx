@@ -126,8 +126,8 @@ export default function UserDetailPage() {
         employeeId: employeeId.trim() || null
       };
       if (user.status === "active" && newPassword.trim().length > 0) {
-        if (newPassword.length < 8) {
-          setError("New password must be at least 8 characters.");
+        if (newPassword.length < 15 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+          setError("New password must be at least 15 characters and include a letter and a number.");
           setSaving(false);
           return;
         }
@@ -394,7 +394,7 @@ export default function UserDetailPage() {
               onChange={(e) => setNewPassword(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
               autoComplete="new-password"
-              minLength={8}
+              minLength={15}
             />
           </label>
         ) : null}

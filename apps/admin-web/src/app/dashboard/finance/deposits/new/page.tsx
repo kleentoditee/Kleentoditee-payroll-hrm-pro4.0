@@ -35,6 +35,7 @@ export default function NewDepositPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adhoc, setAdhoc] = useState<Array<{ accountId: string; description: string; amount: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,8 +87,11 @@ export default function NewDepositPage() {
   const assetAccounts = useMemo(() => accounts.filter((a) => a.type === "asset"), [accounts]);
 
   const total = useMemo(
-    () => round2(available.filter((p) => picked.has(p.id)).reduce((s, p) => s + p.amount, 0)),
-    [picked, available]
+    () => round2(
+      available.filter((p) => picked.has(p.id)).reduce((s, p) => s + p.amount, 0) +
+        adhoc.filter((l) => l.accountId && Number(l.amount) > 0).reduce((s, l) => s + Number(l.amount), 0)
+    ),
+    [picked, available, adhoc]
   );
 
   function togglePick(id: string) {
@@ -109,21 +113,30 @@ export default function NewDepositPage() {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (picked.size === 0) {
-      setError("Select at least one payment to deposit.");
+    const adhocLines = adhoc.filter((l) => l.accountId && Number(l.amount) > 0);
+    if (picked.size === 0 && adhocLines.length === 0) {
+      setError("Select at least one payment or add an ad-hoc line.");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const lines = available
-        .filter((p) => picked.has(p.id))
-        .map((p, i) => ({
-          position: i + 1,
-          paymentId: p.id,
-          amount: p.amount,
-          description: `${p.number} · ${p.customer.displayName}`
-        }));
+      const lines = [
+        ...available
+          .filter((p) => picked.has(p.id))
+          .map((p, i) => ({
+            position: i + 1,
+            paymentId: p.id,
+            amount: p.amount,
+            description: `${p.number} · ${p.customer.displayName}`
+          })),
+        ...adhocLines.map((l, i) => ({
+          position: picked.size + i + 1,
+          accountId: l.accountId,
+          amount: round2(Number(l.amount)),
+          description: l.description || "Ad-hoc deposit line"
+        }))
+      ];
       const res = await fetch(`${apiBase()}/finance/deposits`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -143,10 +156,6 @@ export default function NewDepositPage() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">New deposit</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Pick a bank account and select the undeposited customer payments to bundle. Saving
-          creates a draft; posting it stamps each payment as deposited.
-        </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">
@@ -258,6 +267,72 @@ export default function NewDepositPage() {
           </div>
         </section>
 
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">Ad-hoc lines (no payment)</h3>
+            <button
+              type="button"
+              onClick={() => setAdhoc([...adhoc, { accountId: "", description: "", amount: "" }])}
+              className="text-sm text-brand hover:underline"
+            >
+              + Add line
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Cash received without a customer payment. Each line needs the offset account it belongs to
+            (e.g. Sales or Other income) — required before the deposit can post.
+          </p>
+          {adhoc.length > 0 ? (
+            <table className="mt-3 w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {adhoc.map((l, i) => (
+                  <tr key={i}>
+                    <td className="py-2 pr-2">
+                      <select
+                        value={l.accountId}
+                        onChange={(e) => setAdhoc(adhoc.map((x, j) => (j === i ? { ...x, accountId: e.target.value } : x)))}
+                        className="w-56 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Offset account…</option>
+                        {accounts
+                          .filter((a) => a.type === "revenue" || a.type === "asset" || a.type === "liability" || a.type === "equity")
+                          .map((a) => (
+                            <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
+                          ))}
+                      </select>
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        type="text"
+                        value={l.description}
+                        placeholder="Description"
+                        onChange={(e) => setAdhoc(adhoc.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))}
+                        className="w-48 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={l.amount}
+                        placeholder="0.00"
+                        onChange={(e) => setAdhoc(adhoc.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))}
+                        className="w-28 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm"
+                      />
+                    </td>
+                    <td className="py-2">
+                      <button type="button" onClick={() => setAdhoc(adhoc.filter((_, j) => j !== i))} className="text-xs text-rose-600 hover:underline">
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </section>
+
         {error ? (
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
         ) : null}
@@ -272,7 +347,7 @@ export default function NewDepositPage() {
           </button>
           <button
             type="submit"
-            disabled={submitting || picked.size === 0}
+            disabled={submitting || (picked.size === 0 && !adhoc.some((l) => l.accountId && Number(l.amount) > 0))}
             className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Saving…" : "Save draft deposit"}

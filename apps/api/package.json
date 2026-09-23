@@ -5,22 +5,29 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc --noEmit",
-    "start": "tsx src/index.ts",
-    "test": "tsx --test src/lib/payroll-utils.test.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "tsx --test src/lib/payroll-utils.test.ts src/lib/payroll-calc.test.ts src/lib/payroll-service.test.ts src/lib/statutory-config.test.ts src/lib/statutory-forms.test.ts src/lib/official-statutory-pdf.test.ts src/lib/password-reset.test.ts src/lib/quickbooks-accounting-import.test.ts src/lib/work-time.test.ts src/env.test.ts src/lib/document-storage.test.ts src/lib/auth-cookies.test.ts src/lib/payroll-ytd-import.test.ts src/lib/payroll-reports.test.ts src/lib/leave.test.ts src/lib/gl-posting.test.ts src/lib/min-wage.test.ts src/lib/payroll-parallel.test.ts src/lib/org-resolution.test.ts src/lib/org-scope.test.ts src/lib/bank-statements.test.ts src/lib/financial-statements.test.ts src/lib/email.test.ts src/lib/migration-import.test.ts src/lib/hr-structure.test.ts src/lib/leave-v2.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.7",
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
+    "@hono/node-server": "^2.1.1",
     "@kleentoditee/db": "*",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
-    "hono": "^4.6.12"
+    "hono": "^4.13.8",
+    "nodemailer": "^10.0.10",
+    "pdf-lib": "^1.17.1",
+    "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.17.0",
-    "tsx": "^4.19.2",
+    "@types/nodemailer": "^8.0.2",
+    "fflate": "^0.8.3",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.0"
   }
 }

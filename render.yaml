@@ -1,0 +1,91 @@
+databases:
+  - name: kleentoditee-db
+    databaseName: kleentoditee
+    user: kleentoditee
+    postgresMajorVersion: "18"
+    plan: 0.1c-256mb
+    diskSizeGB: 1
+    region: virginia
+    ipAllowList: []
+
+services:
+  - type: pserv
+    name: kleentoditee-api
+    runtime: node
+    plan: 0.5c-512mb
+    region: virginia
+    buildCommand: npm ci --ignore-scripts && npm run db:generate && npm run build --workspace @kleentoditee/db && npm run build --workspace api
+    preDeployCommand: npm run db:migrate:deploy
+    startCommand: npm run start --workspace api
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kleentoditee-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://kleentoditee-admin.onrender.com,https://kleentoditee-staff.onrender.com
+      - key: ADMIN_WEB_PUBLIC_URL
+        value: https://kleentoditee-admin.onrender.com
+      - key: EMPLOYEE_TRACKER_PUBLIC_URL
+        value: https://kleentoditee-staff.onrender.com
+      - key: APP_URL
+        value: https://kleentoditee-staff.onrender.com
+      - key: UPLOADS_DIR
+        value: /var/data/uploads/hr
+      - key: OBJECT_STORAGE_PROVIDER
+        value: local
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+    disk:
+      name: kleentoditee-employee-files
+      mountPath: /var/data
+      sizeGB: 1
+
+  - type: web
+    name: kleentoditee-admin
+    runtime: node
+    plan: 0.5c-512mb
+    region: virginia
+    buildCommand: npm ci --ignore-scripts && npm run build --workspace admin-web
+    startCommand: npm run start --workspace admin-web
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOSTPORT
+        fromService:
+          type: pserv
+          name: kleentoditee-api
+          property: hostport
+
+  - type: web
+    name: kleentoditee-staff
+    runtime: node
+    plan: 0.5c-512mb
+    region: virginia
+    buildCommand: npm ci --ignore-scripts && npm run build --workspace employee-tracker
+    startCommand: npm run start --workspace employee-tracker
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_HOSTPORT
+        fromService:
+          type: pserv
+          name: kleentoditee-api
+          property: hostport

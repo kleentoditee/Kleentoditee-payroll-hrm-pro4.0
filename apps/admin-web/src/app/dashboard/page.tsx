@@ -1,40 +1,328 @@
 "use client";
 
+import { BusinessOperatingDashboard, type AuditDay, type BusinessOverviewData } from "@/components/business-operating-dashboard";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-export default function DashboardPage() {
-  const [submittedCount, setSubmittedCount] = useState<number | null>(null);
-  const [draftRuns, setDraftRuns] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+type EmployeeRow = { active: boolean };
 
-  const load = useCallback(async () => {
-    const [timeRes, runRes] = await Promise.all([
-      fetch(`${apiBase()}/time/entries/count?queue=all&status=submitted`, { headers: { ...authHeaders() } }),
-      fetch(`${apiBase()}/payroll/runs?status=draft`, { headers: { ...authHeaders() } })
+type MeResponse = { user: { name: string; email: string; roles: string[] } };
+
+type PayPeriodItem = { label: string; endDate: string; payDate: string | null };
+type PayRunItem = {
+  id: string;
+  status: string;
+  itemCount: number;
+  summary: { gross: number; totalDeductions: number; net: number; employerCost: number };
+  period: { label: string; schedule: string; payDate: string | null };
+};
+
+function startOfTodayMs(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function bucketAuditLast7Days(
+  items: { createdAt: string }[]
+): AuditDay[] {
+  const dayKeys: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    // bucket on the UTC calendar to match createdAt.slice(0, 10) from the API
+    const key = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    dayKeys.push(key);
+  }
+  const counts = new Map<string, number>();
+  for (const k of dayKeys) {
+    counts.set(k, 0);
+  }
+  for (const it of items) {
+    const k = it.createdAt.slice(0, 10);
+    if (counts.has(k)) {
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  }
+  return dayKeys.map((dayKey) => ({ dayKey, count: counts.get(dayKey) ?? 0 }));
+}
+
+function pickNextPayroll(periods: PayPeriodItem[]): { label: string; payDate: string } | null {
+  const start = startOfTodayMs();
+  const future = periods
+    .filter((p) => p.payDate)
+    .map((p) => {
+      const t = new Date(p.payDate as string).getTime();
+      return { label: p.label, payDate: p.payDate as string, t };
+    })
+    .filter((p) => !Number.isNaN(p.t) && p.t >= start)
+    .sort((a, b) => a.t - b.t);
+  if (future[0]) {
+    return { label: future[0].label, payDate: future[0].payDate };
+  }
+  return null;
+}
+
+async function safeJson<T>(res: Response): Promise<T | null> {
+  if (!res.ok) {
+    return null;
+  }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+export default function DashboardPage() {
+  const [m, setM] = useState<BusinessOverviewData | null>(null);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
+  const [userName, setUserName] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async (): Promise<{ data: BusinessOverviewData; roles: string[]; name: string; email: string }> => {
+    const headers = { ...authHeaders() };
+    const [
+      meRes,
+      empRes,
+      timeRes,
+      runRes,
+      invRes,
+      billsRes,
+      pendRes,
+      usersRes,
+      auditRes,
+      periodsRes,
+      settingsRes
+    ] = await Promise.all([
+      fetch(`${apiBase()}/auth/me`, { headers }),
+      fetch(`${apiBase()}/people/employees`, { headers }),
+      fetch(`${apiBase()}/time/entries/count?queue=all&status=submitted`, { headers }),
+      fetch(`${apiBase()}/payroll/runs`, { headers }),
+      fetch(`${apiBase()}/finance/invoices`, { headers }),
+      fetch(`${apiBase()}/finance/bills`, { headers }),
+      fetch(`${apiBase()}/admin/users/invitations/pending`, { headers }),
+      fetch(`${apiBase()}/admin/users`, { headers }),
+      fetch(`${apiBase()}/audit/recent?take=120`, { headers }),
+      fetch(`${apiBase()}/payroll/periods`, { headers }),
+      fetch(`${apiBase()}/settings/org`, { headers })
     ]);
-    const timeJson = await readApiData<{ count: number }>(timeRes, "Could not load time approval count.");
-    const runJson = await readApiData<{ items: unknown[] }>(runRes, "Could not load draft pay runs.");
-    return { submitted: timeJson.count, drafts: runJson.items.length };
+
+    const me = await safeJson<MeResponse>(meRes);
+    const roles = me?.user?.roles ?? [];
+    const name = me?.user?.name ?? "";
+    const email = me?.user?.email ?? "";
+
+    let activeEmployees: number | null = null;
+    let employeesError: string | null = null;
+    if (empRes.ok) {
+      const data = await safeJson<{ items: EmployeeRow[] }>(empRes);
+      if (data?.items) {
+        activeEmployees = data.items.filter((e) => e.active).length;
+      } else {
+        employeesError = "Unexpected employee list format.";
+      }
+    } else {
+      employeesError = "Could not load employees.";
+    }
+
+    let submittedTime: number | null = null;
+    let timeError: string | null = null;
+    try {
+      if (timeRes.ok) {
+        const t = await readApiData<{ count: number }>(timeRes, "time count");
+        submittedTime = t.count;
+      } else {
+        timeError = "Could not load approval queue count.";
+      }
+    } catch {
+      timeError = "Could not load approval queue count.";
+    }
+
+    let draftRuns: number | null = null;
+    let recentRuns: PayRunItem[] = [];
+    let payrollSummary: BusinessOverviewData["payrollSummary"] = null;
+    let payrollError: string | null = null;
+    try {
+      if (runRes.ok) {
+        const r = await readApiData<{ items: PayRunItem[] }>(runRes, "payroll runs");
+        draftRuns = r.items.filter((run) => run.status === "draft").length;
+        recentRuns = r.items.slice(0, 5);
+        const source = r.items[0];
+        if (source) {
+          payrollSummary = {
+            gross: source.summary.gross,
+            deductions: source.summary.totalDeductions,
+            net: source.summary.net,
+            employerCost: source.summary.employerCost,
+            sourceLabel: source.period.label
+          };
+        }
+      } else {
+        payrollError = "Could not load draft pay runs.";
+      }
+    } catch {
+      payrollError = "Could not load draft pay runs.";
+    }
+
+    let invoiceCount: number | null = null;
+    let financeError: string | null = null;
+    if (invRes.ok) {
+      const data = await safeJson<{ items: unknown[] }>(invRes);
+      invoiceCount = data?.items?.length ?? 0;
+    } else if (invRes.status === 403) {
+      financeError = "No access to finance lists with current roles.";
+    } else {
+      financeError = "Could not load invoices.";
+    }
+
+    let billsCount: number | null = null;
+    let billsError: string | null = null;
+    if (billsRes.ok) {
+      const data = await safeJson<{ items: unknown[] }>(billsRes);
+      billsCount = data?.items?.length ?? 0;
+    } else if (billsRes.status === 403) {
+      billsError = "No access to finance lists with current roles.";
+    } else {
+      billsError = "Could not load bills.";
+    }
+
+    let pendingInvites: number | null = null;
+    let invitedUsers: number | null = null;
+    let usersAccess: BusinessOverviewData["usersAccess"] = "ok";
+    if (pendRes.status === 403 || usersRes.status === 403) {
+      usersAccess = "forbidden";
+    } else if (pendRes.ok && usersRes.ok) {
+      const pend = await safeJson<{ items: unknown[] }>(pendRes);
+      const users = await safeJson<{ items: { status: string }[] }>(usersRes);
+      pendingInvites = pend?.items?.length ?? 0;
+      invitedUsers = users?.items?.filter((u) => u.status === "invited").length ?? 0;
+    } else {
+      usersAccess = "error";
+    }
+
+    let auditPreview: BusinessOverviewData["auditPreview"] = null;
+    let auditError: string | null = null;
+    let auditByDay: AuditDay[] = [];
+    if (auditRes.ok) {
+      const a = await safeJson<{
+        items: { action: string; createdAt: string; actor: { name: string; email: string } | null }[];
+      }>(auditRes);
+      const first = a?.items?.[0];
+      if (first) {
+        auditPreview = {
+          action: first.action,
+          createdAt: first.createdAt,
+          actorLabel: first.actor?.name || first.actor?.email || "System"
+        };
+      }
+      auditByDay = bucketAuditLast7Days(a?.items ?? []);
+    } else if (auditRes.status === 403) {
+      auditError = "Audit log requires appropriate role.";
+    } else {
+      auditError = "Could not load recent audit events.";
+    }
+
+    let periodCount: number | null = null;
+    let latestPeriod: BusinessOverviewData["latestPeriod"] = null;
+    let nextPayroll: BusinessOverviewData["nextPayroll"] = null;
+    let periodsError: string | null = null;
+    if (periodsRes.ok) {
+      const p = await safeJson<{ items: PayPeriodItem[] }>(periodsRes);
+      const items = p?.items ?? [];
+      periodCount = items.length;
+      if (items[0]) {
+        latestPeriod = {
+          label: items[0].label,
+          payDate: items[0].payDate,
+          endDate: items[0].endDate
+        };
+      }
+      nextPayroll = pickNextPayroll(items);
+    } else if (periodsRes.status === 403) {
+      periodsError = "Could not load pay periods with current role.";
+    } else {
+      periodsError = "Could not load pay periods.";
+    }
+
+    let statutoryReady: boolean | null = null;
+    let statutoryError: string | null = null;
+    if (settingsRes.ok) {
+      const result = await safeJson<{
+        settings: {
+          companyLegalName: string;
+          ssbEnabled: boolean;
+          ssbEmployeeRate: number;
+          ssbEmployerRate: number;
+          ssbAnnualCeiling: number;
+          nhiEnabled: boolean;
+          nhiEmployeeRate: number;
+          nhiEmployerRate: number;
+          nhiAnnualCeiling: number;
+          payrollTaxEnabled: boolean;
+          payrollTaxEmployeeRate: number;
+          payrollTaxEmployerClass: string;
+          statutoryEffectiveYear: number;
+        };
+      }>(settingsRes);
+      const s = result?.settings;
+      statutoryReady = Boolean(
+        s?.companyLegalName.trim() &&
+          (!s.ssbEnabled || (s.ssbEmployeeRate > 0 && s.ssbEmployerRate > 0 && s.ssbAnnualCeiling > 0)) &&
+          (!s.nhiEnabled || (s.nhiEmployeeRate > 0 && s.nhiEmployerRate > 0 && s.nhiAnnualCeiling > 0)) &&
+          (!s.payrollTaxEnabled || (s.payrollTaxEmployeeRate > 0 && s.payrollTaxEmployerClass !== "NOT_SET")) &&
+          s.statutoryEffectiveYear >= 2020
+      );
+    } else {
+      statutoryError = "Could not verify payroll settings.";
+    }
+
+    const data: BusinessOverviewData = {
+      activeEmployees,
+      employeesError,
+      submittedTime,
+      timeError,
+      draftRuns,
+      payrollError,
+      payrollSummary,
+      recentRuns,
+      invoiceCount,
+      financeError,
+      billsCount,
+      billsError,
+      pendingInvites,
+      invitedUsers,
+      usersAccess,
+      auditPreview,
+      auditError,
+      auditByDay,
+      periodCount,
+      latestPeriod,
+      nextPayroll,
+      periodsError,
+      statutoryReady,
+      statutoryError
+    };
+
+    return { data, roles, name, email };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const m = await load();
+        const { data, roles, name, email } = await load();
         if (!cancelled) {
-          setSubmittedCount(m.submitted);
-          setDraftRuns(m.drafts);
-          setError(null);
+          setM(data);
+          setUserRoles(roles);
+          setUserName(name);
+          setUserEmail(email);
+          setLoadError(null);
         }
       } catch (e) {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load");
-          setSubmittedCount(null);
-          setDraftRuns(null);
+          setLoadError(e instanceof Error ? e.message : "Failed to load dashboard");
+          setM(null);
         }
       }
     })();
@@ -43,97 +331,13 @@ export default function DashboardPage() {
     };
   }, [load]);
 
-  return (
-    <div className="space-y-8">
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Home</p>
-        <h2 className="mt-1 font-serif text-2xl text-slate-900">Dashboard</h2>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          People, time, payroll, and audit routes are available from this console. Metrics below refresh when you open
-          this page.
-        </p>
-        {error ? (
-          <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">{error}</p>
-        ) : null}
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <article className="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Time approvals</p>
-            <p className="mt-1 text-3xl font-semibold text-slate-900">
-              {submittedCount === null ? "—" : submittedCount}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">Submitted timesheets waiting for approval</p>
-            <Link
-              href="/dashboard/time/approvals"
-              className="mt-3 inline-block text-sm font-semibold text-brand hover:underline"
-            >
-              Open approval queue →
-            </Link>
-          </article>
-          <article className="rounded-xl border border-slate-200 bg-slate-50/90 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payroll drafts</p>
-            <p className="mt-1 text-3xl font-semibold text-slate-900">{draftRuns === null ? "—" : draftRuns}</p>
-            <p className="mt-1 text-sm text-slate-600">Pay runs still in draft (finalize when ready)</p>
-            <Link
-              href="/dashboard/payroll/runs"
-              className="mt-3 inline-block text-sm font-semibold text-brand hover:underline"
-            >
-              View pay runs →
-            </Link>
-          </article>
-        </div>
-        <p className="mt-6 flex flex-wrap gap-4">
-          <Link
-            href="/dashboard/people/employees"
-            className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
-          >
-            People — employees
-          </Link>
-          <Link
-            href="/dashboard/time/entries"
-            className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
-          >
-            Time — timesheets
-          </Link>
-          <Link
-            href="/dashboard/payroll/periods"
-            className="text-sm font-semibold text-brand underline-offset-2 hover:underline"
-          >
-            Payroll — periods
-          </Link>
-          <Link href="/dashboard/audit" className="text-sm font-semibold text-brand underline-offset-2 hover:underline">
-            Audit log
-          </Link>
-        </p>
-      </section>
+  if (!m) {
+    return (
+      <div className="rounded-2xl border border-slate-200/90 bg-white p-10 text-sm text-slate-600 shadow-sm shadow-slate-200/50">
+        {loadError ? <p className="text-red-700">{loadError}</p> : <p>Loading your operating dashboard…</p>}
+      </div>
+    );
+  }
 
-      <section className="grid gap-4 md:grid-cols-2">
-        {[
-          {
-            title: "Workflow",
-            body: "Draft → submit timesheets from the entry editor. Managers approve under Time → Approvals. Payroll admins build periods and runs from approved time."
-          },
-          {
-            title: "Payroll status",
-            body: "Pay periods, draft and finalized runs, paystubs, and CSV export are wired through the API and admin UI."
-          },
-          {
-            title: "API",
-            body: "Authenticated routes use JWT from /auth/login. Health check stays public at /health."
-          },
-          {
-            title: "Deduction templates",
-            body: "Each template can be loaded by id for faster edits; employees reference a template for NHI, SSB, and income tax rules."
-          }
-        ].map((card) => (
-          <article
-            key={card.title}
-            className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-5 text-sm text-slate-700"
-          >
-            <h3 className="font-semibold text-slate-900">{card.title}</h3>
-            <p className="mt-2 leading-relaxed">{card.body}</p>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
+  return <BusinessOperatingDashboard data={m} userRoles={userRoles} userName={userName} userEmail={userEmail} />;
 }

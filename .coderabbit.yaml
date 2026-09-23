@@ -23,6 +23,6 @@ reviews:
     - path: "apps/admin-web/**"
       instructions: "In dev, apiBase uses /__kleentoditee_api proxy (next.config rewrites). Login uses readApiJson to avoid throw on HTML errors."
     - path: "**/*.{bat,cmd,ps1}"
-      instructions: "Windows helpers; paths assume repo root next to start-platform.bat. OneDrive EPERM: repair + copy to C: scripts."
+      instructions: "Windows helpers; paths assume repo root next to start-platform.bat. Prisma generate: repair + copy to C: scripts."
 chat:
   auto_reply: true

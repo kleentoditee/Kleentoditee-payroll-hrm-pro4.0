@@ -17,7 +17,7 @@ The approved blueprint covers multiple major subsystems. This file is the **mast
 ## Recommended Repository Shape
 
 ```text
-kleentoditee-payroll-pro/
+C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0\
   apps/
     admin-web/
     employee-tracker/
@@ -45,8 +45,8 @@ kleentoditee-payroll-pro/
 ### Task 0: Claude Research Review
 
 **Files:**
-- Read: `kleentoditee-payroll-pro/docs/superpowers/specs/2026-04-20-kleentoditee-platform-blueprint.md`
-- Create: `kleentoditee-payroll-pro/docs/research/2026-04-20-claude-prebuild-review.md`
+- Read: `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0\docs/superpowers/specs/2026-04-20-kleentoditee-platform-blueprint.md`
+- Create: `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0\docs/research/2026-04-20-claude-prebuild-review.md`
 
 - [ ] Review the blueprint against current official product patterns for QuickBooks, BambooHR, Workday, and workforce/time tools.
 - [ ] Validate payroll, finance, tax, document, and audit assumptions for the operating region and business model.
@@ -63,7 +63,7 @@ kleentoditee-payroll-pro/
 ### Task 1: Technical Decisions Record
 
 **Files:**
-- Create: `kleentoditee-payroll-pro/docs/architecture/2026-04-20-platform-tech-decisions.md`
+- Create: `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0\docs/architecture/2026-04-20-platform-tech-decisions.md`
 
 - [ ] Lock the stack choice for:
   - monorepo tooling
@@ -314,7 +314,7 @@ kleentoditee-payroll-pro/
 
 ## Execution Handoff
 
-Plan complete and saved to `kleentoditee-payroll-pro/docs/superpowers/plans/2026-04-20-kleentoditee-platform-master-plan.md`.
+Plan complete and saved to `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0\docs/superpowers/plans/2026-04-20-kleentoditee-platform-master-plan.md`.
 
 Two execution options:
 

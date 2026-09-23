@@ -27,6 +27,8 @@ export default function PayrollRunsPage() {
   const [schedule, setSchedule] = useState("");
   const [items, setItems] = useState<RunRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statutoryUnverified, setStatutoryUnverified] = useState(false);
+  const [statutoryYear, setStatutoryYear] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,16 +65,56 @@ export default function PayrollRunsPage() {
     };
   }, [status, schedule]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/settings/org`, {
+          headers: { ...authHeaders() }
+        });
+        const data = (await res.json()) as {
+          settings?: { statutoryEffectiveYear?: number };
+          statutoryVerification?: { verified: boolean; approved: boolean };
+        };
+        if (!cancelled && data.statutoryVerification) {
+          const v = data.statutoryVerification;
+          setStatutoryUnverified(!(v.verified && v.approved));
+          setStatutoryYear(data.settings?.statutoryEffectiveYear ?? null);
+        }
+      } catch {
+        // Verification hint is non-critical; ignore load failures.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Payroll</p>
-        <h2 className="mt-1 font-serif text-2xl text-slate-900">Pay runs</h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">
-          Draft runs can be rebuilt from approved time. Finalized runs become the source of truth for exports,
-          paystubs, and paid status.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Payroll</p>
+          <h2 className="mt-1 font-serif text-2xl text-slate-900">Pay runs</h2>
+        </div>
+        <Link
+          href="/dashboard/payroll/paystubs/preview"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
+        >
+          Preview staff paystubs
+        </Link>
       </div>
+
+      {statutoryUnverified ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Statutory rates for {statutoryYear ?? "the current year"} are not yet verified against official BVI
+          sources. Confirm the rates in{" "}
+          <Link href="/dashboard/settings" className="font-semibold underline">
+            Settings
+          </Link>{" "}
+          before finalizing a pay run.
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-4">
         <label className="text-sm">

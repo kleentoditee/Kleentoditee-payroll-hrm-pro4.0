@@ -11,6 +11,8 @@ type Row = {
   periodStart: string | null;
   periodEnd: string | null;
   site: string;
+  startTime: string;
+  endTime: string;
   status: string;
   daysWorked: number;
   hoursWorked: number;
@@ -25,6 +27,7 @@ function currentMonth(): string {
 
 function formatPeriod(row: Row): string {
   if (row.periodStart && row.periodEnd) {
+    if (row.periodStart.slice(0, 10) === row.periodEnd.slice(0, 10)) return row.periodStart.slice(0, 10);
     return `${row.periodStart.slice(0, 10)} to ${row.periodEnd.slice(0, 10)}`;
   }
   return row.month;
@@ -37,6 +40,7 @@ export default function TimeEntriesListPage() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,22 +86,41 @@ export default function TimeEntriesListPage() {
     };
   }, [month, allMonths, status, q]);
 
+  async function submitEntry(entry: Row) {
+    setSubmittingId(entry.id);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBase()}/time/entries/${entry.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status: "submitted" })
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Could not submit timesheet");
+      }
+      setItems((current) =>
+        current?.map((row) => (row.id === entry.id ? { ...row, status: "submitted" } : row)) ?? null
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not submit timesheet");
+    } finally {
+      setSubmittingId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Time</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Timesheets</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Monthly lines still work, but each entry can now carry a real period start and end date for weekly
-            and biweekly payroll imports.
-          </p>
         </div>
         <Link
           href="/dashboard/time/entries/new"
           className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
         >
-          Add timesheet
+          Add work time
         </Link>
       </div>
 
@@ -154,17 +177,20 @@ export default function TimeEntriesListPage() {
       {!items ? (
         <p className="text-sm text-slate-600">Loading...</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">
-          No timesheets match this filter. Add one, change the month, or toggle &quot;All months&quot;.
-        </p>
+        <p className="text-sm text-slate-600">No timesheets found.</p>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((entry) => (
             <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
               <div>
-                <p className="font-medium text-slate-900">{entry.employee.fullName}</p>
+                <Link
+                  href={`/dashboard/time/entries/${entry.id}`}
+                  className="font-medium text-slate-900 hover:text-brand hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                >
+                  {entry.employee.fullName}
+                </Link>
                 <p className="text-sm text-slate-600">
-                  {entry.site || "-"} | {formatPeriod(entry)} | {entry.daysWorked}d / {entry.hoursWorked}h
+                  {entry.site || "-"} | {formatPeriod(entry)} | {entry.startTime || "-"} to {entry.endTime || "-"} | {entry.hoursWorked}h
                 </p>
                 <p className="text-xs text-slate-500">{entry.template.name}</p>
               </div>
@@ -172,12 +198,16 @@ export default function TimeEntriesListPage() {
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-700">
                   {entry.status}
                 </span>
-                <Link
-                  href={`/dashboard/time/entries/${entry.id}`}
-                  className="text-sm font-semibold text-brand hover:underline"
-                >
-                  Edit
-                </Link>
+                {entry.status === "draft" ? (
+                  <button
+                    type="button"
+                    onClick={() => submitEntry(entry)}
+                    disabled={submittingId !== null}
+                    className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submittingId === entry.id ? "Submitting..." : "Submit"}
+                  </button>
+                ) : null}
               </div>
             </li>
           ))}

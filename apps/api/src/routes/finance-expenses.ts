@@ -1,4 +1,4 @@
-import { AccountType, PaymentMethod, Role, TransactionStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, PaymentMethod, Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import {
@@ -6,7 +6,14 @@ import {
   rollupTotals,
   round2
 } from "../lib/finance-transactions.js";
+import {
+  buildExpensePostedJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -151,6 +158,7 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
 
       const row = await prisma.expense.create({
         data: {
+          orgId: requireOrgId(),
           number,
           expenseDate,
           method,
@@ -163,7 +171,7 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
           taxTotal: totals.taxTotal,
           total: totals.total,
           status: TransactionStatus.draft,
-          lines: { create: lines }
+          lines: { create: lines.map((l) => ({ orgId: requireOrgId(), ...l })) }
         },
         include: {
           supplier: true,
@@ -251,7 +259,7 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
           await tx.expenseLine.deleteMany({ where: { expenseId: id } });
           await tx.expense.update({
             where: { id },
-            data: { ...data, lines: { create: nextLines } }
+            data: { ...data, lines: { create: nextLines.map((l) => ({ orgId: requireOrgId(), ...l })) } }
           });
         } else {
           await tx.expense.update({ where: { id }, data: data as never });
@@ -294,10 +302,22 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.total <= 0) {
       return c.json({ error: "Expense total must be greater than zero before posting." }, 409);
     }
-    const row = await prisma.expense.update({
-      where: { id },
-      data: { status: TransactionStatus.open, postedAt: new Date() }
-    });
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.expense.update({
+          where: { id },
+          data: { status: TransactionStatus.open, postedAt: new Date() }
+        });
+        const withLines = await tx.expense.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+        const accounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildExpensePostedJournal(withLines, accounts.taxPayable), c.get("userId"));
+        return updated;
+      });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "expense.post",
@@ -317,10 +337,24 @@ export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
     if (before.status === TransactionStatus.void) {
       return c.json({ error: "Expense is already void." }, 409);
     }
-    const row = await prisma.expense.update({
-      where: { id },
-      data: { status: TransactionStatus.void, voidedAt: new Date() }
-    });
+    let row;
+    try {
+      row = await prisma.$transaction(async (tx) => {
+        const updated = await tx.expense.update({
+          where: { id },
+          data: { status: TransactionStatus.void, voidedAt: new Date() }
+        });
+        await reverseJournal(tx, "expense", id, {
+          date: new Date(),
+          memo: `Expense ${before.number} voided — reversal`,
+          createdByUserId: c.get("userId")
+        });
+        return updated;
+      });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
     await writeAudit({
       actorUserId: c.get("userId"),
       action: "expense.void",

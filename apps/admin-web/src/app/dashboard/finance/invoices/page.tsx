@@ -71,10 +71,6 @@ export default function InvoicesListPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Invoices</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Sales invoices. Create a draft, add lines, then send it to move it to Open and start
-            tracking the balance.
-          </p>
         </div>
         <Link
           href="/dashboard/finance/invoices/new"

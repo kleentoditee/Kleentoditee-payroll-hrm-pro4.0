@@ -16,8 +16,21 @@ coverage/
 # Claude local (machine paths / dev credentials; keep out of git)
 .claude/settings.local.json
 
+# HR document uploads (local API dev; never store employee files in git)
+uploads/
+apps/api/uploads/
+deployment-backups/
+
 # SQLite local dev database
 packages/db/prisma/dev.db
 packages/db/prisma/dev.db-journal
 packages/db/prisma/dev-*.db
 packages/db/prisma/dev-*.db-journal
+
+# local agent/batch scratch + rendered test dumps
+tmp/
+ytd-page.html
+
+# Playwright e2e artifacts
+test-results/
+playwright-report/

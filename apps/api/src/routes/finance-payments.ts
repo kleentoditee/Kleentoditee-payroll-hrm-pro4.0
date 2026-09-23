@@ -3,12 +3,20 @@ import {
   PaymentMethod,
   Role,
   TransactionStatus,
-  prisma
+  prisma,
+  requireOrgId
 } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { MONEY_TOLERANCE, nextPaymentNumber, round2 } from "../lib/finance-transactions.js";
+import {
+  buildPaymentReceivedJournal,
+  ensureControlAccounts,
+  postJournal,
+  reverseJournal
+} from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -176,6 +184,7 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       const payment = await prisma.$transaction(async (tx) => {
         const created = await tx.payment.create({
           data: {
+            orgId: requireOrgId(),
             number,
             customerId,
             paymentDate,
@@ -187,7 +196,7 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
             unapplied,
             depositAccountId,
             applications: {
-              create: applications.map((a) => ({ invoiceId: a.invoiceId, amount: a.amount }))
+              create: applications.map((a) => ({ orgId: requireOrgId(), invoiceId: a.invoiceId, amount: a.amount }))
             }
           }
         });
@@ -205,6 +214,8 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
             }
           });
         }
+        const glAccounts = await ensureControlAccounts(tx);
+        await postJournal(tx, buildPaymentReceivedJournal(created, glAccounts.accountsReceivable), c.get("userId"));
         return tx.payment.findUnique({
           where: { id: created.id },
           include: {
@@ -226,6 +237,9 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
     } catch (e) {
       if (isUniqueConstraintError(e)) {
         return c.json({ error: "Payment number or application already exists." }, 409);
+      }
+      if (e instanceof PeriodClosedError) {
+        return c.json({ error: e.message }, 409);
       }
       return c.json({ error: e instanceof Error ? e.message : "Could not record payment." }, 400);
     }
@@ -295,7 +309,7 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       const payment = await prisma.$transaction(async (tx) => {
         for (const app of applications) {
           await tx.paymentApplication.create({
-            data: { paymentId: id, invoiceId: app.invoiceId, amount: app.amount }
+            data: { orgId: requireOrgId(), paymentId: id, invoiceId: app.invoiceId, amount: app.amount }
           });
           const inv = invoiceById.get(app.invoiceId)!;
           const nextAmountPaid = round2(inv.amountPaid + app.amount);
@@ -421,21 +435,32 @@ export const financePaymentsRoutes = new Hono<{ Variables: AuthVariables }>()
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      for (const app of before.applications) {
-        const nextAmountPaid = round2(app.invoice.amountPaid - app.amount);
-        const nextBalance = round2(app.invoice.total - nextAmountPaid);
-        await tx.invoice.update({
-          where: { id: app.invoiceId },
-          data: {
-            amountPaid: nextAmountPaid,
-            balance: nextBalance,
-            status: deriveInvoiceStatus(app.invoice.status, app.invoice.total, nextAmountPaid)
-          }
+    try {
+      await prisma.$transaction(async (tx) => {
+        for (const app of before.applications) {
+          const nextAmountPaid = round2(app.invoice.amountPaid - app.amount);
+          const nextBalance = round2(app.invoice.total - nextAmountPaid);
+          await tx.invoice.update({
+            where: { id: app.invoiceId },
+            data: {
+              amountPaid: nextAmountPaid,
+              balance: nextBalance,
+              status: deriveInvoiceStatus(app.invoice.status, app.invoice.total, nextAmountPaid)
+            }
+          });
+        }
+        // Reverse the receipt posting before removing the document.
+        await reverseJournal(tx, "payment", id, {
+          date: new Date(),
+          memo: `Payment ${before.number} deleted — reversal`,
+          createdByUserId: c.get("userId")
         });
-      }
-      await tx.payment.delete({ where: { id } });
-    });
+        await tx.payment.delete({ where: { id } });
+      });
+    } catch (e) {
+      if (e instanceof PeriodClosedError) return c.json({ error: e.message }, 409);
+      throw e;
+    }
 
     await writeAudit({
       actorUserId: c.get("userId"),

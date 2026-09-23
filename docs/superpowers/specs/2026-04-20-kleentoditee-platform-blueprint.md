@@ -6,7 +6,7 @@
 
 **Product Name:** KleenToDiTee Platform
 
-**Current Starting Point:** `kleentoditee-payroll-pro` is a browser-local payroll prototype with employees, timesheets, payroll calculations, payroll history, CSV export, JSON backup, and PWA support.
+**Current Starting Point:** `C:\Kleentoditee Payroll HRM` is a browser-local payroll prototype with employees, timesheets, payroll calculations, payroll history, CSV export, JSON backup, and PWA support.
 
 **Target Outcome:** Transform the current payroll prototype into a full internal admin and manager platform with:
 - a QuickBooks-style admin shell

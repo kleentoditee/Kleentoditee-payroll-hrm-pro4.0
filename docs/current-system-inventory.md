@@ -1,7 +1,9 @@
 # Current system inventory
 
 **Generated from repository review (read-only documentation; no runtime changes).**  
-Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`apps/api`), Prisma + SQLite (`@kleentoditee/db`).
+Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`apps/api`), Prisma + PostgreSQL (`@kleentoditee/db`). PostgreSQL is the only supported database.
+
+**Stability guardrails:** root scripts provide `npm run db:doctor`, `npm run start:local`, `npm run typecheck`, `npm run lint`, `npm run test`, `npm run test:unit`, `npm run test:smoke`, `npm run build`, and `npm run ci`. Run targeted smoke tests before merging changes that affect routes or response bodies.
 
 ---
 
@@ -13,7 +15,7 @@ Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`app
 |-----|------|--------|
 | **admin-web** | Next.js App Router admin console | Primary UI for HR/payroll/finance operations; uses `NEXT_PUBLIC_API_URL` or dev rewrites to `http://127.0.0.1:8787` via `/__kleentoditee_api/*`. |
 | **api** | Hono on Node (`@hono/node-server`) | JSON API, JWT auth, CORS; default port **8787** (`PORT`). |
-| **employee-tracker** | Next.js “mobile-style” client | Thin UI for employees: login, month selector, draft lines, submit/delete; calls `/time/self/*`. |
+| **employee-tracker** | Next.js “mobile-style” client | **Staff Hub:** time self-service (`/time/self/*`), requests (`/staff/self/requests*`), and Phase 3 **schedule, announcements, quiz/points** (`/staff/self/*`). See `docs/employee-tracker-sharing.md` and `docs/staff-hub-schedule-messages-rewards.md`. |
 
 ### Packages (`packages/`)
 
@@ -26,7 +28,7 @@ Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`app
 
 - **packageManager:** `npm@11.11.0`  
 - **Workspaces:** `apps/*`, `packages/*`  
-- **Common scripts:** `db:generate`, `db:push`, `db:seed`, `dev:api`, `dev` / `dev:admin`, `dev:tracker`, `dev:all` (api + admin), `build` (admin + tracker + api).
+- **Common scripts:** `db:doctor`, `db:check`, `db:wait`, `db:up`, `db:push`, `db:seed`, `start:local`, `dev:api`, `dev:admin`, `dev:tracker`, `dev:all` (api + admin + tracker), `build`, `typecheck`, `lint`, `test`, `test:unit`, `test:smoke`, `ci`, `check:tracker-login` (API health + tracker user login + `/auth/me` + `/time/self/profile`; see `docs/employee-tracker-sharing.md`).
 
 ---
 
@@ -47,7 +49,7 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/auth/register` | Bootstrap first user only; then disabled. |
-| POST | `/auth/login` | Email/password → JWT + user profile. |
+| POST | `/auth/login` | Email/password → JWT + user profile (`user` includes `roles`, `status`, `employeeId`). Invited users are rejected with `code: invitation_pending` before password check (placeholder hash until invite accept). Wrong password: `code: invalid_credentials`. Inactive: `code: account_inactive`. |
 | POST | `/auth/dev-emergency` | Dev-only passwordless login when env opt-in; **403 in production**. |
 | GET | `/auth/me` | Current user (Bearer JWT). |
 
@@ -57,14 +59,32 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 |--------|------|---------|
 | GET | `/audit/recent` | Paginated audit log (`take` query, cap 200); platform / payroll / hr / finance roles. |
 
+### `/admin` (`routes/admin-users.ts`)
+
+Mounted at `/admin`; **platform_owner** only for listed routes (see middleware in file).
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/admin/users/invitations/pending` | Non-revoked, non-expired pending invitations. |
+| POST | `/admin/users/invite` | Create user + invitation (email flow). |
+| GET | `/admin/users` | List users (optional `status` / `active` filters). |
+| POST | `/admin/users` | Create user (non-invite path when used). |
+| GET, PATCH | `/admin/users/:id` | Read / update user (roles, name, `employeeId`, etc.). |
+| POST | `/admin/users/:id/suspend` | Suspend user. |
+| POST | `/admin/users/:id/deactivate` | Deactivate user. |
+| POST | `/admin/users/:id/reactivate` | Reactivate user. |
+
 ### `/people` (`routes/people.ts`)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET, POST | `/people/templates` | List / create **DeductionTemplate** (NHI/SSB/tax rules). |
 | GET, PATCH, DELETE | `/people/templates/:id` | Read / update / delete template. |
-| GET, POST | `/people/employees` | List / create **Employee** records. |
-| GET, PATCH, DELETE | `/people/employees/:id` | Read / update / delete employee. |
+| GET, POST | `/people/employees` | List / create **Employee** records. List omits SSN, NHI, IRD, work permit; includes `hasProfilePhoto`, `linkedUser` email, template name. |
+| GET | `/people/employees/:id/tracker-share` | Share metadata: public tracker `loginUrl` / `appHomeUrl` (from `EMPLOYEE_TRACKER_PUBLIC_URL`); optional `linkedUser` { email, status }. No secrets in response. |
+| GET, POST, DELETE | `/people/employees/:id/documents`, `/people/employees/:id/documents/:docId`, `/people/employees/:id/documents/:docId/file` | **EmployeeDocument** uploads (multipart), list, file download, soft delete. PII document types (NHI, work permit, ID) download: platform_owner, hr_admin, payroll_admin only. |
+| GET | `/people/employees/:id/profile-photo` | **Binary** current profile image (any People viewer). |
+| GET, PATCH, DELETE | `/people/employees/:id` | Read / update / delete employee. Detail returns `sensitiveExposed` + masked or full SSN/NHI/IRD/work permit; audit redacts PII. |
 
 ### `/time` (`routes/time.ts`)
 
@@ -78,6 +98,46 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 | GET | `/time/self/profile` | **employee_tracker_user:** linked **Employee** profile. |
 | GET, POST, PATCH, DELETE | `/time/self/entries`, `/time/self/entries/:id` | Self-service draft lines. |
 | POST | `/time/self/entries/:id/submit` | Employee submits a draft line. |
+
+### `/staff/self` and `/admin/staff-requests` (`routes/staff-requests.ts`)
+
+Phase 2 — Staff Hub request system. See `docs/staff-requests.md` for full contract.
+
+| Method | Path | Role | Purpose |
+|--------|------|------|---------|
+| GET | `/staff/self/requests` | `employee_tracker_user` | List signed-in employee's requests |
+| POST | `/staff/self/requests` | `employee_tracker_user` | Submit a new request (job letter, time off, sick leave, profile update, supplies, equipment, incident, damage) |
+| POST | `/staff/self/requests/:id/cancel` | `employee_tracker_user` | Cancel an active (`SUBMITTED` / `UNDER_REVIEW`) request the employee owns |
+| GET | `/admin/staff-requests` | platform_owner, hr_admin, operations_manager, site_supervisor (full); payroll_admin (TIME_OFF / SICK_LEAVE only) | List requests with `status` / `type` / `employeeId` filters |
+| GET | `/admin/staff-requests/:id` | same as list | Detail |
+| PATCH | `/admin/staff-requests/:id/status` | platform_owner, hr_admin, operations_manager, site_supervisor | Move status with optional `reviewNote`; sets `reviewedByUserId` and `reviewedAt`; writes audit log |
+
+Sensitive HR fields (SSN / NHI / IRD / work permit) are **never** accepted by these routes. `requestedContactUpdate` is restricted to a fixed allowlist (phone, personal email, address, emergency contact fields, uniform size).
+
+### `/staff` (`routes/staff.ts`)
+
+Mounted at `/staff`. **employee_tracker_user** with linked `employeeId` only.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/staff/self/schedule?from&to` | Work assignments in date range (`YYYY-MM-DD`). |
+| GET | `/staff/self/schedule/today` | Today’s assignments (UTC day). |
+| GET | `/staff/self/announcements` | Active announcements (ALL + EMPLOYEES, date window). |
+| GET | `/staff/self/quiz/daily` | Daily quiz question or null. |
+| POST | `/staff/self/quiz/attempt` | Submit answer; one attempt per question per UTC day. |
+| GET | `/staff/self/rewards/summary` | Sum of `RewardLedger` points (engagement, not pay). |
+
+### Staff Hub — admin operations (`routes/admin-staff.ts`, second mount on `/admin`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/admin/schedules?from&to&employeeId?` | List work assignments. |
+| POST | `/admin/schedules` | Create assignment. |
+| PATCH | `/admin/schedules/:id` | Update. |
+| POST | `/admin/schedules/:id/cancel` | Set status CANCELLED. |
+| GET | `/admin/announcements` | List announcements. |
+| POST | `/admin/announcements` | Create. |
+| PATCH | `/admin/announcements/:id` | Update / activate / deactivate. |
 
 ### `/payroll` (`routes/payroll.ts`)
 
@@ -134,13 +194,19 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 | **UserRole** | Join table: many roles per user (`Role` enum: platform_owner, hr_admin, payroll_admin, finance_admin, operations_manager, site_supervisor, employee_tracker_user). |
 | **AuditLog** | Append-only event log (actor, action, entity type/id, before/after JSON). |
 | **DeductionTemplate** | Reusable NHI/SSB/income tax rates and flags; assigned to **Employee** and **TimeEntry**. |
-| **Employee** | Master HR/payroll record: name, pay basis/rates, schedule, site string, `templateId`, active flag. |
+| **Employee** | Master HR/payroll record: name, contact, `profilePhotoPath`, pay basis/rates, schedule, site, **SSN, NHI, IRD, work permit** (sensitive; masked in list APIs and redacted in audit), **employment / work permit dates**, `templateId`, `active` flag, documents relation. |
+| **EmployeeDocument** | HR file metadata (`EmployeeDocumentType`: PHOTO, WORK_PERMIT_CARD, NHI_CARD, ID_CARD, CONTRACT, OTHER), `storagePath` as a document storage object key, `deletedAt` for soft delete. |
 | **TimeEntry** | Monthly (or per-period) working time line: site, days/hours/OT, earnings adjustments, per-line tax flags, **TimeEntryStatus** (draft → submitted → approved → paid). |
 | **PayPeriod** | Payroll window (label, schedule, start/end, optional pay date). |
 | **PayRun** | One run per period; **PayRunStatus**; links **PayRunItem** and **PayrollExport**. |
 | **PayRunItem** | Frozen payroll line per employee in a run (amounts, templates snapshot, **sourceEntryIds** JSON). |
 | **Paystub** | Printable artifact per **PayRunItem** (`stubNumber`, `payload` JSON). |
 | **PayrollExport** | Stored file contents (e.g. CSV) for a run. |
+| **StaffRequest** | Phase 2 Staff Hub request — type (`JOB_LETTER`, `TIME_OFF`, `SICK_LEAVE`, `PROFILE_UPDATE`, `SUPPLIES_REQUEST`, `EQUIPMENT_UNIFORM_REQUEST`, `INCIDENT_REPORT`, `DAMAGE_REPORT`), status lifecycle (`SUBMITTED` → `UNDER_REVIEW` → `APPROVED`/`DENIED`/`COMPLETED`/`CANCELLED`), employee owner, optional dates, reason, details, restricted `requestedContactUpdate` JSON, reviewer audit fields. |
+| **WorkAssignment** | Phase 3: per-employee date, location, optional times, status. |
+| **StaffAnnouncement** | Phase 3: title/body, category, audience, optional start/end, active. |
+| **NotificationLog** | Phase 3 foundation: channel + status for future delivery (no auto email/WhatsApp in this phase). |
+| **StaffQuizQuestion** / **StaffQuizAttempt** / **RewardLedger** | Phase 3: daily quiz and non-monetary points. |
 | **Account** | Chart of accounts; **AccountType**; optional parent/child tree. |
 | **Customer** | AR customer. |
 | **Supplier** | AP vendor. |
@@ -154,7 +220,7 @@ All JSON routes (except where noted) live under the Hono app in `apps/api/src/ap
 
 **Enums (high level):** `Role`, `PayBasis`, `PaySchedule`, `TimeEntryStatus`, `PayRunStatus`, `AccountType`, `ProductKind`, `TransactionStatus`, `PaymentMethod`.
 
-**Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants, user-invite beyond first registration.
+**Not modeled:** full double-entry journal with running account balances, bank reconciliation beyond deposit workflow, multi-company tenants.
 
 ---
 
@@ -166,11 +232,12 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 |-------|---------|
 | `/` | Marketing/entry; routes toward login. |
 | `/login` | Admin sign-in (JWT to localStorage; API calls use `authHeaders()`). |
-| `/dashboard` | Home: metrics (submitted time count, draft pay runs), links to main areas. |
+| `/dashboard` | **Business home:** premium module launcher, create-action pills, “at a glance” metrics, and widget-style panels (payroll readiness, time queue, finance overview, HR/tracker copy, audit + reports shortcuts, honest finance/cash-flow placeholders). All numbers use live API data or explicit “no access / unavailable” messaging. Visual layout and density of this home screen were upgraded for a clearer business-console experience. |
 | `/dashboard/people` | Redirect → `/dashboard/people/employees`. |
-| `/dashboard/people/employees` | Employee list, search, link to new/detail. |
-| `/dashboard/people/employees/new` | Create employee. |
-| `/dashboard/people/employees/[id]` | View/edit employee. |
+| `/dashboard/people/employees` | Employee list (avatar, name, work email, phone, status, search); **no** SSN in table. |
+| `/dashboard/people/requests` | **Staff requests review queue:** filter by status/type, two-column list-and-detail layout with reviewer note and status-transition buttons. See `docs/staff-requests.md`. |
+| `/dashboard/people/employees/new` | Create employee; optional employment dates; government IDs on create for platform owner / hr_admin / payroll_admin. |
+| `/dashboard/people/employees/[id]` | **HR record:** profile photo, contact, employment dates, government IDs (mask + show), payroll, **documents** (upload per type, soft remove), internal notes, **Share tracker access**. See `docs/hr-employee-records.md`. |
 | `/dashboard/people/templates` | Deduction templates list. |
 | `/dashboard/people/templates/new` | Create template. |
 | `/dashboard/people/templates/[id]` | View/edit template. |
@@ -209,10 +276,19 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 | `/dashboard/finance/deposits/new` | New deposit. |
 | `/dashboard/finance/deposits/[id]` | Deposit detail / post. |
 | `/dashboard/audit` | Recent audit events (`/audit/recent`). |
+| `/dashboard/reports` | Live financial summary with date filters, revenue, expenses, net income, cash received, receivables/payables, monthly profit and loss, customer/supplier drilldowns, and CSV export. |
+| `/dashboard/schedule` | **Work assignments** table and create (API `/admin/schedules*`). |
+| `/dashboard/announcements` | **Staff announcements** list and create (API `/admin/announcements*`). |
+| `/dashboard/settings` | Working organization, payroll, time, finance, and notification settings backed by `/settings`. |
+| `/dashboard/users` | Users & roles list (invitations + users); `platform_owner`-oriented admin. |
+| `/dashboard/users/new` | Invite / create user flow. |
+| `/dashboard/users/[id]` | User detail (roles, suspend, link employee, etc.). |
 
-**Layouts:** `dashboard/layout.tsx`, `people/layout.tsx`, `payroll/layout.tsx`, `time/layout.tsx`, `finance/layout.tsx` provide section navigation chrome.
+**App shell:** `components/app-shell.tsx` provides the signed-in chrome: **grouped sidebar** (Dashboard, People, Time, Payroll, Finance, Reports, Admin) with **active state** from the current path, payroll hints (paystubs/exports → pay runs), a **Create** actions menu (employee, time entry, approvals, pay period, pay runs, invoice, expense, invite user), and sign-out. Dead rail buttons and non-linking shell items from earlier iterations were removed.
 
-**employee-tracker (separate app):** `/` home (self time), `/login` — not part of `admin-web` but part of the same platform API.
+**Layouts:** `dashboard/layout.tsx`, `people/layout.tsx`, `payroll/layout.tsx`, `time/layout.tsx`, `finance/layout.tsx` provide section-level chrome where present; primary navigation is the shared app shell.
+
+**employee-tracker (separate app):** `/` home (self time or marketing/landing when logged out), `/login` — not part of `admin-web` but part of the same platform API. Sharing workflow: `docs/employee-tracker-sharing.md`.
 
 ---
 
@@ -231,18 +307,16 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ### Stubs, placeholders, or “phase later” in UI
 
-- **App shell** (`app-shell.tsx`): left “rail” items (Create, Bookmarks, Feed, Reports, All apps, Customize) are mostly **non-navigating buttons**; only Home links to `/dashboard`. Pinned row includes **Hiring** and **Reports** **without** `href` (non-clickable).  
-- **Global search** in header: **disabled** with tooltip *“Global search — wired in a later phase”*.  
-- **@kleentoditee/ui:** placeholder token export only.  
+- **@kleentoditee/ui:** placeholder token export only; both web apps currently use their own production UI components.  
 
 ### Missing or not exposed in admin
 
-- **User and role management:** no API routes to add users, assign roles, or link `employeeId` after bootstrap (operational changes require DB/seed or manual Prisma).  
+- **User and role management:** admin UI and API exist for invites, roles, and user lifecycle for authorized roles; non–platform owners may see restricted subsets per API rules.  
 - **Register** after the first user exists is blocked by design.  
 - **Full general ledger** with balanced journal posts and **account running balances** (schema is document- and line-centric; `Account` has no period balance field).  
 - **Invoices/employee payroll** integration: payroll and finance are separate domains in the current schema.  
-- **Email / notifications, file uploads, multi-tenancy, SSO** — not present in the reviewed code paths.  
-- **Production hardening** left as environment concerns (CORS allowlist, `NODE_ENV`, emergency login off, etc., documented in code).  
+- **General outbound notifications** beyond announcements and password reset email, multi-tenancy, and SSO are not implemented.  
+- **Production hardening** still requires real hosting configuration, SMTP credentials, backups, and operational monitoring.  
 
 *Stub vs “thin but complete” is judgmental: feature screens that call real APIs are treated as **complete**; empty navigation affordances and missing admin domains are **stub** or **missing**.*
 
@@ -250,11 +324,11 @@ Path prefix: `src/app/`. All dashboard routes are under `/dashboard/…` unless 
 
 ## 6. Recommended next implementation order
 
-1. **User & role administration (API + admin UI)** — Unblocks real teams: invite users, assign `hr_admin` / `finance_admin` / `employee_tracker_user`, link `User.employeeId` without DB surgery. This is the largest operational gap relative to a working org.  
-2. **Clarify or implement shell affordances** — Either wire Create/Reports/Hiring to real routes or remove/label as future to avoid a “broken” console feel.  
-3. **Global search (optional but high impact)** — If product priority is findability, replace the disabled field with server-backed search over employees, invoices, etc.; if not, hide it until a spec exists.  
+1. **Harden user & role administration** — Extend polish, edge cases, and non–platform-owner workflows now that invite/list/detail routes exist.  
+2. **Deployment and operations** — Publish the prepared Render blueprint, configure SMTP, verify backups, and add monitoring.  
+3. **Global search (optional but high impact)** — Add server-backed search over employees, invoices, and other records when product priority requires it.  
 4. **employee-tracker hardening** — Edit policy for non-draft lines, error states, and parity with any new approval rules.  
-5. **Financial reporting** — If required beyond document lists: define whether to add **journal entries** and balance reporting or stay invoice-centric and export to external tools.  
+5. **General ledger depth** — Decide whether to add balanced journal entries and period balances or keep the current document-led accounting model.  
 6. **@kleentoditee/ui** — Promote only when multiple apps need the same components; until then, keep admin patterns local to avoid abstracting too early.  
 
-This order keeps **payroll and finance flows** (already deep) maintainable while closing **identity/authorization operations** and **UI honesty** (real links vs placeholders) first.
+This order keeps **payroll and finance flows** (already deep) maintainable while iterating on **operational admin** (users, schedule, settings) and **findability** (search, reporting depth).
