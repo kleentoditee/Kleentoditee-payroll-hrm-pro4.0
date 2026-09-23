@@ -1,5 +1,13 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
+import {
+  BoundedTable,
+  RecordCard,
+  RecordCardField,
+  RecordCardFields,
+  RecordCardList
+} from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -103,19 +111,29 @@ export default function BillPaymentDetailPage() {
   }
 
   if (error) {
-    return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>;
+    return (
+      <div className="space-y-6">
+        <FinanceRecordBreadcrumbs />
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      </div>
+    );
   }
   if (!billPayment) {
-    return <p className="text-sm text-slate-600">Loading…</p>;
+    return (
+      <div className="space-y-6">
+        <FinanceRecordBreadcrumbs />
+        <p className="text-sm text-slate-600">Loading…</p>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
+      <FinanceRecordBreadcrumbs recordLabel={billPayment.number} />
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
-          <h2 className="mt-1 font-serif text-2xl text-slate-900">Bill payment {billPayment.number}</h2>
-          <p className="mt-2 text-sm text-slate-600">
+        <div className="min-w-0">
+          <h2 className="font-serif text-2xl text-slate-900">Bill payment {billPayment.number}</h2>
+          <p className="mt-2 break-words text-sm text-slate-600">
             {billPayment.supplier.displayName}
             {billPayment.supplier.email ? ` · ${billPayment.supplier.email}` : ""}
           </p>
@@ -123,10 +141,10 @@ export default function BillPaymentDetailPage() {
             {fmtDate(billPayment.paymentDate)} · {billPayment.method}
             {billPayment.reference ? ` · ref ${billPayment.reference}` : ""}
           </p>
-          <p className="text-sm text-slate-600">
+          <p className="break-words text-sm text-slate-600">
             Paid from {billPayment.sourceAccount.code} {billPayment.sourceAccount.name}
           </p>
-          {billPayment.memo ? <p className="mt-2 text-sm text-slate-600">{billPayment.memo}</p> : null}
+          {billPayment.memo ? <p className="mt-2 break-words text-sm text-slate-600">{billPayment.memo}</p> : null}
         </div>
         <div className="text-right">
           <p className="text-lg font-semibold text-slate-900">${billPayment.amount.toFixed(2)}</p>
@@ -136,55 +154,96 @@ export default function BillPaymentDetailPage() {
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2">Bill</th>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2 text-right">Bill total</th>
-              <th className="px-4 py-2 text-right">New balance</th>
-              <th className="px-4 py-2 text-right">Applied</th>
-              <th className="px-4 py-2 text-right">&nbsp;</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {billPayment.applications.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-4 text-center text-slate-500">
-                  Unapplied — no bills linked yet.
-                </td>
-              </tr>
-            ) : (
-              billPayment.applications.map((app) => (
-                <tr key={app.id}>
-                  <td className="px-4 py-2">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <RecordCardList>
+          {billPayment.applications.length === 0 ? (
+            <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+              Unapplied — no bills linked yet.
+            </p>
+          ) : (
+            billPayment.applications.map((app) => (
+              <RecordCard key={app.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Bill</p>
                     <Link
                       href={`/dashboard/finance/bills/${app.bill.id}`}
-                      className="font-medium text-slate-900 hover:text-brand"
+                      className="mt-1 block truncate font-bold text-slate-950 outline-none ring-[#006D77] hover:text-brand focus-visible:ring-2"
                     >
                       {app.bill.number}
                     </Link>
-                  </td>
-                  <td className="px-4 py-2 capitalize text-slate-600">{app.bill.status}</td>
-                  <td className="px-4 py-2 text-right">${app.bill.total.toFixed(2)}</td>
-                  <td className="px-4 py-2 text-right">${app.bill.balance.toFixed(2)}</td>
-                  <td className="px-4 py-2 text-right font-medium">${app.amount.toFixed(2)}</td>
-                  <td className="px-4 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => unapply(app.id)}
-                      disabled={busy}
-                      className="text-xs font-semibold text-slate-500 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Unapply
-                    </button>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold capitalize text-slate-700">
+                    {app.bill.status}
+                  </span>
+                </div>
+                <RecordCardFields>
+                  <RecordCardField label="Bill total">${app.bill.total.toFixed(2)}</RecordCardField>
+                  <RecordCardField label="New balance">${app.bill.balance.toFixed(2)}</RecordCardField>
+                  <RecordCardField label="Applied">${app.amount.toFixed(2)}</RecordCardField>
+                </RecordCardFields>
+                <button
+                  type="button"
+                  onClick={() => unapply(app.id)}
+                  disabled={busy}
+                  className="mt-3 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Unapply
+                </button>
+              </RecordCard>
+            ))
+          )}
+        </RecordCardList>
+        <BoundedTable>
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-2">Bill</th>
+                <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2 text-right">Bill total</th>
+                <th className="px-4 py-2 text-right">New balance</th>
+                <th className="px-4 py-2 text-right">Applied</th>
+                <th className="px-4 py-2 text-right">&nbsp;</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {billPayment.applications.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-4 text-center text-slate-500">
+                    Unapplied — no bills linked yet.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                billPayment.applications.map((app) => (
+                  <tr key={app.id}>
+                    <td className="px-4 py-2">
+                      <Link
+                        href={`/dashboard/finance/bills/${app.bill.id}`}
+                        className="font-medium text-slate-900 hover:text-brand"
+                      >
+                        {app.bill.number}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 capitalize text-slate-600">{app.bill.status}</td>
+                    <td className="px-4 py-2 text-right">${app.bill.total.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right">${app.bill.balance.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right font-medium">${app.amount.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => unapply(app.id)}
+                        disabled={busy}
+                        className="text-xs font-semibold text-slate-500 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Unapply
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </BoundedTable>
       </section>
 
       {actionError ? (
@@ -194,7 +253,7 @@ export default function BillPaymentDetailPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/finance/bill-payments"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Back
         </Link>
@@ -202,7 +261,7 @@ export default function BillPaymentDetailPage() {
           type="button"
           onClick={deleteBillPayment}
           disabled={busy}
-          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Delete bill payment
         </button>

@@ -24,6 +24,14 @@ type CustomerRow = {
   invoiceCount?: number;
 };
 
+type CustomerOverviewSummary = {
+  totalOpenBalance: number;
+  openInvoiceCount: number;
+  overdueCount: number;
+  overdueBalance: number;
+  recentlyPaidTotal: number;
+};
+
 type ColumnKey =
   | "companyName"
   | "billingAddress"
@@ -172,8 +180,12 @@ export default function CustomersListPage() {
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
   const [updatingCustomerId, setUpdatingCustomerId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<CustomerOverviewSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const loadSeq = useRef(0);
+  const summarySeq = useRef(0);
 
   useEffect(() => {
     const seq = ++loadSeq.current;
@@ -196,6 +208,27 @@ export default function CustomersListPage() {
       }
     })();
   }, [list.queryString, nonce]);
+
+  useEffect(() => {
+    const seq = ++summarySeq.current;
+    setSummaryLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/finance/customers/summary`, {
+          headers: { ...authHeaders() }
+        });
+        const data = await readApiData<{ summary: CustomerOverviewSummary }>(res);
+        if (seq !== summarySeq.current) return;
+        setSummary(data.summary);
+        setSummaryError(null);
+      } catch (e) {
+        if (seq !== summarySeq.current) return;
+        setSummaryError(e instanceof Error ? e.message : "Failed to load customer summary");
+      } finally {
+        if (seq === summarySeq.current) setSummaryLoading(false);
+      }
+    })();
+  }, [nonce]);
 
   useEffect(() => {
     function onDocumentClick(event: MouseEvent) {
@@ -307,6 +340,53 @@ export default function CustomersListPage() {
           ]}
         />
       </div>
+
+      <section aria-label="Customer account summary" aria-busy={summaryLoading}>
+        {summaryError ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <span>Customer totals are temporarily unavailable. {summaryError}</span>
+            <button
+              type="button"
+              onClick={() => setNonce((value) => value + 1)}
+              className="min-h-11 rounded-lg border border-amber-300 bg-white px-4 py-2 font-bold outline-none ring-[#006D77] hover:bg-amber-100 focus-visible:ring-2"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <dt className="text-sm font-semibold text-slate-600">Outstanding invoices</dt>
+              <dd className="mt-1 text-2xl font-bold text-slate-950">
+                {summaryLoading || !summary ? "Loading…" : formatMoney(summary.totalOpenBalance)}
+              </dd>
+              {!summaryLoading && summary ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {summary.openInvoiceCount} open invoice{summary.openInvoiceCount === 1 ? "" : "s"}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <dt className="text-sm font-semibold text-slate-600">Overdue invoices</dt>
+              <dd className="mt-1 text-2xl font-bold text-slate-950">
+                {summaryLoading || !summary ? "Loading…" : formatMoney(summary.overdueBalance)}
+              </dd>
+              {!summaryLoading && summary ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {summary.overdueCount} overdue invoice{summary.overdueCount === 1 ? "" : "s"}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <dt className="text-sm font-semibold text-slate-600">Payments received</dt>
+              <dd className="mt-1 text-2xl font-bold text-slate-950">
+                {summaryLoading || !summary ? "Loading…" : formatMoney(summary.recentlyPaidTotal)}
+              </dd>
+              <p className="mt-1 text-xs text-slate-500">Last 30 days</p>
+            </div>
+          </dl>
+        )}
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

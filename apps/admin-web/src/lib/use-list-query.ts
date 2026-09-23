@@ -73,15 +73,16 @@ export function useListQuery(filterKeys: readonly string[] = []): UseListQueryRe
   const pageSize = parsePageSize(searchParams.get("pageSize"));
   const q = searchParams.get("q") ?? "";
   const sort = searchParams.get("sort") ?? "";
+  const filterKeySignature = filterKeys.join("|");
 
   const filters = useMemo(() => {
     const out: Record<string, string> = {};
-    for (const key of filterKeys) {
+    const keys = filterKeySignature ? filterKeySignature.split("|") : [];
+    for (const key of keys) {
       out[key] = searchParams.get(key) ?? "";
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, filterKeys.join("|")]);
+  }, [filterKeySignature, searchParams]);
 
   const update = useCallback(
     (patch: Record<string, string>, resetPage: boolean) => {
@@ -160,12 +161,13 @@ export function useListQuery(filterKeys: readonly string[] = []): UseListQueryRe
     params.set("pageSize", String(pageSize));
     if (q) params.set("q", q);
     if (sort) params.set("sort", sort);
-    for (const key of filterKeys) {
+    const keys = filterKeySignature ? filterKeySignature.split("|") : [];
+    for (const key of keys) {
       const value = filters[key] ?? "";
       if (value) params.set(key, value);
     }
     return `?${params.toString()}`;
-  }, [page, pageSize, q, sort, filters, filterKeys]);
+  }, [page, pageSize, q, sort, filters, filterKeySignature]);
 
   return {
     page,

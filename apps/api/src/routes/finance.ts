@@ -4,7 +4,9 @@ import { writeAudit } from "../lib/audit.js";
 import {
   ZERO_CUSTOMER_SUMMARY,
   ZERO_SUPPLIER_SUMMARY,
+  customerOverviewSummary,
   customerSummaries,
+  supplierOverviewSummary,
   supplierSummaries
 } from "../lib/finance-summary.js";
 import { paginationMeta, parseListQuery } from "../lib/pagination.js";
@@ -246,15 +248,21 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!list.ok) {
       return c.json({ error: list.error }, 400);
     }
-    const where = list.q
-      ? {
-          OR: [
-            { displayName: { contains: list.q } },
-            { companyName: { contains: list.q } },
-            { email: { contains: list.q } }
-          ]
-        }
-      : undefined;
+    const activeParam = c.req.query("active");
+    const where = {
+      ...(activeParam === "true" || activeParam === "false"
+        ? { active: activeParam === "true" }
+        : {}),
+      ...(list.q
+        ? {
+            OR: [
+              { displayName: { contains: list.q } },
+              { companyName: { contains: list.q } },
+              { email: { contains: list.q } }
+            ]
+          }
+        : {})
+    };
     // Server-side aggregates let the UI stop downloading invoices/payments.
     // Included automatically on paginated responses; legacy callers opt in
     // with ?summary=true.
@@ -278,6 +286,11 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
       items: items.map((i) => ({ ...i, ...(summaries.get(i.id) ?? ZERO_CUSTOMER_SUMMARY) })),
       pagination: paginationMeta(list.page, list.pageSize, total)
     });
+  })
+  // Org-wide summary tiles for the Customers page. Registered before
+  // /customers/:id so "summary" is not captured as an id.
+  .get("/customers/summary", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    return c.json({ summary: await customerOverviewSummary() });
   })
   .get("/customers/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const row = await prisma.customer.findUnique({ where: { id: c.req.param("id") } });
@@ -399,15 +412,21 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!list.ok) {
       return c.json({ error: list.error }, 400);
     }
-    const where = list.q
-      ? {
-          OR: [
-            { displayName: { contains: list.q } },
-            { companyName: { contains: list.q } },
-            { email: { contains: list.q } }
-          ]
-        }
-      : undefined;
+    const activeParam = c.req.query("active");
+    const where = {
+      ...(activeParam === "true" || activeParam === "false"
+        ? { active: activeParam === "true" }
+        : {}),
+      ...(list.q
+        ? {
+            OR: [
+              { displayName: { contains: list.q } },
+              { companyName: { contains: list.q } },
+              { email: { contains: list.q } }
+            ]
+          }
+        : {})
+    };
     const withSummary = list.paginated || c.req.query("summary") === "true";
     if (!list.paginated) {
       const items = await prisma.supplier.findMany({ where, orderBy: list.orderBy });
@@ -428,6 +447,11 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
       items: items.map((i) => ({ ...i, ...(summaries.get(i.id) ?? ZERO_SUPPLIER_SUMMARY) })),
       pagination: paginationMeta(list.page, list.pageSize, total)
     });
+  })
+  // Org-wide summary tiles for the Suppliers page. Registered before
+  // /suppliers/:id so "summary" is not captured as an id.
+  .get("/suppliers/summary", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    return c.json({ summary: await supplierOverviewSummary() });
   })
   .get("/suppliers/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const row = await prisma.supplier.findUnique({ where: { id: c.req.param("id") } });

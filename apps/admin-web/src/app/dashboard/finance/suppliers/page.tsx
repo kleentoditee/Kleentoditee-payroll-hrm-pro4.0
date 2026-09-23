@@ -22,6 +22,14 @@ type SupplierRow = {
   billCount?: number;
 };
 
+type SupplierOverviewSummary = {
+  totalOpenBalance: number;
+  openBillCount: number;
+  overdueCount: number;
+  overdueBalance: number;
+  recentlyPaidTotal: number;
+};
+
 const EMPTY_FORM = {
   displayName: "",
   companyName: "",
@@ -63,7 +71,11 @@ export default function SuppliersListPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [summary, setSummary] = useState<SupplierOverviewSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const loadSeq = useRef(0);
+  const summarySeq = useRef(0);
 
   useEffect(() => {
     const seq = ++loadSeq.current;
@@ -86,6 +98,27 @@ export default function SuppliersListPage() {
       }
     })();
   }, [list.queryString, nonce]);
+
+  useEffect(() => {
+    const seq = ++summarySeq.current;
+    setSummaryLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/finance/suppliers/summary`, {
+          headers: { ...authHeaders() }
+        });
+        const data = await readApiData<{ summary: SupplierOverviewSummary }>(res);
+        if (seq !== summarySeq.current) return;
+        setSummary(data.summary);
+        setSummaryError(null);
+      } catch (e) {
+        if (seq !== summarySeq.current) return;
+        setSummaryError(e instanceof Error ? e.message : "Failed to load supplier summary");
+      } finally {
+        if (seq === summarySeq.current) setSummaryLoading(false);
+      }
+    })();
+  }, [nonce]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -125,6 +158,53 @@ export default function SuppliersListPage() {
           ]}
         />
       </div>
+
+      <section aria-label="Supplier account summary" aria-busy={summaryLoading}>
+        {summaryError ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <span>Supplier totals are temporarily unavailable. {summaryError}</span>
+            <button
+              type="button"
+              onClick={() => setNonce((value) => value + 1)}
+              className="min-h-11 rounded-lg border border-amber-300 bg-white px-4 py-2 font-bold outline-none ring-[#006D77] hover:bg-amber-100 focus-visible:ring-2"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <dl className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <dt className="text-sm font-semibold text-slate-600">Outstanding bills</dt>
+              <dd className="mt-1 text-2xl font-bold text-slate-950">
+                {summaryLoading || !summary ? "Loading…" : formatMoney(summary.totalOpenBalance)}
+              </dd>
+              {!summaryLoading && summary ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {summary.openBillCount} open bill{summary.openBillCount === 1 ? "" : "s"}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <dt className="text-sm font-semibold text-slate-600">Overdue bills</dt>
+              <dd className="mt-1 text-2xl font-bold text-slate-950">
+                {summaryLoading || !summary ? "Loading…" : formatMoney(summary.overdueBalance)}
+              </dd>
+              {!summaryLoading && summary ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {summary.overdueCount} overdue bill{summary.overdueCount === 1 ? "" : "s"}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <dt className="text-sm font-semibold text-slate-600">Payments sent</dt>
+              <dd className="mt-1 text-2xl font-bold text-slate-950">
+                {summaryLoading || !summary ? "Loading…" : formatMoney(summary.recentlyPaidTotal)}
+              </dd>
+              <p className="mt-1 text-xs text-slate-500">Last 30 days</p>
+            </div>
+          </dl>
+        )}
+      </section>
 
       <form
         id="new-supplier"

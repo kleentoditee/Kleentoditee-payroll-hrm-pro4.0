@@ -97,6 +97,7 @@ export default function AccountsListPage() {
   useEffect(() => {
     if (!modalOpen) return;
     const modal = modalRef.current;
+    const openButton = openButtonRef.current;
     const firstField = modal?.querySelector<HTMLElement>("input, select, button");
     firstField?.focus();
 
@@ -128,7 +129,7 @@ export default function AccountsListPage() {
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      openButtonRef.current?.focus();
+      openButton?.focus();
     };
   }, [modalOpen]);
 
