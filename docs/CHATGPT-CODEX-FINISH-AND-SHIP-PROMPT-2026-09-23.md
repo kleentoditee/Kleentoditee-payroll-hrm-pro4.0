@@ -4,6 +4,7 @@
 **Repository:** `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0`  
 **Current branch:** `kimi/finance-nav-responsive-rebuild`  
 **Current committed HEAD at review:** `4f1fdb156ffa46c68bd917efc91be84632e5d6dd`  
+**Completed implementation HEAD:** `8031a6d` (documentation commit follows)
 **Purpose:** Recover Kimi K3's unfinished finance/navigation batch, finish it safely, and continue through evidence-based release readiness in bounded Codex work sessions.
 
 ## Instructions to ChatGPT Codex
@@ -275,21 +276,24 @@ Update this section at the end of every Codex work window.
 
 | Batch | Status | Commit | Verification | Remaining action |
 | --- | --- | --- | --- | --- |
-| Batch 0: Recover Kimi WIP | Not started | — | Baseline documented above | Preserve six paths; fix lint; wire tests; finish summaries and bill-payment detail |
-| Batch 1: Purchases responsive | Not started | — | — | Complete after Batch 0 |
-| Batch 2: Sales responsive | Not started | — | — | Complete after Batch 1 |
-| Batch 3: Banking/accounting responsive | Not started | — | — | Complete after Batch 2 |
-| Batch 4: Browser/accessibility proof | Not started | — | Existing smoke only: 24/24 | Add required finance workflows and screenshots |
-| Batch 5: Documentation and merge | Not started | — | Branch currently unpushed | Complete records, push, PR, review, merge |
-| Batch 6: Production ship blockers | Not started | — | Prior deep review applies | Deployment, SMTP, restore, cutover, subscriber gates |
+| Batch 0: Recover Kimi WIP | Complete | `0c21414` | Lint defect fixed; new tests wired; summaries and bill-payment detail completed | None |
+| Batch 1: Purchases responsive | Complete | `b14ce86` | Typecheck, lint, build, and visual checks passed | None |
+| Batch 2: Sales responsive | Complete | `432de6e` | Typecheck, lint, build, and visual checks passed | None |
+| Batch 3: Banking/accounting responsive | Complete | `671644b` | Real bank paging, phone records, bounded tables, and balance semantics verified | None |
+| Batch 4: Browser/accessibility proof | Complete | `9bb29b8`, `8031a6d` | 48/48 full E2E; 16 finance tests at 390/768/1024/1440; every mapped route visited | None |
+| Batch 5: Documentation and merge | In progress | Documentation commit pending | Full local release gate passed; working tree clean before this update | Push branch, open PR, attach review, and record URL |
+| Batch 6: Production ship blockers | Owner action required | — | Readiness endpoint works locally; migrations current | Configure SMTP, rehearse backup/restore, deploy reviewed branch, perform real QB cutover |
 
 ### Current Working-Tree Handoff
 
 - **Branch:** `kimi/finance-nav-responsive-rebuild`
-- **HEAD:** `4f1fdb156ffa46c68bd917efc91be84632e5d6dd`
-- **Dirty paths:** Six paths listed in Exact Point Where Kimi Stopped
-- **Known failing gate:** Admin lint in `use-list-query.ts`
-- **Last verified API suite:** 209/209 existing tests plus 16/16 new tests run separately
-- **Last verified build:** Admin production build passed with 67 routes
-- **Last verified E2E:** 24/24 existing smoke tests passed with local services running
-- **Next single action:** Execute Batch 0 without switching branches or discarding the dirty files
+- **HEAD before this documentation update:** `8031a6d`
+- **Dirty paths:** Only the two dated documentation records while this completion evidence is being written
+- **Known failing code gate:** None
+- **Last verified API suite:** 225/225
+- **Last verified build:** All workspaces passed; admin generated 67 routes and tracker generated 12 routes
+- **Last verified E2E:** 48/48 across desktop, laptop, tablet, and phone
+- **Database state:** 19 migrations; schema up to date; readiness database check passes
+- **Configuration blockers:** SMTP not configured; document storage is local; production deployment and backup/restore are not yet rehearsed
+- **Security audit:** Four high transitive Prisma-chain advisories are disclosed and deferred to the separate breaking-upgrade batch
+- **Next single action:** Commit these records, push the branch, open the pull request into `codex/consolidate-live-build`, and complete review before merge

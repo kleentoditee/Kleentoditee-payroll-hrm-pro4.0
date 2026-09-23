@@ -3,7 +3,7 @@
 **Review date:** 2026-09-23  
 **Repository:** `Kleentoditee-payroll-hrm-pro4.0`  
 **Audience:** Kimi K3 or the next implementation agent  
-**Status:** Approved implementation specification; implementation and verification remain required
+**Status:** Finance/navigation implementation complete and locally release-gated; production deployment prerequisites remain external
 
 ## Purpose
 
@@ -23,6 +23,16 @@ This document is both the review record and the implementation prompt. Read the 
 8. Chart of Accounts renders all returned accounts down one page.
 9. The Customers page downloads customers, invoices, and payments together, then limits only the displayed customer rows on the client.
 10. Hover previews and deeply repeated launchers increase complexity without improving access on touch devices.
+
+## Implemented Outcome
+
+- The permanent sidebar now contains exactly seven workspace links: Home, People, Time, Payroll, Finance, Reports, and Admin. It no longer repeats workspace destinations.
+- All detailed destinations remain available through workspace-local navigation and the searchable All Apps launcher.
+- Finance now has a real overview and six primary sections. At widths below 1280px, the section and page controls become two compact selectors instead of wrapped tab rows.
+- All existing finance URLs remain in place. The automated responsive suite visits every one of the 22 mapped finance destinations at 390px, 768px, 1024px, and 1440px.
+- Growing finance lists use backward-compatible server pagination with 25, 50, and 100 row options. Search, page size, sorting, and filters are represented in the URL where applicable.
+- Wide financial grids scroll only inside bounded regions; phone layouts use record summaries where tables would be unreadable.
+- Bank statement lines and the bank register now use real server paging. Register opening, closing, and running balances retain full-range meaning across pages.
 
 ## Existing Finance Route Map
 
@@ -224,17 +234,17 @@ The assignment is complete only when:
 
 ## Completion Record
 
-Kimi K3 must update this section after implementation.
-
-- **Implementation branch:** Pending
-- **Starting commit:** Pending
-- **Completion commits:** Pending
-- **Type check:** Pending
-- **Lint:** Pending
-- **API tests:** Pending
-- **Playwright:** Pending
-- **Production builds:** Pending
-- **Responsive screenshots:** Pending
-- **Performance comparison:** Pending
-- **Known remaining risks:** Pending
-- **Rollback instructions:** Pending
+- **Implementation branch:** `kimi/finance-nav-responsive-rebuild`
+- **Starting commit:** `0874946b6b216ed27ffd1b32956db24bfc44f1fc`
+- **Completion commits:** `6cf5eaf`, `8976d67`, `beff47c`, `4f1fdb1`, `92bd2d3`, `0c21414`, `b14ce86`, `432de6e`, `671644b`, `9bb29b8`, `8031a6d`
+- **Type check:** PASS - all workspaces, 2026-09-23
+- **Lint:** PASS with zero errors. One pre-existing Next.js warning remains for the official payroll-form `<img>` element.
+- **API tests:** PASS - 225/225, including pagination and organization-wide finance summary coverage
+- **Playwright:** PASS - 48/48. The finance-specific 16 tests cover every mapped finance destination and all four target widths.
+- **Production builds:** PASS - database package, API, 67-route admin app, and 12-route employee tracker
+- **Database:** PASS - PostgreSQL reachable; 19 migrations found; schema up to date; `/health/ready` reports database ready
+- **Responsive inspection:** PASS - live visual inspection at 390px, 768px, 1024px, and 1440px covered the phone drawer, manual journals, bank statements, bank register, and financial statements. Automated captures are attached to the Playwright run.
+- **Performance evidence:** No reproducible pre-change JavaScript bundle baseline was recorded, so no bundle-size reduction is claimed. Measured structural improvements are seven permanent sidebar links, zero permanent destination submenus, no more than six finance section controls, compact selectors below 1280px, default 25-row server payloads, and no page-level overflow across all 22 finance destinations at all four widths.
+- **Dependency audit:** Four high-severity transitive advisories remain in the Prisma CLI/config dependency chain (`deepmerge-ts` and `mysql2`). npm proposes a breaking Prisma change; this is intentionally deferred to the disclosed Prisma-major-upgrade batch rather than forced into this release.
+- **Known remaining production risks:** SMTP is not configured; local document storage has no rehearsed Render backup/restore; the real owner-supplied QuickBooks file cutover is not signed off; subscriber-scale organization roles and monetary persistence controls remain separate release gates.
+- **Rollback instructions:** Revert the completion commits in reverse order on a recovery branch or redeploy the previous reviewed integration SHA. Pagination responses remain backward-compatible for callers without paging parameters. Do not use a destructive database reset; restore PostgreSQL only from a verified backup if a data rollback is independently required.
