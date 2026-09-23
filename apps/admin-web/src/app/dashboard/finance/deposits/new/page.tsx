@@ -1,6 +1,7 @@
 "use client";
 
 import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
@@ -167,7 +168,7 @@ export default function NewDepositPage() {
               required
               value={bankAccountId}
               onChange={(e) => setBankAccountId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
             >
               <option value="">Select an asset account…</option>
               {assetAccounts.map((a) => (
@@ -184,7 +185,7 @@ export default function NewDepositPage() {
               required
               value={depositDate}
               onChange={(e) => setDepositDate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
             />
           </label>
           <label className="text-sm md:col-span-3">
@@ -192,7 +193,7 @@ export default function NewDepositPage() {
             <input
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
             />
           </label>
         </section>
@@ -205,7 +206,7 @@ export default function NewDepositPage() {
                 type="button"
                 onClick={selectAll}
                 disabled={available.length === 0}
-                className="font-semibold text-brand hover:underline disabled:text-slate-400"
+                className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline disabled:text-slate-400"
               >
                 Select all
               </button>
@@ -213,7 +214,7 @@ export default function NewDepositPage() {
                 type="button"
                 onClick={selectNone}
                 disabled={picked.size === 0}
-                className="font-semibold text-slate-500 hover:underline disabled:text-slate-300"
+                className="inline-flex min-h-11 items-center font-semibold text-slate-500 hover:underline disabled:text-slate-300"
               >
                 Clear
               </button>
@@ -226,7 +227,27 @@ export default function NewDepositPage() {
               No undeposited payments for this account.
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <>
+            <RecordCardList>
+              {available.map((payment) => (
+                <RecordCard key={payment.id}>
+                  <label className="flex min-h-11 cursor-pointer items-start gap-3">
+                    <input type="checkbox" checked={picked.has(payment.id)} onChange={() => togglePick(payment.id)} className="mt-1 h-5 w-5 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-950">{payment.number}</span>
+                      <span className="block break-words text-sm text-slate-600">{payment.customer.displayName}</span>
+                    </span>
+                    <span className="shrink-0 font-bold tabular-nums text-slate-950">${payment.amount.toFixed(2)}</span>
+                  </label>
+                  <RecordCardFields>
+                    <RecordCardField label="Date">{new Date(payment.paymentDate).toISOString().slice(0, 10)}</RecordCardField>
+                    <RecordCardField label="Method">{payment.method}{payment.reference ? ` - ${payment.reference}` : ""}</RecordCardField>
+                  </RecordCardFields>
+                </RecordCard>
+              ))}
+            </RecordCardList>
+            <BoundedTable>
+            <table className="min-w-[760px] text-sm">
               <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="pb-2"></th>
@@ -261,6 +282,8 @@ export default function NewDepositPage() {
                 ))}
               </tbody>
             </table>
+            </BoundedTable>
+            </>
           )}
           <div className="mt-4 flex items-center justify-end gap-3 text-sm">
             <span className="text-slate-600">Deposit total</span>
@@ -274,9 +297,9 @@ export default function NewDepositPage() {
             <button
               type="button"
               onClick={() => setAdhoc([...adhoc, { accountId: "", description: "", amount: "" }])}
-              className="text-sm text-brand hover:underline"
+              className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-brand hover:bg-slate-50"
             >
-              + Add line
+              Add line
             </button>
           </div>
           <p className="mt-1 text-xs text-slate-500">
@@ -284,7 +307,34 @@ export default function NewDepositPage() {
             (e.g. Sales or Other income) — required before the deposit can post.
           </p>
           {adhoc.length > 0 ? (
-            <table className="mt-3 w-full text-sm">
+            <>
+            <RecordCardList>
+              {adhoc.map((line, index) => (
+                <RecordCard key={index}>
+                  <p className="font-semibold text-slate-950">Deposit line {index + 1}</p>
+                  <div className="mt-3 grid gap-3">
+                    <label className="text-sm font-medium text-slate-700">
+                      Offset account
+                      <select value={line.accountId} onChange={(event) => setAdhoc(adhoc.map((item, itemIndex) => itemIndex === index ? { ...item, accountId: event.target.value } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                        <option value="">Choose account...</option>
+                        {accounts.filter((account) => account.type === "revenue" || account.type === "asset" || account.type === "liability" || account.type === "equity").map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium text-slate-700">
+                      Description
+                      <input value={line.description} onChange={(event) => setAdhoc(adhoc.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </label>
+                    <label className="text-sm font-medium text-slate-700">
+                      Amount
+                      <input type="number" min="0" step="0.01" value={line.amount} onChange={(event) => setAdhoc(adhoc.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-right text-sm" />
+                    </label>
+                    <button type="button" onClick={() => setAdhoc(adhoc.filter((_, itemIndex) => itemIndex !== index))} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-rose-200 px-3 text-sm font-semibold text-rose-700">Remove line</button>
+                  </div>
+                </RecordCard>
+              ))}
+            </RecordCardList>
+            <BoundedTable>
+            <table className="mt-3 min-w-[760px] text-sm">
               <tbody className="divide-y divide-slate-100">
                 {adhoc.map((l, i) => (
                   <tr key={i}>
@@ -292,7 +342,7 @@ export default function NewDepositPage() {
                       <select
                         value={l.accountId}
                         onChange={(e) => setAdhoc(adhoc.map((x, j) => (j === i ? { ...x, accountId: e.target.value } : x)))}
-                        className="w-56 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        className="min-h-11 w-56 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
                       >
                         <option value="">Offset account…</option>
                         {accounts
@@ -308,7 +358,7 @@ export default function NewDepositPage() {
                         value={l.description}
                         placeholder="Description"
                         onChange={(e) => setAdhoc(adhoc.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))}
-                        className="w-48 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        className="min-h-11 w-48 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
                       />
                     </td>
                     <td className="py-2 pr-2">
@@ -319,11 +369,11 @@ export default function NewDepositPage() {
                         value={l.amount}
                         placeholder="0.00"
                         onChange={(e) => setAdhoc(adhoc.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))}
-                        className="w-28 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm"
+                        className="min-h-11 w-28 rounded-md border border-slate-300 px-2 py-1.5 text-right text-sm"
                       />
                     </td>
                     <td className="py-2">
-                      <button type="button" onClick={() => setAdhoc(adhoc.filter((_, j) => j !== i))} className="text-xs text-rose-600 hover:underline">
+                      <button type="button" onClick={() => setAdhoc(adhoc.filter((_, j) => j !== i))} className="min-h-11 text-xs font-semibold text-rose-600 hover:underline">
                         Remove
                       </button>
                     </td>
@@ -331,6 +381,8 @@ export default function NewDepositPage() {
                 ))}
               </tbody>
             </table>
+            </BoundedTable>
+            </>
           ) : null}
         </section>
 
@@ -338,18 +390,18 @@ export default function NewDepositPage() {
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
         ) : null}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/finance/deposits")}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting || (picked.size === 0 && !adhoc.some((l) => l.accountId && Number(l.amount) > 0))}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Saving…" : "Save draft deposit"}
           </button>

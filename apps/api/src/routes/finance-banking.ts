@@ -21,7 +21,7 @@ import {
   type StatementMapping
 } from "../lib/bank-statements.js";
 import { round2 } from "../lib/finance-transactions.js";
-import { loadAccountLedger } from "../lib/gl-reports.js";
+import { loadAccountLedgerPage } from "../lib/gl-reports.js";
 import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
@@ -362,9 +362,11 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
     }
     const bankAccountId = c.req.query("bankAccountId");
     const status = c.req.query("status");
+    const includeExcluded = c.req.query("includeExcluded") !== "false";
     const where = {
       ...(bankAccountId ? { import: { bankAccountId } } : {}),
       ...(status ? { status: status as BankStatementLineStatus } : {}),
+      ...(!status && !includeExcluded ? { status: { not: BankStatementLineStatus.excluded } } : {}),
       ...(list.q
         ? { OR: [{ description: { contains: list.q } }, { reference: { contains: list.q } }] }
         : {})
@@ -791,17 +793,26 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
   // ---------------------------------------------------------------------
 
   .get("/banking/register/:accountId", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const list = parseListQuery((key) => c.req.query(key), {
+      sortable: [],
+      defaultSort: [{ id: "asc" }]
+    });
+    if (!list.ok) return c.json({ error: list.error }, 400);
+
     const accountId = c.req.param("accountId");
     const from = parseDate(c.req.query("from"));
     const to = parseDate(c.req.query("to"));
-    const ledger = await loadAccountLedger(accountId, from ?? undefined, to ?? undefined);
+    const page = list.paginated ? list.page : 1;
+    const pageSize = list.paginated ? list.pageSize : 100;
+    const skip = list.paginated ? list.skip : 0;
+    const ledger = await loadAccountLedgerPage(accountId, {
+      from: from ?? undefined,
+      to: to ?? undefined,
+      skip,
+      take: pageSize
+    });
     if (!ledger) return c.json({ error: "Account not found." }, 404);
 
-    const reconciled = await prisma.bankStatementLine.findMany({
-      where: { reconciledAt: { not: null }, matchedEntityId: { not: null } },
-      select: { matchedEntityType: true, matchedEntityId: true }
-    });
-    const reconciledSet = new Set(reconciled.map((r) => `${r.matchedEntityType}:${r.matchedEntityId}`));
     const mapSource = (sourceType: string): MatchEntityType | null => {
       const base = sourceType.replace(/_reversal$/, "");
       if (base === "payment") return "payment";
@@ -811,13 +822,33 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
       if (base === "manual_journal") return "journal";
       return null;
     };
-    const rows = ledger.rows.map((r) => {
-      const entityType = mapSource(r.sourceType);
+    const references = ledger.rows.flatMap((row) => {
+      const entityType = mapSource(row.sourceType);
+      return entityType ? [{ entityType, entityId: row.sourceId }] : [];
+    });
+    const reconciled = references.length > 0
+      ? await prisma.bankStatementLine.findMany({
+          where: {
+            reconciledAt: { not: null },
+            OR: references.map(({ entityType, entityId }) => ({
+              matchedEntityType: entityType,
+              matchedEntityId: entityId
+            }))
+          },
+          select: { matchedEntityType: true, matchedEntityId: true }
+        })
+      : [];
+    const reconciledSet = new Set(reconciled.map((row) => `${row.matchedEntityType}:${row.matchedEntityId}`));
+    const rows = ledger.rows.map((row) => {
+      const entityType = mapSource(row.sourceType);
       return {
-        ...r,
+        ...row,
         entityType,
-        reconciled: entityType ? reconciledSet.has(`${entityType}:${r.sourceId}`) : false
+        reconciled: entityType ? reconciledSet.has(`${entityType}:${row.sourceId}`) : false
       };
     });
-    return c.json({ register: { ...ledger, rows } });
+    return c.json({
+      register: { ...ledger, rows },
+      pagination: paginationMeta(page, pageSize, ledger.total)
+    });
   });

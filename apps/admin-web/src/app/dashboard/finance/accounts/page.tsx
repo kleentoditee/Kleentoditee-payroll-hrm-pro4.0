@@ -193,6 +193,7 @@ export default function AccountsListPage() {
             <label className="flex items-center gap-2 text-sm text-slate-600">
               Type
               <select
+                aria-label="Filter by account type"
                 value={typeFilter}
                 onChange={(e) => list.setFilter("type", e.target.value)}
                 className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-semibold text-slate-800 outline-none ring-[#006D77] focus-visible:ring-2"
@@ -208,6 +209,7 @@ export default function AccountsListPage() {
             <label className="flex items-center gap-2 text-sm text-slate-600">
               Status
               <select
+                aria-label="Filter by account status"
                 value={activeFilter}
                 onChange={(e) => list.setFilter("active", e.target.value)}
                 className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-semibold text-slate-800 outline-none ring-[#006D77] focus-visible:ring-2"

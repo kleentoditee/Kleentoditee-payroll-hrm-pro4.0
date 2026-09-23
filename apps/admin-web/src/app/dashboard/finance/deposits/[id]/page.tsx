@@ -1,6 +1,7 @@
 "use client";
 
 import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList, RecordCardTotals } from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -124,8 +125,30 @@ export default function DepositDetailPage() {
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <RecordCardList>
+          {deposit.lines.map((line) => (
+            <RecordCard key={line.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {line.payment ? (
+                    <Link href={`/dashboard/finance/payments/${line.payment.id}`} className="font-semibold text-slate-950 hover:text-brand">
+                      {line.payment.number}
+                    </Link>
+                  ) : <p className="font-semibold text-slate-950">Deposit line {line.position}</p>}
+                  <p className="mt-1 break-words text-sm text-slate-600">{line.payment?.customer.displayName ?? (line.description || "Deposit line")}</p>
+                </div>
+                <p className="shrink-0 font-bold tabular-nums text-slate-950">${line.amount.toFixed(2)}</p>
+              </div>
+              <RecordCardFields>
+                <RecordCardField label="Description">{line.description || "-"}</RecordCardField>
+              </RecordCardFields>
+            </RecordCard>
+          ))}
+        </RecordCardList>
+        <RecordCardTotals items={[{ label: "Total", value: `$${deposit.total.toFixed(2)}`, strong: true }]} />
+        <BoundedTable>
+        <table className="min-w-[760px] text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2">#</th>
@@ -168,6 +191,7 @@ export default function DepositDetailPage() {
             </tr>
           </tfoot>
         </table>
+        </BoundedTable>
       </section>
 
       {actionError ? (
@@ -177,7 +201,7 @@ export default function DepositDetailPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/finance/deposits"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Back
         </Link>
@@ -187,7 +211,7 @@ export default function DepositDetailPage() {
               type="button"
               onClick={() => doAction(`/finance/deposits/${deposit.id}/post`, "POST")}
               disabled={busy}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
             >
               Post deposit
             </button>
@@ -199,7 +223,7 @@ export default function DepositDetailPage() {
                 )
               }
               disabled={busy}
-              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Delete draft
             </button>
@@ -210,7 +234,7 @@ export default function DepositDetailPage() {
             type="button"
             onClick={() => doAction(`/finance/deposits/${deposit.id}/void`, "POST")}
             disabled={busy}
-            className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Reverse deposit
           </button>

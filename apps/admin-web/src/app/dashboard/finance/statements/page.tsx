@@ -2,6 +2,9 @@
 
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
+import { PaginationControls } from "@/components/pagination-controls";
+import { type PaginationMeta, useListQuery } from "@/lib/use-list-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Account = { id: string; code: string; name: string; type: string; subtype?: string };
@@ -58,10 +61,13 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function BankStatementsPage() {
+  const list = useListQuery(["status"]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [bankAccountId, setBankAccountId] = useState("");
   const [lines, setLines] = useState<StatementLine[]>([]);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [nonce, setNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -70,6 +76,7 @@ export default function BankStatementsPage() {
   const [plan, setPlan] = useState<PreviewPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const loadSeq = useRef(0);
 
   const [suggestionsFor, setSuggestionsFor] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -91,18 +98,29 @@ export default function BankStatementsPage() {
   }, []);
 
   const loadLines = useCallback(async () => {
-    if (!bankAccountId) return;
-    try {
-      const q = new URLSearchParams({ bankAccountId });
-      if (statusFilter) q.set("status", statusFilter);
-      const res = await fetch(`${apiBase()}/finance/banking/lines?${q}`, { headers: { ...authHeaders() } });
-      const json = await readApiData<{ items: StatementLine[] }>(res);
-      setLines(json.items);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load statement lines");
+    if (!bankAccountId) {
+      setLoading(false);
+      return;
     }
-  }, [bankAccountId, statusFilter]);
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    try {
+      const q = new URLSearchParams(list.queryString.slice(1));
+      q.set("bankAccountId", bankAccountId);
+      q.set("_refresh", String(nonce));
+      const res = await fetch(`${apiBase()}/finance/banking/lines?${q.toString()}`, { headers: { ...authHeaders() } });
+      const json = await readApiData<{ items: StatementLine[]; pagination: PaginationMeta }>(res);
+      if (seq !== loadSeq.current) return;
+      setLines(json.items);
+      setPagination(json.pagination);
+      setError(null);
+      setLoading(false);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setError(e instanceof Error ? e.message : "Failed to load statement lines");
+      setLoading(false);
+    }
+  }, [bankAccountId, list.queryString, nonce]);
 
   useEffect(() => {
     void loadLines();
@@ -196,6 +214,71 @@ export default function BankStatementsPage() {
     }
   }
 
+  function lineActions(line: StatementLine) {
+    return (
+      <div className="flex flex-wrap gap-2 text-xs">
+        {line.status !== "matched" && !line.reconciledAt ? (
+          <button
+            type="button"
+            onClick={() => void openSuggestions(line.id)}
+            className="inline-flex min-h-11 items-center rounded-lg border border-sky-200 px-3 font-semibold text-sky-700 hover:bg-sky-50"
+          >
+            Match
+          </button>
+        ) : null}
+        {line.status === "matched" && !line.reconciledAt ? (
+          <button
+            type="button"
+            onClick={() => void lineAction(line.id, "unmatch")}
+            className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Unmatch
+          </button>
+        ) : null}
+        {!line.reconciledAt ? (
+          <button
+            type="button"
+            onClick={() => void lineAction(line.id, "exclude")}
+            className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {line.status === "excluded" ? "Include" : "Exclude"}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function suggestionPanel(line: StatementLine) {
+    if (suggestionsFor !== line.id) return null;
+    return (
+      <div className="mt-2 space-y-1 rounded-md border border-slate-200 bg-slate-50 p-2">
+        {suggestions.length === 0 ? (
+          <p className="text-xs text-slate-500">No candidate documents found.</p>
+        ) : (
+          suggestions.map((suggestion) => (
+            <button
+              key={`${suggestion.entityType}:${suggestion.entityId}`}
+              type="button"
+              onClick={() => void match(line.id, suggestion)}
+              className="block min-h-11 w-full rounded px-2 py-1 text-left text-xs hover:bg-white"
+            >
+              <span className="font-medium">{suggestion.label}</span> · {suggestion.entityType} · {suggestion.date} · ${money(suggestion.amount)} ·
+              score {suggestion.score}
+              <span className="block break-words text-slate-500">{suggestion.description}</span>
+            </button>
+          ))
+        )}
+        <button
+          type="button"
+          onClick={() => setSuggestionsFor(null)}
+          className="inline-flex min-h-11 items-center text-xs font-semibold text-slate-600 hover:underline"
+        >
+          Close
+        </button>
+      </div>
+    );
+  }
+
   return (
     <section className="space-y-4">
       <div>
@@ -206,13 +289,16 @@ export default function BankStatementsPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,2fr)]">
         <label className="text-sm font-medium text-slate-700">
           Bank account
           <select
             value={bankAccountId}
-            onChange={(e) => setBankAccountId(e.target.value)}
-            className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            onChange={(e) => {
+              setBankAccountId(e.target.value);
+              list.setPage(1);
+            }}
+            className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
@@ -222,15 +308,25 @@ export default function BankStatementsPage() {
         <label className="text-sm font-medium text-slate-700">
           Line status
           <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            value={list.filter("status")}
+            onChange={(e) => list.setFilter("status", e.target.value)}
+            className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             <option value="">All</option>
             <option value="unmatched">Unmatched</option>
             <option value="matched">Matched</option>
             <option value="excluded">Excluded</option>
           </select>
+        </label>
+        <label className="text-sm font-medium text-slate-700 sm:col-span-2 xl:col-span-1">
+          Search lines
+          <input
+            type="search"
+            value={list.searchInput}
+            onChange={(e) => list.setSearchInput(e.target.value)}
+            placeholder="Description or reference"
+            className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
         </label>
       </div>
 
@@ -245,7 +341,7 @@ export default function BankStatementsPage() {
             type="file"
             accept=".csv,text/csv"
             onChange={(e) => e.target.files?.[0] && void onFile(e.target.files[0])}
-            className="text-sm text-slate-600"
+            className="max-w-full text-sm text-slate-600"
           />
           <button
             type="button"
@@ -313,8 +409,57 @@ export default function BankStatementsPage() {
         ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="min-w-full text-sm">
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={pagination?.total ?? 0}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((value) => value + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="statement lines"
+        />
+      ) : null}
+
+      {!loading && !error && lines.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+          No statement lines match these filters. Import a statement file above or change the filters.
+        </p>
+      ) : null}
+
+      {!error && lines.length > 0 ? (
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <RecordCardList>
+          {lines.map((line) => (
+            <RecordCard key={line.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="break-words font-semibold text-slate-950">{line.description}</p>
+                  <p className="mt-1 text-xs text-slate-500">{line.date.slice(0, 10)}</p>
+                </div>
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${STATUS_BADGE[line.status]}`}>
+                  {line.status}
+                </span>
+              </div>
+              <RecordCardFields>
+                <RecordCardField label="Reference">{line.reference || "-"}</RecordCardField>
+                <RecordCardField label="Amount">
+                  <span className={line.amount < 0 ? "text-rose-600" : ""}>${money(line.amount)}</span>
+                </RecordCardField>
+                <RecordCardField label="Matched to">
+                  {line.matchedEntityType ? `${line.matchedEntityType} ${line.matchedEntityId?.slice(0, 8)}` : "-"}
+                </RecordCardField>
+                <RecordCardField label="Reconciled">{line.reconciledAt ? "Yes" : "No"}</RecordCardField>
+              </RecordCardFields>
+              <div className="mt-4">{lineActions(line)}</div>
+              {suggestionPanel(line)}
+            </RecordCard>
+          ))}
+        </RecordCardList>
+        <BoundedTable>
+        <table className="min-w-[960px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2">Date</th>
@@ -347,59 +492,16 @@ export default function BankStatementsPage() {
                   {l.matchedEntityType ? `${l.matchedEntityType} ${l.matchedEntityId?.slice(0, 8)}…` : "—"}
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {l.status !== "matched" && !l.reconciledAt ? (
-                      <button type="button" onClick={() => void openSuggestions(l.id)} className="text-sky-700 hover:underline">
-                        Match
-                      </button>
-                    ) : null}
-                    {l.status === "matched" && !l.reconciledAt ? (
-                      <button type="button" onClick={() => void lineAction(l.id, "unmatch")} className="text-slate-600 hover:underline">
-                        Unmatch
-                      </button>
-                    ) : null}
-                    {!l.reconciledAt ? (
-                      <button type="button" onClick={() => void lineAction(l.id, "exclude")} className="text-slate-600 hover:underline">
-                        {l.status === "excluded" ? "Include" : "Exclude"}
-                      </button>
-                    ) : null}
-                  </div>
-                  {suggestionsFor === l.id ? (
-                    <div className="mt-2 space-y-1 rounded-md border border-slate-200 bg-slate-50 p-2">
-                      {suggestions.length === 0 ? (
-                        <p className="text-xs text-slate-500">No candidate documents found.</p>
-                      ) : (
-                        suggestions.map((s) => (
-                          <button
-                            key={`${s.entityType}:${s.entityId}`}
-                            type="button"
-                            onClick={() => void match(l.id, s)}
-                            className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-white"
-                          >
-                            <span className="font-medium">{s.label}</span> · {s.entityType} · {s.date} · ${money(s.amount)} ·
-                            score {s.score}
-                            <span className="block text-slate-500">{s.description}</span>
-                          </button>
-                        ))
-                      )}
-                      <button type="button" onClick={() => setSuggestionsFor(null)} className="text-xs text-slate-500 hover:underline">
-                        Close
-                      </button>
-                    </div>
-                  ) : null}
+                  {lineActions(l)}
+                  {suggestionPanel(l)}
                 </td>
               </tr>
             ))}
-            {lines.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">
-                  No statement lines yet — import a statement CSV above.
-                </td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
+        </BoundedTable>
       </div>
+      ) : null}
     </section>
   );
 }

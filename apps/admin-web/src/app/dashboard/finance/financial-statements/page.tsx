@@ -73,9 +73,9 @@ function SectionBlock({ title, sections }: { title: string; sections: Section[] 
         <div key={s.subtype} className="mb-2">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{s.subtype}</p>
           {s.accounts.map((a) => (
-            <div key={a.accountId} className="flex justify-between py-0.5 text-sm">
-              <span className="pl-3 text-slate-700">{a.code} {a.name}</span>
-              <span className="tabular-nums">${money(a.amount)}</span>
+            <div key={a.accountId} className="flex min-w-0 justify-between gap-3 py-1 text-sm">
+              <span className="min-w-0 break-words pl-3 text-slate-700">{a.code} {a.name}</span>
+              <span className="shrink-0 tabular-nums">${money(a.amount)}</span>
             </div>
           ))}
           <div className="flex justify-between border-t border-slate-100 py-0.5 text-sm font-medium">
@@ -179,13 +179,15 @@ export default function FinancialStatementsPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid grid-cols-2 gap-2 lg:inline-grid lg:grid-cols-4" role="tablist" aria-label="Financial statement type">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
+            role="tab"
+            aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+            className={`min-h-11 rounded-lg px-3 py-2 text-sm font-medium ${
               tab === t.key ? "bg-brand text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
             }`}
           >
@@ -194,31 +196,31 @@ export default function FinancialStatementsPage() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
         {tab === "balance_sheet" ? (
           <label className="text-sm font-medium text-slate-700">
             As of
-            <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm" />
+            <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
           </label>
         ) : (
           <>
             <label className="text-sm font-medium text-slate-700">
               From
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm" />
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
             </label>
             <label className="text-sm font-medium text-slate-700">
               To
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm" />
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
             </label>
           </>
         )}
         {(tab === "profit_loss" || tab === "balance_sheet") && (
-          <label className="flex items-center gap-1.5 text-sm text-slate-700">
-            <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} className="h-4 w-4" />
+          <label className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} className="h-5 w-5" />
             Prior-year comparative
           </label>
         )}
-        <button type="button" onClick={() => void saveSnapshot()} className="rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white">
+        <button type="button" onClick={() => void saveSnapshot()} className="min-h-11 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white">
           Lock snapshot
         </button>
       </div>
@@ -266,9 +268,9 @@ export default function FinancialStatementsPage() {
             <div>
               <h4 className="mb-1 text-sm font-semibold text-slate-900">Equity</h4>
               {bs.equityAccounts.map((a) => (
-                <div key={a.accountId} className="flex justify-between py-0.5 text-sm">
-                  <span className="pl-3 text-slate-700">{a.code} {a.name}</span>
-                  <span className="tabular-nums">${money(a.amount)}</span>
+                <div key={a.accountId} className="flex min-w-0 justify-between gap-3 py-1 text-sm">
+                  <span className="min-w-0 break-words pl-3 text-slate-700">{a.code} {a.name}</span>
+                  <span className="shrink-0 tabular-nums">${money(a.amount)}</span>
                 </div>
               ))}
               <div className="flex justify-between py-0.5 text-sm">
@@ -295,9 +297,9 @@ export default function FinancialStatementsPage() {
               <div key={section.label}>
                 <h4 className="mb-1 text-sm font-semibold text-slate-900">{section.label}</h4>
                 {section.lines.map((l, i) => (
-                  <div key={i} className="flex justify-between py-0.5 text-sm">
-                    <span className="pl-3 text-slate-700">{l.name}</span>
-                    <span className="tabular-nums">${money(l.change)}</span>
+                  <div key={i} className="flex min-w-0 justify-between gap-3 py-1 text-sm">
+                    <span className="min-w-0 break-words pl-3 text-slate-700">{l.name}</span>
+                    <span className="shrink-0 tabular-nums">${money(l.change)}</span>
                   </div>
                 ))}
                 <div className="flex justify-between border-t border-slate-100 py-0.5 text-sm font-medium">
@@ -353,8 +355,8 @@ export default function FinancialStatementsPage() {
               <p className="text-xs text-slate-500">{s.createdAt.slice(0, 16).replace("T", " ")} · hash {s.hash.slice(0, 12)}…</p>
             </div>
             <div className="flex gap-2 text-xs">
-              <a href={`${apiBase()}/finance/statements/snapshots/${s.id}/export.csv`} className="rounded bg-slate-100 px-2 py-1 font-medium text-slate-700 hover:bg-slate-200">CSV</a>
-              <a href={`${apiBase()}/finance/statements/snapshots/${s.id}/export.pdf`} className="rounded bg-slate-100 px-2 py-1 font-medium text-slate-700 hover:bg-slate-200">PDF</a>
+              <a href={`${apiBase()}/finance/statements/snapshots/${s.id}/export.csv`} className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 py-2 font-medium text-slate-700 hover:bg-slate-200">CSV</a>
+              <a href={`${apiBase()}/finance/statements/snapshots/${s.id}/export.pdf`} className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 py-2 font-medium text-slate-700 hover:bg-slate-200">PDF</a>
             </div>
           </div>
         ))}

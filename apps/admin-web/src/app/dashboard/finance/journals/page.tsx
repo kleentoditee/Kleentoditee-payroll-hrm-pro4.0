@@ -1,6 +1,7 @@
 "use client";
 
 import { PaginationControls, SortSelect } from "@/components/pagination-controls";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
@@ -143,6 +144,26 @@ export default function ManualJournalsPage() {
     }
   }
 
+  function journalActions(journal: JournalRow) {
+    const actionClass = "inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50";
+    if (journal.status === "draft") {
+      return (
+        <>
+          <button disabled={busy} onClick={() => void act(`/finance/journals/${journal.id}/approve`)} className={`${actionClass} text-sky-700`}>Approve</button>
+          <button disabled={busy} onClick={() => void act(`/finance/journals/${journal.id}/post`)} className={`${actionClass} text-emerald-700`}>Post</button>
+          <button disabled={busy} onClick={() => void act(`/finance/journals/${journal.id}`, undefined, "DELETE")} className={`${actionClass} border-rose-200 text-rose-700`}>Delete</button>
+        </>
+      );
+    }
+    if (journal.status === "approved") {
+      return <button disabled={busy} onClick={() => void act(`/finance/journals/${journal.id}/post`)} className={`${actionClass} text-emerald-700`}>Post</button>;
+    }
+    if (journal.status === "posted") {
+      return <button disabled={busy} onClick={() => void act(`/finance/journals/${journal.id}/reverse`)} className={`${actionClass} text-amber-700`}>Reverse</button>;
+    }
+    return null;
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -164,29 +185,66 @@ export default function ManualJournalsPage() {
 
       {showForm ? (
         <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
             <label className="text-sm font-medium text-slate-700">
               Date
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="ml-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </label>
-            <label className="flex-1 text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700">
               Memo
               <input
                 type="text"
                 value={memo}
                 onChange={(e) => setMemo(e.target.value)}
                 placeholder="e.g. Owner contribution"
-                className="ml-2 w-64 max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </label>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <RecordCardList>
+            {lines.map((line, index) => (
+              <RecordCard key={index}>
+                <p className="font-semibold text-slate-950">Journal line {index + 1}</p>
+                <div className="mt-3 grid gap-3">
+                  <label className="text-sm font-medium text-slate-700">
+                    Account
+                    <select
+                      value={line.accountId}
+                      onChange={(event) => setLines(lines.map((item, itemIndex) => itemIndex === index ? { ...item, accountId: event.target.value } : item))}
+                      className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Choose account...</option>
+                      {accounts.map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-sm font-medium text-slate-700">
+                      Debit
+                      <input type="number" min="0" step="0.01" value={line.debit} onChange={(event) => setLines(lines.map((item, itemIndex) => itemIndex === index ? { ...item, debit: event.target.value, credit: event.target.value ? "" : item.credit } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-right text-sm" />
+                    </label>
+                    <label className="text-sm font-medium text-slate-700">
+                      Credit
+                      <input type="number" min="0" step="0.01" value={line.credit} onChange={(event) => setLines(lines.map((item, itemIndex) => itemIndex === index ? { ...item, credit: event.target.value, debit: event.target.value ? "" : item.debit } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-right text-sm" />
+                    </label>
+                  </div>
+                  <label className="text-sm font-medium text-slate-700">
+                    Line memo
+                    <input value={line.memo} onChange={(event) => setLines(lines.map((item, itemIndex) => itemIndex === index ? { ...item, memo: event.target.value } : item))} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  </label>
+                  <button type="button" onClick={() => setLines(lines.filter((_, itemIndex) => itemIndex !== index))} disabled={lines.length <= 2} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-rose-200 px-3 text-sm font-semibold text-rose-700 disabled:opacity-40">
+                    Remove line
+                  </button>
+                </div>
+              </RecordCard>
+            ))}
+          </RecordCardList>
+          <BoundedTable>
+            <table className="min-w-[780px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-1">Account</th>
@@ -204,7 +262,7 @@ export default function ManualJournalsPage() {
                         value={l.accountId}
                         aria-label={`Account for line ${i + 1}`}
                         onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, accountId: e.target.value } : x)))}
-                        className="w-56 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                        className="min-h-11 w-56 rounded-md border border-slate-300 px-2 py-1 text-sm"
                       >
                         <option value="">Choose account…</option>
                         {accounts.map((a) => (
@@ -222,7 +280,7 @@ export default function ManualJournalsPage() {
                         aria-label={`Debit for line ${i + 1}`}
                         value={l.debit}
                         onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, debit: e.target.value, credit: e.target.value ? "" : x.credit } : x)))}
-                        className="w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
+                        className="min-h-11 w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
                       />
                     </td>
                     <td className="px-2 py-1">
@@ -233,7 +291,7 @@ export default function ManualJournalsPage() {
                         aria-label={`Credit for line ${i + 1}`}
                         value={l.credit}
                         onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, credit: e.target.value, debit: e.target.value ? "" : x.debit } : x)))}
-                        className="w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
+                        className="min-h-11 w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
                       />
                     </td>
                     <td className="px-2 py-1">
@@ -242,13 +300,13 @@ export default function ManualJournalsPage() {
                         aria-label={`Memo for line ${i + 1}`}
                         value={l.memo}
                         onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, memo: e.target.value } : x)))}
-                        className="w-44 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                        className="min-h-11 w-44 rounded-md border border-slate-300 px-2 py-1 text-sm"
                       />
                     </td>
                     <td className="px-2 py-1">
                       <button
                         onClick={() => setLines(lines.filter((_, j) => j !== i))}
-                        className="text-xs text-rose-600 hover:underline"
+                        className="min-h-11 text-xs font-semibold text-rose-600 hover:underline"
                         disabled={lines.length <= 2}
                       >
                         Remove
@@ -258,10 +316,10 @@ export default function ManualJournalsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </BoundedTable>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <button onClick={() => setLines([...lines, emptyLine()])} className="text-sm text-teal-700 hover:underline">
-              + Add line
+            <button onClick={() => setLines([...lines, emptyLine()])} className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-teal-700 hover:bg-slate-50">
+              Add line
             </button>
             <p className={`text-sm font-medium ${balanced ? "text-emerald-700" : "text-rose-700"}`}>
               Debits {money(totalDebit)} / Credits {money(totalCredit)} {balanced ? "— balanced" : "— out of balance"}
@@ -328,8 +386,44 @@ export default function ManualJournalsPage() {
       ) : null}
 
       {!error && items && items.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <RecordCardList>
+            {items.map((journal) => {
+              const total = journal.lines.reduce((sum, line) => sum + Number(line.debit), 0);
+              return (
+                <RecordCard key={journal.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold text-slate-950">{journal.memo || "Manual journal"}</p>
+                      <p className="mt-1 text-xs text-slate-500">{journal.date.slice(0, 10)}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${STATUS_BADGE[journal.status]}`}>{journal.status}</span>
+                  </div>
+                  <RecordCardFields>
+                    <RecordCardField label="Debit total">${money(total)}</RecordCardField>
+                    <RecordCardField label="Lines">{journal.lines.length}</RecordCardField>
+                  </RecordCardFields>
+                  <button type="button" onClick={() => setExpanded(expanded === journal.id ? null : journal.id)} className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700">
+                    {expanded === journal.id ? "Hide lines" : "Show lines"}
+                  </button>
+                  {expanded === journal.id ? (
+                    <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                      {journal.lines.map((line) => (
+                        <div key={line.id} className="rounded-lg bg-slate-50 p-3 text-sm">
+                          <p className="font-semibold text-slate-900">{line.account.code} - {line.account.name}</p>
+                          <p className="mt-1 text-xs text-slate-600">Debit {Number(line.debit) ? money(Number(line.debit)) : "-"} · Credit {Number(line.credit) ? money(Number(line.credit)) : "-"}</p>
+                          {line.memo ? <p className="mt-1 break-words text-xs text-slate-500">{line.memo}</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap gap-2">{journalActions(journal)}</div>
+                </RecordCard>
+              );
+            })}
+          </RecordCardList>
+          <BoundedTable>
+          <table className="min-w-[860px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2">Date</th>
@@ -361,26 +455,14 @@ export default function ManualJournalsPage() {
                           {expanded === j.id ? "Hide" : `${j.lines.length} lines`}
                         </button>
                       </td>
-                      <td className="space-x-2 px-3 py-2 whitespace-nowrap">
-                        {j.status === "draft" ? (
-                          <>
-                            <button disabled={busy} onClick={() => void act(`/finance/journals/${j.id}/approve`)} className="text-sky-700 hover:underline">Approve</button>
-                            <button disabled={busy} onClick={() => void act(`/finance/journals/${j.id}/post`)} className="text-emerald-700 hover:underline">Post</button>
-                            <button disabled={busy} onClick={() => void act(`/finance/journals/${j.id}`, undefined, "DELETE")} className="text-rose-600 hover:underline">Delete</button>
-                          </>
-                        ) : null}
-                        {j.status === "approved" ? (
-                          <button disabled={busy} onClick={() => void act(`/finance/journals/${j.id}/post`)} className="text-emerald-700 hover:underline">Post</button>
-                        ) : null}
-                        {j.status === "posted" ? (
-                          <button disabled={busy} onClick={() => void act(`/finance/journals/${j.id}/reverse`)} className="text-amber-700 hover:underline">Reverse</button>
-                        ) : null}
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-2">{journalActions(j)}</div>
                       </td>
                     </tr>
                     {expanded === j.id ? (
                       <tr className="border-b border-slate-100 bg-slate-50">
                         <td colSpan={6} className="px-6 py-2">
-                          <table className="min-w-full text-xs">
+                          <table className="min-w-[640px] text-xs">
                             <tbody>
                               {j.lines.map((l) => (
                                 <tr key={l.id}>
@@ -400,6 +482,7 @@ export default function ManualJournalsPage() {
               })}
             </tbody>
           </table>
+          </BoundedTable>
         </div>
       ) : null}
     </section>

@@ -148,7 +148,7 @@ export async function loadAccountLedger(accountId: string, from?: Date, to?: Dat
       accountId,
       entry: { status: COUNTED, date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
     },
-    orderBy: [{ entry: { date: "asc" } }, { position: "asc" }],
+    orderBy: [{ entry: { date: "asc" } }, { entryId: "asc" }, { position: "asc" }, { id: "asc" }],
     select: {
       debit: true,
       credit: true,
@@ -175,6 +175,106 @@ export async function loadAccountLedger(accountId: string, from?: Date, to?: Dat
     account: { id: account.id, code: account.code, name: account.name, type: account.type },
     openingBalance: opening,
     closingBalance: rows.length > 0 ? rows[rows.length - 1].runningBalance : opening,
+    rows
+  };
+}
+
+/**
+ * Loads one deterministic ledger page without returning the entire account
+ * history. The page's first running balance includes every earlier row in the
+ * selected date range, while opening/closing balances still describe the full
+ * range rather than only the visible page.
+ */
+export async function loadAccountLedgerPage(
+  accountId: string,
+  options: { from?: Date; to?: Date; skip: number; take: number }
+) {
+  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!account) return null;
+
+  const rangeWhere: Prisma.JournalLineWhereInput = {
+    accountId,
+    entry: {
+      status: COUNTED,
+      date: {
+        ...(options.from ? { gte: options.from } : {}),
+        ...(options.to ? { lte: options.to } : {})
+      }
+    }
+  };
+  const orderBy: Prisma.JournalLineOrderByWithRelationInput[] = [
+    { entry: { date: "asc" } },
+    { entryId: "asc" },
+    { position: "asc" },
+    { id: "asc" }
+  ];
+  const amountSelect = { debit: true, credit: true } as const;
+
+  const [prior, totals, total, skipped, lines] = await Promise.all([
+    options.from
+      ? prisma.journalLine.aggregate({
+          where: { accountId, entry: { status: COUNTED, date: { lt: options.from } } },
+          _sum: { debit: true, credit: true }
+        })
+      : Promise.resolve(null),
+    prisma.journalLine.aggregate({ where: rangeWhere, _sum: { debit: true, credit: true } }),
+    prisma.journalLine.count({ where: rangeWhere }),
+    options.skip > 0
+      ? prisma.journalLine.findMany({
+          where: rangeWhere,
+          orderBy,
+          take: options.skip,
+          select: amountSelect
+        })
+      : Promise.resolve([]),
+    prisma.journalLine.findMany({
+      where: rangeWhere,
+      orderBy,
+      skip: options.skip,
+      take: options.take,
+      select: {
+        debit: true,
+        credit: true,
+        memo: true,
+        position: true,
+        entry: { select: { id: true, date: true, memo: true, sourceType: true, sourceId: true } }
+      }
+    })
+  ]);
+
+  const sign = normalBalanceSign(account.type);
+  const openingBalance = round2(
+    prior ? (Number(prior._sum.debit ?? 0) - Number(prior._sum.credit ?? 0)) * sign : 0
+  );
+  const skippedNet = round2(
+    skipped.reduce((sum, line) => sum + (Number(line.debit) - Number(line.credit)) * sign, 0)
+  );
+  const pageOpeningBalance = round2(openingBalance + skippedNet);
+  const rows = buildLedgerRows(
+    lines.map((line) => ({
+      entryId: line.entry.id,
+      date: line.entry.date,
+      memo: line.entry.memo,
+      sourceType: line.entry.sourceType,
+      sourceId: line.entry.sourceId,
+      lineMemo: line.memo,
+      debit: Number(line.debit),
+      credit: Number(line.credit)
+    })),
+    account.type,
+    pageOpeningBalance
+  );
+  const rangeNet = round2(
+    (Number(totals._sum.debit ?? 0) - Number(totals._sum.credit ?? 0)) * sign
+  );
+
+  return {
+    account: { id: account.id, code: account.code, name: account.name, type: account.type },
+    openingBalance,
+    closingBalance: round2(openingBalance + rangeNet),
+    pageOpeningBalance,
+    pageClosingBalance: rows.length > 0 ? rows[rows.length - 1].runningBalance : pageOpeningBalance,
+    total,
     rows
   };
 }

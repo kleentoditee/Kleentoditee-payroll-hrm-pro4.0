@@ -1,6 +1,6 @@
 "use client";
 
-import { isNavItemActive, NAV_GROUPS, type NavGroup } from "@/lib/dashboard-nav";
+import { isNavEntryActive, isNavItemActive, NAV_GROUPS, type NavGroup } from "@/lib/dashboard-nav";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { GroupGlyph, IcoChevron, ItemGlyph } from "./nav-icons";
@@ -19,7 +19,7 @@ function isExactRoute(pathname: string, href: string): boolean {
 function isGroupActive(group: NavGroup, pathname: string): boolean {
   return (
     isNavItemActive(pathname, group.landingHref) ||
-    group.items.some((item) => isNavItemActive(pathname, item.href))
+    group.items.some((item) => isNavEntryActive(pathname, item))
   );
 }
 
@@ -123,7 +123,7 @@ export function NavTree({
               {expanded ? (
                 <ul id={panelId} aria-label={`${group.title} sections`} className="mt-0.5 space-y-0.5 pl-2">
                   {group.items.map((item) => {
-                    const itemActive = isNavItemActive(pathname, item.href);
+                    const itemActive = isNavEntryActive(pathname, item);
                     return (
                       <li key={`${group.id}-${item.href}`}>
                         <Link

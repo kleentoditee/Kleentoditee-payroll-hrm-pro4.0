@@ -8,7 +8,7 @@ import {
   isFinanceItemActive
 } from "@/lib/finance-nav";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 const sectionPillClass = (active: boolean) =>
@@ -23,6 +23,7 @@ const itemLinkClass = (active: boolean) =>
 
 export default function FinanceLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const section = getActiveFinanceSection(pathname);
   const crumbs = getFinanceBreadcrumbs(pathname);
   const isOverview = section.id === "overview";
@@ -62,7 +63,12 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       {/* Desktop: six compact section controls. */}
       <nav aria-label="Finance sections" className="hidden flex-wrap gap-2 lg:flex">
         {FINANCE_SECTIONS.map((entry) => (
-          <Link key={entry.id} href={entry.href} className={sectionPillClass(entry.id === section.id)}>
+          <Link
+            key={entry.id}
+            href={entry.href}
+            aria-current={entry.id === section.id ? "page" : undefined}
+            className={sectionPillClass(entry.id === section.id)}
+          >
             {entry.label}
           </Link>
         ))}
@@ -125,23 +131,34 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
 
       {/* Secondary navigation: only the active section's destinations. */}
       {section.items.length > 0 ? (
-        <nav
-          aria-label={`${section.label} pages`}
-          className="overflow-x-auto border-b border-slate-200 pb-3"
-        >
-          <div className="flex min-w-max gap-2">
-            {section.items.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={isFinanceItemActive(pathname, item.href) ? "page" : undefined}
-                className={itemLinkClass(isFinanceItemActive(pathname, item.href))}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </nav>
+        <>
+          <label className="block text-sm font-medium text-slate-700 lg:hidden">
+            {section.label} page
+            <select
+              value={activeItem?.href ?? section.items[0]?.href ?? ""}
+              onChange={(event) => router.push(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none ring-brand focus-visible:ring-2"
+            >
+              {section.items.map((item) => (
+                <option key={item.href} value={item.href}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <nav aria-label={`${section.label} pages`} className="hidden border-b border-slate-200 pb-3 lg:block">
+            <div className="flex flex-wrap gap-2">
+              {section.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={isFinanceItemActive(pathname, item.href) ? "page" : undefined}
+                  className={itemLinkClass(isFinanceItemActive(pathname, item.href))}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        </>
       ) : null}
 
       {children}

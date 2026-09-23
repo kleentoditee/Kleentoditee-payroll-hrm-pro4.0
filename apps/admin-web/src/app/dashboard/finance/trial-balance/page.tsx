@@ -2,6 +2,7 @@
 
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList, RecordCardTotals } from "@/components/finance/record-cards";
 import { useEffect, useState } from "react";
 
 type TrialBalanceRow = {
@@ -135,8 +136,35 @@ export default function TrialBalancePage() {
               No posted journal activity yet.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-              <table className="min-w-full text-sm">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <RecordCardList>
+                {data.rows.map((row) => (
+                  <RecordCard key={row.accountId}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs text-slate-500">{row.code}</p>
+                        <p className="break-words font-semibold text-slate-950">{row.name}</p>
+                      </div>
+                      <span className="shrink-0 rounded bg-slate-100 px-2 py-1 text-xs capitalize text-slate-700">{row.type}</span>
+                    </div>
+                    <RecordCardFields>
+                      <RecordCardField label="Debits">${money(row.totalDebit)}</RecordCardField>
+                      <RecordCardField label="Credits">${money(row.totalCredit)}</RecordCardField>
+                      <RecordCardField label="Balance">
+                        <span className={row.balance < 0 ? "text-rose-600" : ""}>${money(row.balance)}</span>
+                      </RecordCardField>
+                    </RecordCardFields>
+                  </RecordCard>
+                ))}
+              </RecordCardList>
+              <RecordCardTotals
+                items={[
+                  { label: "Total debits", value: `$${money(data.totalDebit)}`, strong: true },
+                  { label: "Total credits", value: `$${money(data.totalCredit)}`, strong: true }
+                ]}
+              />
+              <BoundedTable>
+              <table className="min-w-[760px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-2">Code</th>
@@ -170,6 +198,7 @@ export default function TrialBalancePage() {
                   </tr>
                 </tbody>
               </table>
+              </BoundedTable>
             </div>
           )}
           <p className="text-xs text-slate-500">As of {data.asOf.slice(0, 10)} · management-prepared, unaudited.</p>
@@ -198,8 +227,32 @@ export default function TrialBalancePage() {
                 ? "All control accounts reconcile to their subledgers."
                 : "One or more control accounts differ from the subledger — review the rows below."}
             </p>
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-              <table className="min-w-full text-sm">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <RecordCardList>
+                {recon.rows.map((row) => (
+                  <RecordCard key={row.code}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs text-slate-500">{row.code}</p>
+                        <p className="break-words font-semibold text-slate-950">{row.name}</p>
+                      </div>
+                      <span className={`shrink-0 rounded px-2 py-1 text-xs font-semibold ${row.status === "ok" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                        {row.status}
+                      </span>
+                    </div>
+                    {!row.accountPresent ? <p className="mt-2 text-xs font-medium text-amber-800">Not in chart of accounts</p> : null}
+                    <RecordCardFields>
+                      <RecordCardField label="GL balance">${money(row.glBalance)}</RecordCardField>
+                      <RecordCardField label="Subledger">${money(row.subledgerBalance)}</RecordCardField>
+                      <RecordCardField label="Difference">
+                        <span className={row.status === "mismatch" ? "text-rose-600" : ""}>${money(row.difference)}</span>
+                      </RecordCardField>
+                    </RecordCardFields>
+                  </RecordCard>
+                ))}
+              </RecordCardList>
+              <BoundedTable>
+              <table className="min-w-[800px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-2">Code</th>
@@ -246,6 +299,7 @@ export default function TrialBalancePage() {
                   ))}
                 </tbody>
               </table>
+              </BoundedTable>
             </div>
           </>
         ) : null}

@@ -2,6 +2,7 @@
 
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
 import { useCallback, useEffect, useState } from "react";
 
 type AgingRow = { id: string; number: string; name: string; dueDate: string; balance: number; daysOverdue: number };
@@ -19,7 +20,7 @@ function BucketBar({ side }: { side: AgingSide }) {
     ["90+", side.buckets.over90]
   ];
   return (
-    <div className="grid grid-cols-5 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
       {entries.map(([label, value]) => (
         <div key={label} className="rounded-lg border border-slate-200 bg-white p-3">
           <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
@@ -34,8 +35,31 @@ function BucketBar({ side }: { side: AgingSide }) {
 
 function AgingTable({ side }: { side: AgingSide }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="min-w-full text-sm">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      {side.rows.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-slate-500">Nothing open.</p>
+      ) : null}
+      <RecordCardList>
+        {side.rows.map((row) => (
+          <RecordCard key={row.id}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-950">{row.number}</p>
+                <p className="break-words text-sm text-slate-600">{row.name}</p>
+              </div>
+              <p className="shrink-0 font-bold tabular-nums text-slate-950">${money(row.balance)}</p>
+            </div>
+            <RecordCardFields>
+              <RecordCardField label="Due date">{row.dueDate}</RecordCardField>
+              <RecordCardField label="Days overdue">
+                <span className={row.daysOverdue > 0 ? "text-amber-700" : ""}>{row.daysOverdue}</span>
+              </RecordCardField>
+            </RecordCardFields>
+          </RecordCard>
+        ))}
+      </RecordCardList>
+      <BoundedTable>
+      <table className="min-w-[680px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
             <th className="px-3 py-2">Number</th>
@@ -55,13 +79,9 @@ function AgingTable({ side }: { side: AgingSide }) {
               <td className="px-3 py-2 text-right tabular-nums">${money(r.balance)}</td>
             </tr>
           ))}
-          {side.rows.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">Nothing open.</td>
-            </tr>
-          ) : null}
         </tbody>
       </table>
+      </BoundedTable>
     </div>
   );
 }

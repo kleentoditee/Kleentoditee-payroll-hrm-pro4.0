@@ -1,6 +1,7 @@
 "use client";
 
 import { PaginationControls, SortSelect } from "@/components/pagination-controls";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
@@ -117,7 +118,7 @@ export default function ReconciliationsPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] xl:items-end">
         <label className="text-sm font-medium text-slate-700">
           Bank account
           <select
@@ -126,7 +127,7 @@ export default function ReconciliationsPage() {
               setBankAccountId(e.target.value);
               list.setPage(1);
             }}
-            className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
@@ -139,7 +140,7 @@ export default function ReconciliationsPage() {
             type="date"
             value={endingDate}
             onChange={(e) => setEndingDate(e.target.value)}
-            className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           />
         </label>
         <label className="text-sm font-medium text-slate-700">
@@ -149,14 +150,14 @@ export default function ReconciliationsPage() {
             step="0.01"
             value={endingBalance}
             onChange={(e) => setEndingBalance(e.target.value)}
-            className="ml-2 w-32 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           />
         </label>
         <button
           type="button"
           disabled={busy || !bankAccountId || !endingDate || endingBalance === ""}
           onClick={() => void start()}
-          className="min-h-11 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50 sm:col-span-2 xl:col-span-1"
         >
           Start reconciliation
         </button>
@@ -187,8 +188,35 @@ export default function ReconciliationsPage() {
       ) : null}
 
       {!error && items.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <RecordCardList>
+            {items.map((item) => (
+              <RecordCard key={item.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/dashboard/finance/reconciliations/${item.id}`} className="break-words font-semibold text-sky-700 hover:underline">
+                      {item.bankAccount.code} - {item.bankAccount.name}
+                    </Link>
+                    <p className="mt-1 text-xs text-slate-500">Statement ending {item.statementEndingDate.slice(0, 10)}</p>
+                  </div>
+                  <span className={`shrink-0 rounded px-2 py-1 text-xs font-medium ${item.status === "completed" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                    {item.status === "completed" ? "Completed" : "In progress"}
+                  </span>
+                </div>
+                <RecordCardFields>
+                  <RecordCardField label="Opening">${money(item.openingBalance)}</RecordCardField>
+                  <RecordCardField label="Cleared">${money(item.clearedNet)}</RecordCardField>
+                  <RecordCardField label="Ending">${money(item.statementEndingBalance)}</RecordCardField>
+                  <RecordCardField label="Difference">
+                    <span className={Math.abs(item.difference) > 0.005 ? "text-rose-600" : ""}>${money(item.difference)}</span>
+                  </RecordCardField>
+                  <RecordCardField label="Lines">{item._count.lines}</RecordCardField>
+                </RecordCardFields>
+              </RecordCard>
+            ))}
+          </RecordCardList>
+          <BoundedTable>
+          <table className="min-w-[1040px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2">Account</th>
@@ -230,6 +258,7 @@ export default function ReconciliationsPage() {
               ))}
             </tbody>
           </table>
+          </BoundedTable>
         </div>
       ) : null}
     </section>

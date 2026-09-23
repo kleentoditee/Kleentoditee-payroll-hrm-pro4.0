@@ -2,6 +2,7 @@
 
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
 import { useEffect, useState } from "react";
 
 type CloseRow = {
@@ -111,7 +112,7 @@ export default function YearEndPage() {
         <button
           disabled={busy}
           onClick={() => void request("", { year })}
-          className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           Create draft close
         </button>
@@ -126,8 +127,41 @@ export default function YearEndPage() {
       ) : null}
 
       {closes && closes.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <RecordCardList>
+            {closes.map((close) => {
+              const style = STATUS_STYLE[close.status];
+              const expanded = expandedId === close.id;
+              return (
+                <RecordCard key={close.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-slate-950">Fiscal year {close.year}{close.revisionOfId ? " revision" : ""}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${style.badge}`}>{style.label}</span>
+                  </div>
+                  <RecordCardFields>
+                    <RecordCardField label="Signature">{close.signatureText ?? "-"}</RecordCardField>
+                    <RecordCardField label="Posted">{close.postedAt ? close.postedAt.slice(0, 10) : "-"}</RecordCardField>
+                    <RecordCardField label="Revision reason">{close.revisionReason || "-"}</RecordCardField>
+                  </RecordCardFields>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <CloseActionButtons
+                      close={close}
+                      busy={busy}
+                      expanded={expanded}
+                      onToggle={() => setExpandedId(expanded ? null : close.id)}
+                      onReview={() => review(close)}
+                      onApprove={() => void request(`/${close.id}/approve`)}
+                      onPost={() => post(close)}
+                      onRevise={() => revise(close)}
+                    />
+                  </div>
+                  {expanded ? <div className="mt-3 border-t border-slate-200 pt-3"><ClosePreview closeId={close.id} /></div> : null}
+                </RecordCard>
+              );
+            })}
+          </RecordCardList>
+          <BoundedTable>
+          <table className="min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2">Year</th>
@@ -160,6 +194,7 @@ export default function YearEndPage() {
               })}
             </tbody>
           </table>
+          </BoundedTable>
         </div>
       ) : null}
     </section>
@@ -194,30 +229,8 @@ function FragmentRow(props: {
         <td className="px-3 py-2 text-xs text-slate-600">
           {c.revisionReason ? c.revisionReason : "—"}
         </td>
-        <td className="space-x-2 px-3 py-2">
-          <button onClick={props.onToggle} className="text-slate-700 hover:underline">
-            {props.expanded ? "Hide" : "Preview"}
-          </button>
-          {c.status === "draft" ? (
-            <button disabled={props.busy} onClick={props.onReview} className="text-sky-700 hover:underline">
-              Mark reviewed
-            </button>
-          ) : null}
-          {c.status === "reviewed" ? (
-            <button disabled={props.busy} onClick={props.onApprove} className="text-amber-700 hover:underline">
-              Approve
-            </button>
-          ) : null}
-          {c.status === "approved" ? (
-            <button disabled={props.busy} onClick={props.onPost} className="text-emerald-700 hover:underline">
-              Post…
-            </button>
-          ) : null}
-          {c.status === "posted" ? (
-            <button disabled={props.busy} onClick={props.onRevise} className="text-rose-700 hover:underline">
-              Revise…
-            </button>
-          ) : null}
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap gap-2"><CloseActionButtons {...props} /></div>
         </td>
       </tr>
       {props.expanded ? (
@@ -227,6 +240,30 @@ function FragmentRow(props: {
           </td>
         </tr>
       ) : null}
+    </>
+  );
+}
+
+function CloseActionButtons(props: {
+  close: CloseRow;
+  busy: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onReview: () => void;
+  onApprove: () => void;
+  onPost: () => void;
+  onRevise: () => void;
+}) {
+  const buttonClass = "inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50";
+  return (
+    <>
+      <button type="button" onClick={props.onToggle} className={`${buttonClass} text-slate-700`}>
+        {props.expanded ? "Hide preview" : "Preview"}
+      </button>
+      {props.close.status === "draft" ? <button type="button" disabled={props.busy} onClick={props.onReview} className={`${buttonClass} text-sky-700`}>Mark reviewed</button> : null}
+      {props.close.status === "reviewed" ? <button type="button" disabled={props.busy} onClick={props.onApprove} className={`${buttonClass} text-amber-700`}>Approve</button> : null}
+      {props.close.status === "approved" ? <button type="button" disabled={props.busy} onClick={props.onPost} className={`${buttonClass} text-emerald-700`}>Post</button> : null}
+      {props.close.status === "posted" ? <button type="button" disabled={props.busy} onClick={props.onRevise} className={`${buttonClass} border-rose-200 text-rose-700`}>Revise</button> : null}
     </>
   );
 }
@@ -257,25 +294,14 @@ function ClosePreview({ closeId }: { closeId: string }) {
   if (lines.length === 0) return <p className="text-sm text-slate-500">No preview lines recorded.</p>;
 
   return (
-    <table className="min-w-full text-xs">
-      <thead>
-        <tr className="text-left uppercase tracking-wide text-slate-500">
-          <th className="py-1 pr-4">Account</th>
-          <th className="py-1 pr-4 text-right">Debit</th>
-          <th className="py-1 text-right">Credit</th>
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((l, i) => (
-          <tr key={i}>
-            <td className="py-1 pr-4">
-              {l.accountCode ? `${l.accountCode} — ` : ""}{l.accountName ?? ""}
-            </td>
-            <td className="py-1 pr-4 text-right tabular-nums">{l.debit ? fmt(l.debit) : ""}</td>
-            <td className="py-1 text-right tabular-nums">{l.credit ? fmt(l.credit) : ""}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="space-y-2 text-xs">
+      {lines.map((line, index) => (
+        <div key={index} className="grid gap-1 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_7rem_7rem] sm:items-center">
+          <p className="min-w-0 break-words font-medium text-slate-800">{line.accountCode ? `${line.accountCode} - ` : ""}{line.accountName ?? ""}</p>
+          <p className="tabular-nums text-slate-600 sm:text-right">Debit {line.debit ? fmt(line.debit) : "-"}</p>
+          <p className="tabular-nums text-slate-600 sm:text-right">Credit {line.credit ? fmt(line.credit) : "-"}</p>
+        </div>
+      ))}
+    </div>
   );
 }

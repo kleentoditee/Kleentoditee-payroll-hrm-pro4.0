@@ -1,6 +1,6 @@
 "use client";
 
-import { isNavItemActive, NAV_GROUPS } from "@/lib/dashboard-nav";
+import { isNavEntryActive, NAV_GROUPS } from "@/lib/dashboard-nav";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IcoClose, IcoSearch, ItemGlyph, LauncherGroupIcon, launcherColor } from "./nav-icons";
@@ -73,10 +73,12 @@ export default function AllAppsLauncher({
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) {
-      return NAV_GROUPS;
-    }
-    return NAV_GROUPS.map((group) => ({
+    const expandedGroups = NAV_GROUPS.map((group) => ({
+      ...group,
+      items: group.launcherItems ?? group.items
+    }));
+    if (!q) return expandedGroups;
+    return expandedGroups.map((group) => ({
       ...group,
       items: group.items.filter((item) => item.label.toLowerCase().includes(q))
     })).filter(
@@ -167,7 +169,7 @@ export default function AllAppsLauncher({
               </Link>
               <ul className="mt-0.5 space-y-0.5 pl-2">
                 {group.items.map((item) => {
-                  const itemActive = isNavItemActive(pathname, item.href);
+                  const itemActive = isNavEntryActive(pathname, item);
                   return (
                     <li key={`${group.id}-${item.href}`}>
                       <Link

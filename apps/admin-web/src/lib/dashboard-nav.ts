@@ -1,3 +1,5 @@
+import { FINANCE_SECTIONS } from "./finance-nav";
+
 /** Sidebar and Create menu - every `href` is a working route. */
 
 export type NavItem = {
@@ -6,6 +8,10 @@ export type NavItem = {
   icon?: string;
   description?: string;
   action?: "all-apps";
+  /** Use exact route matching instead of treating descendants as active. */
+  exact?: boolean;
+  /** Routes owned by a section link when they do not share its URL prefix. */
+  matchHrefs?: string[];
 };
 
 export type NavGroup = {
@@ -14,8 +20,34 @@ export type NavGroup = {
   icon: string;
   /** Workspace landing route — clicking the workspace name navigates here. */
   landingHref: string;
-  items: NavItem[]
+  items: NavItem[];
+  /** Full destination list shown only in the searchable All Apps launcher. */
+  launcherItems?: NavItem[];
 };
+
+const FINANCE_WORKSPACE_ITEMS: NavItem[] = FINANCE_SECTIONS.map((section) => ({
+  label: section.label,
+  href: section.href,
+  exact: section.id === "overview",
+  icon: section.id === "sales" ? "invoice" : section.id === "purchases" ? "receipt" : section.id === "banking" ? "wallet" : section.id === "reports" ? "bar-chart" : "calculator",
+  description: section.id === "overview" ? "Finance overview and work queue." : `${section.label} workspace.`,
+  matchHrefs:
+    section.id === "overview"
+      ? undefined
+      : section.items.map((item) => item.href).filter((href) => href.startsWith("/dashboard/finance"))
+}));
+
+const FINANCE_LAUNCHER_ITEMS: NavItem[] = [
+  { label: "Finance overview", href: "/dashboard/finance", icon: "wallet", description: "Finance overview and work queue." },
+  ...FINANCE_SECTIONS.flatMap((section) =>
+    section.items.map((item) => ({
+      label: item.label,
+      href: item.href,
+      icon: section.id === "sales" ? "invoice" : section.id === "purchases" ? "receipt" : section.id === "banking" ? "wallet" : section.id === "reports" ? "bar-chart" : "calculator",
+      description: item.description
+    }))
+  )
+];
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -69,18 +101,8 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Finance",
     icon: "wallet",
     landingHref: "/dashboard/finance",
-    items: [
-      { label: "Chart of accounts", href: "/dashboard/finance/accounts", icon: "building", description: "Manage accounting categories." },
-      { label: "Customers", href: "/dashboard/finance/customers", icon: "users", description: "Manage customer records." },
-      { label: "Suppliers", href: "/dashboard/finance/suppliers", icon: "building", description: "Manage vendor and supplier records." },
-      { label: "Products & services", href: "/dashboard/finance/products", icon: "package", description: "Manage sale items and services." },
-      { label: "Invoices", href: "/dashboard/finance/invoices", icon: "invoice", description: "Create and review invoices." },
-      { label: "Bills", href: "/dashboard/finance/bills", icon: "receipt", description: "Track bills owed." },
-      { label: "Payments received", href: "/dashboard/finance/payments", icon: "credit-card", description: "Record customer payments." },
-      { label: "Bill payments", href: "/dashboard/finance/bill-payments", icon: "arrow-down-left", description: "Record vendor payments." },
-      { label: "Expenses", href: "/dashboard/finance/expenses", icon: "receipt", description: "Track business expenses." },
-      { label: "Deposits", href: "/dashboard/finance/deposits", icon: "wallet", description: "Record deposits." }
-    ]
+    items: FINANCE_WORKSPACE_ITEMS,
+    launcherItems: FINANCE_LAUNCHER_ITEMS
   },
   {
     id: "reports",
@@ -109,22 +131,6 @@ export const NAV_GROUPS: NavGroup[] = [
   }
 ];
 
-export const PRIMARY_NAV: NavItem[] = [
-  { label: "Home", href: "/dashboard", icon: "home" },
-  { label: "Activity", href: "/dashboard/audit", icon: "activity" },
-  { label: "Reports", href: "/dashboard/reports", icon: "bar-chart" },
-  { label: "All apps", href: "#all-apps", icon: "grid", action: "all-apps" }
-];
-
-export const PINNED_SHORTCUTS: NavItem[] = [
-  { label: "Accounting", href: "/dashboard/finance/accounts", icon: "calculator" },
-  { label: "Expenses", href: "/dashboard/finance/expenses", icon: "receipt" },
-  { label: "Sales", href: "/dashboard/finance/invoices", icon: "invoice" },
-  { label: "Payroll", href: "/dashboard/payroll/runs", icon: "dollar-sign" },
-  { label: "Time", href: "/dashboard/time/entries", icon: "clock" },
-  { label: "Employees", href: "/dashboard/people/employees", icon: "users" }
-];
-
 export type CreateAction = {
   label: string;
   href: string;
@@ -151,4 +157,14 @@ export function isNavItemActive(pathname: string, href: string): boolean {
     return norm === "/dashboard";
   }
   return norm === h || norm.startsWith(`${h}/`);
+}
+
+export function isNavEntryActive(pathname: string, item: NavItem): boolean {
+  if (item.matchHrefs?.some((href) => isNavItemActive(pathname, href))) return true;
+  if (item.exact) {
+    const norm = pathname.replace(/\/$/, "") || "/";
+    const href = item.href.replace(/\/$/, "") || "/";
+    return norm === href;
+  }
+  return isNavItemActive(pathname, item.href);
 }
