@@ -1,9 +1,11 @@
 "use client";
 
+import { PaginationControls, SortSelect } from "@/components/pagination-controls";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type InvoiceRow = {
   id: string;
@@ -26,6 +28,19 @@ const STATUS_CLASS: Record<InvoiceRow["status"], string> = {
   void: "bg-rose-100 text-rose-800"
 };
 
+const SORT_OPTIONS = [
+  { value: "", label: "Newest first" },
+  { value: "createdAt", label: "Oldest first" },
+  { value: "number", label: "Number (A–Z)" },
+  { value: "-issueDate", label: "Issue date (new–old)" },
+  { value: "issueDate", label: "Issue date (old–new)" },
+  { value: "dueDate", label: "Due date (soonest)" },
+  { value: "-total", label: "Total (high–low)" },
+  { value: "total", label: "Total (low–high)" },
+  { value: "-balance", label: "Balance (high–low)" },
+  { value: "status", label: "Status" }
+];
+
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toISOString().slice(0, 10);
@@ -36,34 +51,37 @@ function fmtMoney(n: number): string {
 }
 
 export default function InvoicesListPage() {
+  const list = useListQuery(["status"]);
+  const status = list.filter("status");
+
   const [items, setItems] = useState<InvoiceRow[] | null>(null);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<"" | InvoiceRow["status"]>("");
+  const [nonce, setNonce] = useState(0);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const seq = ++loadSeq.current;
+    setLoading(true);
     (async () => {
       try {
-        const qs = status ? `?status=${status}` : "";
-        const res = await fetch(`${apiBase()}/finance/invoices${qs}`, {
+        const res = await fetch(`${apiBase()}/finance/invoices${list.queryString}`, {
           headers: { ...authHeaders() }
         });
-        const data = await readApiData<{ items: InvoiceRow[] }>(res);
-        if (!cancelled) {
-          setItems(data.items);
-          setError(null);
-        }
+        const data = await readApiData<{ items: InvoiceRow[]; pagination: PaginationMeta }>(res);
+        if (seq !== loadSeq.current) return;
+        setItems(data.items);
+        setPagination(data.pagination);
+        setError(null);
+        setLoading(false);
       } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load");
-          setItems(null);
-        }
+        if (seq !== loadSeq.current) return;
+        setError(e instanceof Error ? e.message : "Failed to load");
+        setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
+  }, [list.queryString, nonce]);
 
   return (
     <div className="space-y-6">
@@ -80,34 +98,62 @@ export default function InvoicesListPage() {
         </Link>
       </div>
 
-      <label className="block max-w-xs text-sm">
-        <span className="text-slate-700">Status</span>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value as typeof status)}
-          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-        >
-          <option value="">All</option>
-          <option value="draft">Draft</option>
-          <option value="open">Open</option>
-          <option value="partial">Partial</option>
-          <option value="paid">Paid</option>
-          <option value="void">Void</option>
-        </select>
-      </label>
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <label className="block max-w-sm flex-1 text-sm">
+            <span className="sr-only">Search invoices</span>
+            <input
+              type="search"
+              value={list.searchInput}
+              onChange={(e) => list.setSearchInput(e.target.value)}
+              placeholder="Search number, memo, or customer"
+              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none ring-[#006D77] focus:ring-2"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              Status
+              <select
+                value={status}
+                onChange={(e) => list.setFilter("status", e.target.value)}
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-semibold text-slate-800 outline-none ring-[#006D77] focus-visible:ring-2"
+              >
+                <option value="">All</option>
+                <option value="draft">Draft</option>
+                <option value="open">Open</option>
+                <option value="partial">Partial</option>
+                <option value="paid">Paid</option>
+                <option value="void">Void</option>
+              </select>
+            </label>
+            <SortSelect id="invoices-sort" value={list.sort} options={SORT_OPTIONS} onChange={list.setSort} />
+          </div>
+        </div>
+      </section>
 
-      {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={pagination?.total ?? 0}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((n) => n + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="invoices"
+        />
       ) : null}
 
-      {!items ? (
-        <p className="text-sm text-slate-600">Loading…</p>
-      ) : items.length === 0 ? (
+      {!loading && !error && items !== null && items.length === 0 ? (
         <p className="text-sm text-slate-600">
-          No invoices yet. Create one above — you&rsquo;ll need at least one customer and one
-          revenue account first.
+          {list.q || status
+            ? "No invoices match the current search or filters."
+            : "No invoices yet. Create one above — you’ll need at least one customer and one revenue account first."}
         </p>
-      ) : (
+      ) : null}
+
+      {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
@@ -142,7 +188,7 @@ export default function InvoicesListPage() {
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

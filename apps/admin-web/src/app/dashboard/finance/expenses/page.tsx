@@ -1,9 +1,11 @@
 "use client";
 
+import { PaginationControls, SortSelect } from "@/components/pagination-controls";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ExpenseRow = {
   id: string;
@@ -27,40 +29,52 @@ const STATUS_CLASS: Record<ExpenseRow["status"], string> = {
   void: "bg-rose-100 text-rose-800"
 };
 
+const SORT_OPTIONS = [
+  { value: "", label: "Expense date (newest)" },
+  { value: "expenseDate", label: "Expense date (oldest)" },
+  { value: "number", label: "Number (A–Z)" },
+  { value: "-total", label: "Total (high–low)" },
+  { value: "total", label: "Total (low–high)" },
+  { value: "status", label: "Status" }
+];
+
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toISOString().slice(0, 10);
 }
 
 export default function ExpensesListPage() {
+  const list = useListQuery(["status"]);
+  const status = list.filter("status");
+
   const [items, setItems] = useState<ExpenseRow[] | null>(null);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<"" | "draft" | "open" | "void">("");
+  const [nonce, setNonce] = useState(0);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const seq = ++loadSeq.current;
+    setLoading(true);
     (async () => {
       try {
-        const qs = status ? `?status=${status}` : "";
-        const res = await fetch(`${apiBase()}/finance/expenses${qs}`, {
+        const res = await fetch(`${apiBase()}/finance/expenses${list.queryString}`, {
           headers: { ...authHeaders() }
         });
-        const data = await readApiData<{ items: ExpenseRow[] }>(res);
-        if (!cancelled) {
-          setItems(data.items);
-          setError(null);
-        }
+        const data = await readApiData<{ items: ExpenseRow[]; pagination: PaginationMeta }>(res);
+        if (seq !== loadSeq.current) return;
+        setItems(data.items);
+        setPagination(data.pagination);
+        setError(null);
+        setLoading(false);
       } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load");
-          setItems(null);
-        }
+        if (seq !== loadSeq.current) return;
+        setError(e instanceof Error ? e.message : "Failed to load");
+        setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
+  }, [list.queryString, nonce]);
 
   return (
     <div className="space-y-6">
@@ -77,31 +91,60 @@ export default function ExpensesListPage() {
         </Link>
       </div>
 
-      <label className="block max-w-xs text-sm">
-        <span className="text-slate-700">Status</span>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value as typeof status)}
-          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-        >
-          <option value="">All</option>
-          <option value="draft">Draft</option>
-          <option value="open">Posted</option>
-          <option value="void">Void</option>
-        </select>
-      </label>
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <label className="block max-w-sm flex-1 text-sm">
+            <span className="sr-only">Search expenses</span>
+            <input
+              type="search"
+              value={list.searchInput}
+              onChange={(e) => list.setSearchInput(e.target.value)}
+              placeholder="Search number, reference, payee, memo, or supplier"
+              className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none ring-[#006D77] focus:ring-2"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              Status
+              <select
+                value={status}
+                onChange={(e) => list.setFilter("status", e.target.value)}
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-semibold text-slate-800 outline-none ring-[#006D77] focus-visible:ring-2"
+              >
+                <option value="">All</option>
+                <option value="draft">Draft</option>
+                <option value="open">Posted</option>
+                <option value="void">Void</option>
+              </select>
+            </label>
+            <SortSelect id="expenses-sort" value={list.sort} options={SORT_OPTIONS} onChange={list.setSort} />
+          </div>
+        </div>
+      </section>
 
-      {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={pagination?.total ?? 0}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((n) => n + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="expenses"
+        />
       ) : null}
 
-      {!items ? (
-        <p className="text-sm text-slate-600">Loading…</p>
-      ) : items.length === 0 ? (
+      {!loading && !error && items !== null && items.length === 0 ? (
         <p className="text-sm text-slate-600">
-          No expenses recorded yet. Add one from the button above.
+          {list.q || status
+            ? "No expenses match the current search or filters."
+            : "No expenses recorded yet. Add one from the button above."}
         </p>
-      ) : (
+      ) : null}
+
+      {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
@@ -136,7 +179,7 @@ export default function ExpensesListPage() {
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

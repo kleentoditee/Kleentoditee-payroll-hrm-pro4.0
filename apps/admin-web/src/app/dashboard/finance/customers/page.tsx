@@ -1,10 +1,12 @@
 "use client";
 
+import { PaginationControls, SortSelect } from "@/components/pagination-controls";
 import { ActionButton, ActionLink, SplitActionButton } from "@/components/ui/action-button";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
+import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type CustomerRow = {
   id: string;
@@ -16,21 +18,10 @@ type CustomerRow = {
   phone: string;
   billingAddress?: string;
   active: boolean;
-};
-
-type InvoiceRow = {
-  id: string;
-  customerId: string;
-  dueDate: string | null;
-  balance: number;
-  status: "draft" | "open" | "partial" | "paid" | "void";
-};
-
-type PaymentRow = {
-  id: string;
-  customerId: string;
-  paymentDate: string;
-  amount: number;
+  /** Server aggregate: sum of open/partial invoice balances. */
+  openBalance?: number;
+  /** Server aggregate: count of open/partial invoices. */
+  invoiceCount?: number;
 };
 
 type ColumnKey =
@@ -59,7 +50,7 @@ const DEFAULT_COLUMNS: Record<ColumnKey, boolean> = {
   email: true,
   attachments: false,
   openBalance: true,
-  status: false
+  status: true
 };
 
 const COLUMN_LABELS: Array<{ key: ColumnKey; label: string }> = [
@@ -71,6 +62,15 @@ const COLUMN_LABELS: Array<{ key: ColumnKey; label: string }> = [
   { key: "attachments", label: "Attachments" },
   { key: "openBalance", label: "Open balance" },
   { key: "status", label: "Status" }
+];
+
+const SORT_OPTIONS = [
+  { value: "", label: "Display name (A–Z)" },
+  { value: "-displayName", label: "Display name (Z–A)" },
+  { value: "companyName", label: "Company (A–Z)" },
+  { value: "email", label: "Email (A–Z)" },
+  { value: "-createdAt", label: "Newest first" },
+  { value: "createdAt", label: "Oldest first" }
 ];
 
 // BVI uses the US dollar as its official currency.
@@ -112,7 +112,7 @@ function ChevronIcon({ direction }: { direction: "up" | "down" }) {
         d={
           direction === "up"
             ? "M14.77 12.79a.75.75 0 0 1-1.06-.02L10 8.83l-3.71 3.94a.75.75 0 1 1-1.1-1.02l4.25-4.5a.75.75 0 0 1 1.1 0l4.25 4.5a.75.75 0 0 1-.02 1.04Z"
-            : "M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.1 1.02l-4.25 4.5a.75.75 0 0 1-1.1 0l-4.25-4.5a.75.75 0 0 1 .02-1.04Z"
+            : "M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.1 1.02l-4.25 4.5a.75.75 0 0 1 1.1 0l-4.25-4.5a.75.75 0 0 1 .02-1.04Z"
         }
         clipRule="evenodd"
       />
@@ -152,62 +152,50 @@ function ExportIcon() {
 function GearIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <path d="M8.3 2.8h3.4l.5 2a6.7 6.7 0 0 1 1.5.9l1.9-.7 1.7 3-1.5 1.3a6 6 0 0 1 0 1.8l1.5 1.3-1.7 3-1.9-.7a6.7 6.7 0 0 1-1.5.9l-.5 2H8.3l-.5-2a6.7 6.7 0 0 1-1.5-.9l-1.9.7-1.7-3 1.5-1.3a6 6 0 0 1 0-1.8L2.7 8l1.7-3 1.9.7a6.7 6.7 0 0 1 1.5-.9l.5-2Z" />
+      <path d="M8.3 2.8h3.4l.5 2a6.7 6.7 0 0 1 1.5.9l1.9-.7 1.7 3-1.5 1.3a6 6 0 0 1 0 1.8l1.5 1.3-1.7 3-1.9-.7a6.7 6.7 0 0 1-1.5.9l-.5 2H8.3l-.5-2a6.7 6.7 0 0 1-1.5-.9l-1.9.7-1.7-3 1.5-1.3a6 6 0 0 1 0-1.8L2.7 8l1.7-3 1.9.7a6.7 6.7 0 0 1-1.5-.9l.5-2Z" />
       <circle cx="10" cy="10" r="2.4" />
     </svg>
   );
 }
 
 export default function CustomersListPage() {
-  const [q, setQ] = useState("");
+  const list = useListQuery();
   const [items, setItems] = useState<CustomerRow[] | null>(null);
-  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
-  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
-  const [summaryExpanded, setSummaryExpanded] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
-  const [includeInactive, setIncludeInactive] = useState(false);
-  const [pageSize, setPageSize] = useState(25);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
   const [updatingCustomerId, setUpdatingCustomerId] = useState<string | null>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const seq = ++loadSeq.current;
+    setLoading(true);
     (async () => {
       try {
-        const [customerRes, invoiceRes, paymentRes] = await Promise.all([
-          fetch(`${apiBase()}/finance/customers`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/finance/invoices`, { headers: { ...authHeaders() } }),
-          fetch(`${apiBase()}/finance/payments`, { headers: { ...authHeaders() } })
-        ]);
-        const [customerData, invoiceData, paymentData] = await Promise.all([
-          readApiData<{ items: CustomerRow[] }>(customerRes),
-          readApiData<{ items: InvoiceRow[] }>(invoiceRes),
-          readApiData<{ items: PaymentRow[] }>(paymentRes)
-        ]);
-        if (!cancelled) {
-          setItems(customerData.items);
-          setInvoices(invoiceData.items ?? []);
-          setPayments(paymentData.items ?? []);
-          setError(null);
-        }
+        const res = await fetch(`${apiBase()}/finance/customers${list.queryString}`, {
+          headers: { ...authHeaders() }
+        });
+        const data = await readApiData<{ items: CustomerRow[]; pagination: PaginationMeta }>(res);
+        if (seq !== loadSeq.current) return;
+        setItems(data.items);
+        setPagination(data.pagination);
+        setError(null);
+        setLoading(false);
       } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load");
-          setItems(null);
-        }
+        if (seq !== loadSeq.current) return;
+        setError(e instanceof Error ? e.message : "Failed to load");
+        setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [nonce]);
+  }, [list.queryString, nonce]);
 
   useEffect(() => {
     function onDocumentClick(event: MouseEvent) {
@@ -230,61 +218,6 @@ export default function CustomersListPage() {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, []);
-
-  const openBalanceByCustomer = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const invoice of invoices) {
-      if (invoice.status !== "open" && invoice.status !== "partial") continue;
-      map.set(invoice.customerId, (map.get(invoice.customerId) ?? 0) + Number(invoice.balance || 0));
-    }
-    return map;
-  }, [invoices]);
-
-  const filteredCustomers = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return (items ?? []).filter((customer) => {
-      if (!includeInactive && customer.active === false) return false;
-      if (!term) return true;
-      return [
-        customer.displayName,
-        customer.companyName,
-        customer.primaryContact,
-        customer.email,
-        customer.phone,
-        customer.billingAddress
-      ]
-        .filter((value): value is string => Boolean(value))
-        .some((value) => value.toLowerCase().includes(term));
-    });
-  }, [includeInactive, items, q]);
-
-  const visibleCustomers = useMemo(() => filteredCustomers.slice(0, pageSize), [filteredCustomers, pageSize]);
-
-  const summary = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const openInvoices = invoices.filter((invoice) => invoice.status === "open" || invoice.status === "partial");
-    const openBalance = openInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
-    const overdueInvoices = openInvoices.filter((invoice) => {
-      if (!invoice.dueDate || Number(invoice.balance || 0) <= 0) return false;
-      return new Date(invoice.dueDate) < today;
-    });
-    const overdueBalance = overdueInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0);
-    const recentPayments = payments.filter((payment) => new Date(payment.paymentDate) >= thirtyDaysAgo);
-    const recentlyPaid = recentPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-
-    return {
-      openBalance,
-      overdueInvoices: overdueInvoices.length,
-      overdueBalance,
-      openInvoicesAndCredits: openInvoices.reduce((sum, invoice) => sum + Number(invoice.balance || 0), 0),
-      recentlyPaid,
-      recentlyPaidCount: recentPayments.length
-    };
-  }, [invoices, payments]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -316,7 +249,9 @@ export default function CustomersListPage() {
         body: JSON.stringify({ active })
       });
       const data = await readApiData<{ customer: CustomerRow }>(res);
-      setItems((current) => current?.map((item) => (item.id === row.id ? data.customer : item)) ?? current);
+      setItems((current) =>
+        current?.map((item) => (item.id === row.id ? { ...item, ...data.customer } : item)) ?? current
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update customer");
     } finally {
@@ -324,10 +259,11 @@ export default function CustomersListPage() {
     }
   }
 
+  // Exports the currently displayed page (server-paginated list).
   function exportCustomers() {
     downloadCsv("kleentoditee-customers.csv", [
       ["Display name", "Company", "Primary contact", "Email", "Phone", "Billing address", "Status", "Open balance"],
-      ...filteredCustomers.map((customer) => [
+      ...(items ?? []).map((customer) => [
         customer.displayName,
         customer.companyName,
         customer.primaryContact,
@@ -335,7 +271,7 @@ export default function CustomersListPage() {
         customer.phone,
         customer.billingAddress ?? "",
         customer.active ? "Active" : "Inactive",
-        (openBalanceByCustomer.get(customer.id) ?? 0).toFixed(2)
+        (customer.openBalance ?? 0).toFixed(2)
       ])
     ]);
   }
@@ -350,43 +286,8 @@ export default function CustomersListPage() {
     setColumns((current) => ({ ...current, [key]: !current[key] }));
   }
 
-  const summaryTiles = [
-    {
-      label: "Total open balance",
-      value: formatMoney(summary.openBalance),
-      detail: "From open invoices",
-      color: "bg-[#0A66C2]",
-      bar: "w-full"
-    },
-    {
-      label: "Overdue",
-      value: String(summary.overdueInvoices),
-      detail: "Open invoices past due",
-      color: "bg-orange-500",
-      bar: "w-1/2"
-    },
-    {
-      label: "Open invoices/credits",
-      value: formatMoney(summary.openInvoicesAndCredits),
-      detail: "Open invoice/credit balance",
-      color: "bg-slate-500",
-      bar: "w-2/3"
-    },
-    {
-      label: "Recently paid",
-      value: formatMoney(summary.recentlyPaid),
-      detail: `${summary.recentlyPaidCount} payment${summary.recentlyPaidCount === 1 ? "" : "s"} in 30 days`,
-      color: "bg-emerald-500",
-      bar: "w-1/2"
-    }
-  ];
-
-  const summarySegments = [
-    { label: "Overdue invoices", value: summary.overdueBalance, color: "bg-orange-500" },
-    { label: "Open invoices/credits", value: summary.openInvoicesAndCredits, color: "bg-slate-500" },
-    { label: "Recently paid", value: summary.recentlyPaid, color: "bg-emerald-500" }
-  ];
-  const summarySegmentTotal = summarySegments.reduce((sum, segment) => sum + Math.max(segment.value, 0), 0);
+  const total = pagination?.total ?? 0;
+  const hasRows = !loading && !error && items !== null && items.length > 0;
 
   return (
     <div className="space-y-4">
@@ -407,55 +308,6 @@ export default function CustomersListPage() {
         />
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-[#F4FAFD] shadow-sm">
-        <div className="flex items-start justify-between gap-3 px-5 py-4">
-          <div className="min-w-0 flex-1">
-            {summaryExpanded ? (
-              <div className="space-y-4">
-                <div className="overflow-hidden rounded-full bg-slate-200" aria-label="Customer summary chart">
-                  <div className="flex h-3 w-full">
-                    {summarySegments.map((segment) => (
-                      <div
-                        key={segment.label}
-                        title={segment.label}
-                        className={`${segment.color} min-w-5`}
-                        style={{ flexGrow: summarySegmentTotal > 0 ? Math.max(segment.value, 0) : 1 }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-                  {summaryTiles.map((tile) => (
-                    <div key={tile.label} className="min-w-0">
-                      <p className="truncate text-xl font-bold text-slate-950">{tile.value}</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-slate-600">{tile.label}</p>
-                      <div className="mt-4 h-2.5 rounded-full bg-slate-200">
-                        <div className={`h-2.5 rounded-full ${tile.color} ${tile.bar}`} />
-                      </div>
-                      <p className="mt-2 truncate text-xs text-slate-500">{tile.detail}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xl font-bold text-slate-950">{formatMoney(summary.openBalance)}</p>
-                <p className="text-sm font-semibold text-slate-600">Total open balance</p>
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            aria-label={summaryExpanded ? "Collapse customer summary" : "Expand customer summary"}
-            aria-expanded={summaryExpanded}
-            onClick={() => setSummaryExpanded((value) => !value)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-700 outline-none ring-[#006D77] hover:bg-white focus-visible:ring-2"
-          >
-            <ChevronIcon direction={summaryExpanded ? "up" : "down"} />
-          </button>
-        </div>
-      </section>
-
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <label className="relative block max-w-sm flex-1 text-sm">
@@ -465,18 +317,19 @@ export default function CustomersListPage() {
             </span>
             <input
               type="search"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
+              value={list.searchInput}
+              onChange={(e) => list.setSearchInput(e.target.value)}
               placeholder="Search"
-              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 outline-none ring-[#006D77] focus:ring-2"
+              className="min-h-11 w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 outline-none ring-[#006D77] focus:ring-2"
             />
           </label>
           <div className="flex flex-wrap items-center gap-2">
+            <SortSelect id="customers-sort" value={list.sort} options={SORT_OPTIONS} onChange={list.setSort} />
             <button
               type="button"
               aria-label="Print customer list"
               onClick={() => window.print()}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
             >
               <PrintIcon />
             </button>
@@ -484,7 +337,7 @@ export default function CustomersListPage() {
               type="button"
               aria-label="Export customers"
               onClick={exportCustomers}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
             >
               <ExportIcon />
             </button>
@@ -495,7 +348,7 @@ export default function CustomersListPage() {
                 aria-haspopup="dialog"
                 aria-expanded={settingsOpen}
                 onClick={() => setSettingsOpen((value) => !value)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
               >
                 <GearIcon />
               </button>
@@ -519,34 +372,6 @@ export default function CustomersListPage() {
                       </label>
                     ))}
                   </div>
-                  <div className="mt-4 border-t border-slate-100 pt-3">
-                    <label className="flex items-center gap-2 text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={includeInactive}
-                        onChange={(event) => setIncludeInactive(event.target.checked)}
-                        className="rounded border-slate-300 text-[#108000] focus:ring-[#006D77]"
-                      />
-                      Include inactive
-                    </label>
-                  </div>
-                  <fieldset className="mt-4 border-t border-slate-100 pt-3">
-                    <legend className="font-bold text-slate-950">Rows per page</legend>
-                    <div className="mt-2 flex gap-3">
-                      {[25, 50, 100].map((size) => (
-                        <label key={size} className="flex items-center gap-2 text-slate-700">
-                          <input
-                            type="radio"
-                            name="customer-page-size"
-                            checked={pageSize === size}
-                            onChange={() => setPageSize(size)}
-                            className="border-slate-300 text-[#108000] focus:ring-[#006D77]"
-                          />
-                          {size}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
                 </div>
               ) : null}
             </div>
@@ -554,18 +379,26 @@ export default function CustomersListPage() {
         </div>
       </section>
 
-      {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={total}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((n) => n + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="customers"
+        />
       ) : null}
 
-      {!items ? (
-        <p className="text-sm text-slate-600">Loading…</p>
-      ) : filteredCustomers.length === 0 ? (
+      {!loading && !error && items !== null && items.length === 0 ? (
         <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
           <h3 className="font-serif text-2xl text-slate-950">No customers yet</h3>
           <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">
-            {q || includeInactive
-              ? "No customers match the current filters."
+            {list.q
+              ? "No customers match the current search."
               : "Add a customer manually or import a customer list from an accounting export file."}
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -575,10 +408,12 @@ export default function CustomersListPage() {
             </ActionLink>
           </div>
         </section>
-      ) : (
+      ) : null}
+
+      {hasRows ? (
         <div className="space-y-3 md:hidden">
-          {visibleCustomers.map((row) => {
-            const openBalance = openBalanceByCustomer.get(row.id) ?? 0;
+          {(items ?? []).map((row) => {
+            const openBalance = row.openBalance ?? 0;
             const primaryAction =
               openBalance > 0
                 ? { label: "Receive payment", href: "/dashboard/finance/payments/new" }
@@ -616,19 +451,26 @@ export default function CustomersListPage() {
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-slate-500">Open balance</dt>
-                    <dd className="font-semibold text-slate-900">{formatMoney(openBalance)}</dd>
+                    <dd className="font-semibold text-slate-900">
+                      {formatMoney(openBalance)}
+                      {(row.invoiceCount ?? 0) > 0 ? (
+                        <span className="ml-1 text-xs font-normal text-slate-500">
+                          ({row.invoiceCount} open)
+                        </span>
+                      ) : null}
+                    </dd>
                   </div>
                 </dl>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link
                     href={primaryAction.href}
-                    className="inline-flex min-h-10 flex-1 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-[#063E4A] outline-none ring-[#006D77] hover:bg-[#EAF6F7] focus-visible:ring-2"
+                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-[#063E4A] outline-none ring-[#006D77] hover:bg-[#EAF6F7] focus-visible:ring-2"
                   >
                     {primaryAction.label}
                   </Link>
                   <Link
                     href={`/dashboard/finance/customers/${row.id}`}
-                    className="inline-flex min-h-10 flex-1 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
                   >
                     View customer
                   </Link>
@@ -636,16 +478,11 @@ export default function CustomersListPage() {
               </article>
             );
           })}
-          {filteredCustomers.length > visibleCustomers.length ? (
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-              Showing {visibleCustomers.length} of {filteredCustomers.length} customers. Change page size in settings to show more.
-            </div>
-          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {items && filteredCustomers.length > 0 ? (
-        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white pb-40 shadow-sm md:block">
+      {hasRows ? (
+        <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm md:block">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
               <tr>
@@ -665,8 +502,8 @@ export default function CustomersListPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {visibleCustomers.map((row) => {
-                const openBalance = openBalanceByCustomer.get(row.id) ?? 0;
+              {(items ?? []).map((row) => {
+                const openBalance = row.openBalance ?? 0;
                 const primaryAction =
                   openBalance > 0
                     ? { label: "Receive payment", href: "/dashboard/finance/payments/new" }
@@ -704,7 +541,14 @@ export default function CustomersListPage() {
                       </td>
                     ) : null}
                     {columns.openBalance ? (
-                      <td className="px-4 py-2.5 text-right font-semibold text-slate-900">{formatMoney(openBalance)}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-900">
+                        {formatMoney(openBalance)}
+                        {(row.invoiceCount ?? 0) > 0 ? (
+                          <span className="block text-xs font-normal text-slate-500">
+                            {row.invoiceCount} open invoice{row.invoiceCount === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
+                      </td>
                     ) : null}
                     {columns.status ? (
                       <td className="px-4 py-2.5">
@@ -793,11 +637,6 @@ export default function CustomersListPage() {
               })}
             </tbody>
           </table>
-          {filteredCustomers.length > visibleCustomers.length ? (
-            <div className="border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
-              Showing {visibleCustomers.length} of {filteredCustomers.length} customers. Change page size in settings to show more.
-            </div>
-          ) : null}
         </div>
       ) : null}
 

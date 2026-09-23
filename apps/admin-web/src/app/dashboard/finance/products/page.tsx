@@ -1,8 +1,10 @@
 "use client";
 
+import { PaginationControls, SortSelect } from "@/components/pagination-controls";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import { useEffect, useMemo, useState } from "react";
+import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type AccountLite = {
   id: string;
@@ -34,16 +36,33 @@ const EMPTY_FORM = {
   expenseAccountId: ""
 };
 
+const SORT_OPTIONS = [
+  { value: "", label: "Name (A–Z)" },
+  { value: "-name", label: "Name (Z–A)" },
+  { value: "sku", label: "SKU (A–Z)" },
+  { value: "kind", label: "Kind" },
+  { value: "-salesPrice", label: "Price (high–low)" },
+  { value: "salesPrice", label: "Price (low–high)" },
+  { value: "-createdAt", label: "Newest first" }
+];
+
 export default function ProductsListPage() {
-  const [q, setQ] = useState("");
+  const list = useListQuery(["kind"]);
+  const kindFilter = list.filter("kind");
+
   const [items, setItems] = useState<ProductRow[] | null>(null);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<AccountLite[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const loadSeq = useRef(0);
 
+  // Accounts feed the creation form selects only; the legacy unpaginated
+  // response is intentional here so every account stays selectable.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -65,32 +84,26 @@ export default function ProductsListPage() {
   }, [nonce]);
 
   useEffect(() => {
-    let cancelled = false;
-    const t = setTimeout(() => {
-      (async () => {
-        try {
-          const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-          const res = await fetch(`${apiBase()}/finance/products${qs}`, {
-            headers: { ...authHeaders() }
-          });
-          const data = await readApiData<{ items: ProductRow[] }>(res);
-          if (!cancelled) {
-            setItems(data.items);
-            setError(null);
-          }
-        } catch (e) {
-          if (!cancelled) {
-            setError(e instanceof Error ? e.message : "Failed to load");
-            setItems(null);
-          }
-        }
-      })();
-    }, 200);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [q, nonce]);
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/finance/products${list.queryString}`, {
+          headers: { ...authHeaders() }
+        });
+        const data = await readApiData<{ items: ProductRow[]; pagination: PaginationMeta }>(res);
+        if (seq !== loadSeq.current) return;
+        setItems(data.items);
+        setPagination(data.pagination);
+        setError(null);
+        setLoading(false);
+      } catch (e) {
+        if (seq !== loadSeq.current) return;
+        setError(e instanceof Error ? e.message : "Failed to load");
+        setLoading(false);
+      }
+    })();
+  }, [list.queryString, nonce]);
 
   const revenueAccounts = useMemo(
     () => (accounts ?? []).filter((a) => a.type === "revenue"),
@@ -236,26 +249,60 @@ export default function ProductsListPage() {
         ) : null}
       </form>
 
-      <label className="block max-w-md text-sm">
-        <span className="text-slate-700">Search</span>
-        <input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="SKU, name, or description"
-          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
-        />
-      </label>
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <label className="block max-w-md flex-1 text-sm">
+            <span className="text-slate-700">Search</span>
+            <input
+              type="search"
+              value={list.searchInput}
+              onChange={(e) => list.setSearchInput(e.target.value)}
+              placeholder="SKU, name, or description"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 py-2 outline-none ring-brand focus:ring-2"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              Kind
+              <select
+                value={kindFilter}
+                onChange={(e) => list.setFilter("kind", e.target.value)}
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-semibold text-slate-800 outline-none ring-[#006D77] focus-visible:ring-2"
+              >
+                <option value="">All kinds</option>
+                <option value="service">Service</option>
+                <option value="product">Product</option>
+                <option value="bundle">Bundle</option>
+              </select>
+            </label>
+            <SortSelect id="products-sort" value={list.sort} options={SORT_OPTIONS} onChange={list.setSort} />
+          </div>
+        </div>
+      </section>
 
-      {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={pagination?.total ?? 0}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((n) => n + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="products and services"
+        />
       ) : null}
 
-      {!items ? (
-        <p className="text-sm text-slate-600">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-slate-600">No products or services found.</p>
-      ) : (
+      {!loading && !error && items !== null && items.length === 0 ? (
+        <p className="text-sm text-slate-600">
+          {list.q || kindFilter
+            ? "No products or services match the current search or filters."
+            : "No products or services found."}
+        </p>
+      ) : null}
+
+      {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
@@ -279,7 +326,7 @@ export default function ProductsListPage() {
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

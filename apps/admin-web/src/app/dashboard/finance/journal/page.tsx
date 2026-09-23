@@ -1,8 +1,10 @@
 "use client";
 
+import { PaginationControls, SortSelect } from "@/components/pagination-controls";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import { Fragment, useEffect, useState } from "react";
+import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 type JournalLine = {
   accountCode: string;
@@ -47,38 +49,50 @@ const SOURCE_LABEL: Record<string, string> = {
   manual_journal_reversal: "Manual journal reversal"
 };
 
+const SORT_OPTIONS = [
+  { value: "", label: "Date (newest)" },
+  { value: "date", label: "Date (oldest)" },
+  { value: "memo", label: "Memo (A–Z)" },
+  { value: "sourceType", label: "Source type" },
+  { value: "status", label: "Status" },
+  { value: "createdAt", label: "Created (oldest)" }
+];
+
 const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function JournalPage() {
+  const list = useListQuery(["sourceType"]);
+  const sourceType = list.filter("sourceType");
+
   const [entries, setEntries] = useState<JournalEntryRow[] | null>(null);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sourceType, setSourceType] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const seq = ++loadSeq.current;
+    setLoading(true);
     (async () => {
       try {
-        const query = sourceType ? `?sourceType=${encodeURIComponent(sourceType)}` : "";
-        const res = await fetch(`${apiBase()}/finance/reports/journal${query}`, {
+        const res = await fetch(`${apiBase()}/finance/reports/journal${list.queryString}`, {
           headers: { ...authHeaders() }
         });
-        const data = await readApiData<{ entries: JournalEntryRow[] }>(res);
-        if (!cancelled) {
-          setEntries(data.entries);
-          setError(null);
-        }
+        const data = await readApiData<{ entries: JournalEntryRow[]; pagination: PaginationMeta }>(res);
+        if (seq !== loadSeq.current) return;
+        setEntries(data.entries);
+        setPagination(data.pagination);
+        setError(null);
+        setLoading(false);
       } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load journal");
-          setEntries(null);
-        }
+        if (seq !== loadSeq.current) return;
+        setError(e instanceof Error ? e.message : "Failed to load journal");
+        setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sourceType]);
+  }, [list.queryString, nonce]);
 
   return (
     <section className="space-y-4">
@@ -90,33 +104,62 @@ export default function JournalPage() {
             rows are never edited.
           </p>
         </div>
-        <label className="text-sm font-medium text-slate-700">
-          Source
-          <select
-            value={sourceType}
-            onChange={(e) => setSourceType(e.target.value)}
-            className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-          >
-            <option value="">All sources</option>
-            {Object.entries(SOURCE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
 
-      {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
-      {entries === null && !error ? <p className="text-sm text-slate-500">Loading…</p> : null}
-      {entries !== null && entries.length === 0 ? (
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <label className="block max-w-sm flex-1 text-sm">
+          <span className="sr-only">Search journal memos</span>
+          <input
+            type="search"
+            value={list.searchInput}
+            onChange={(e) => list.setSearchInput(e.target.value)}
+            placeholder="Search memo"
+            className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none ring-[#006D77] focus:ring-2"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            Source
+            <select
+              value={sourceType}
+              onChange={(e) => list.setFilter("sourceType", e.target.value)}
+              className="min-h-11 rounded-md border border-slate-300 bg-white px-2 py-2 text-sm"
+            >
+              <option value="">All sources</option>
+              {Object.entries(SOURCE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <SortSelect id="journal-sort" value={list.sort} options={SORT_OPTIONS} onChange={list.setSort} />
+        </div>
+      </div>
+
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={pagination?.total ?? 0}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((n) => n + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="journal entries"
+        />
+      ) : null}
+
+      {!loading && !error && entries !== null && entries.length === 0 ? (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No journal entries yet. Journals appear when invoices are sent, bills received, payments recorded,
-          expenses posted, or pay runs finalized.
+          {list.q || sourceType
+            ? "No journal entries match the current search or filters."
+            : "No journal entries yet. Journals appear when invoices are sent, bills received, payments recorded, expenses posted, or pay runs finalized."}
         </p>
       ) : null}
 
-      {entries && entries.length > 0 ? (
+      {!error && entries && entries.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="min-w-full text-sm">
             <thead>
@@ -149,7 +192,20 @@ export default function JournalPage() {
                     </td>
                     <td className="px-3 py-2 text-slate-700">{entry.memo}</td>
                     <td className="px-3 py-2 text-right tabular-nums">${money(entry.totalDebit)}</td>
-                    <td className="px-3 py-2 text-slate-500">{expanded === entry.id ? "▲ hide" : "▼ show"}</td>
+                    <td className="px-3 py-2 text-slate-500">
+                      <button
+                        type="button"
+                        aria-expanded={expanded === entry.id}
+                        aria-label={`${expanded === entry.id ? "Hide" : "Show"} lines for journal ${entry.memo || entry.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpanded(expanded === entry.id ? null : entry.id);
+                        }}
+                        className="min-h-11 rounded-md px-2 py-1 outline-none ring-[#006D77] focus-visible:ring-2"
+                      >
+                        {expanded === entry.id ? "▲ hide" : "▼ show"}
+                      </button>
+                    </td>
                   </tr>
                   {expanded === entry.id ? (
                     <tr className="border-b border-slate-200 bg-slate-50/60">

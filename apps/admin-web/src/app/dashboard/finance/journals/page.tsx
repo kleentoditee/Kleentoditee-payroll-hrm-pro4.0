@@ -1,8 +1,10 @@
 "use client";
 
+import { PaginationControls, SortSelect } from "@/components/pagination-controls";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
-import { Fragment, useEffect, useState } from "react";
+import { useListQuery, type PaginationMeta } from "@/lib/use-list-query";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 type AccountOption = { id: string; code: string; name: string; type: string };
 
@@ -35,8 +37,22 @@ const STATUS_BADGE: Record<string, string> = {
   void: "bg-rose-100 text-rose-700"
 };
 
+const SORT_OPTIONS = [
+  { value: "", label: "Date (newest)" },
+  { value: "date", label: "Date (oldest)" },
+  { value: "memo", label: "Memo (A–Z)" },
+  { value: "status", label: "Status" },
+  { value: "-createdAt", label: "Created (newest)" },
+  { value: "createdAt", label: "Created (oldest)" }
+];
+
 export default function ManualJournalsPage() {
+  const list = useListQuery(["status"]);
+  const status = list.filter("status");
+
   const [items, setItems] = useState<JournalRow[] | null>(null);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,26 +61,48 @@ export default function ManualJournalsPage() {
   const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([emptyLine(), emptyLine()]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const loadSeq = useRef(0);
 
-  async function load() {
-    try {
-      const [jRes, aRes] = await Promise.all([
-        fetch(`${apiBase()}/finance/journals`, { headers: { ...authHeaders() } }),
-        fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } })
-      ]);
-      const jData = await readApiData<{ items: JournalRow[] }>(jRes);
-      const aData = await readApiData<{ items?: AccountOption[]; accounts?: AccountOption[] }>(aRes);
-      setItems(jData.items);
-      setAccounts(aData.items ?? aData.accounts ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load journals");
-    }
-  }
+  // Accounts feed the creation form's account selects only; the legacy
+  // unpaginated response is intentional so every account stays selectable.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/finance/accounts`, { headers: { ...authHeaders() } });
+        const data = await readApiData<{ items?: AccountOption[]; accounts?: AccountOption[] }>(res);
+        if (!cancelled) setAccounts(data.items ?? data.accounts ?? []);
+      } catch {
+        if (!cancelled) setAccounts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, []);
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/finance/journals${list.queryString}`, {
+          headers: { ...authHeaders() }
+        });
+        const data = await readApiData<{ items: JournalRow[]; pagination: PaginationMeta }>(res);
+        if (seq !== loadSeq.current) return;
+        setItems(data.items);
+        setPagination(data.pagination);
+        setError(null);
+        setLoading(false);
+      } catch (e) {
+        if (seq !== loadSeq.current) return;
+        setError(e instanceof Error ? e.message : "Failed to load journals");
+        setLoading(false);
+      }
+    })();
+  }, [list.queryString, nonce]);
 
   const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
@@ -80,7 +118,7 @@ export default function ManualJournalsPage() {
         body: body ? JSON.stringify(body) : undefined
       });
       await readApiData(res);
-      await load();
+      setNonce((n) => n + 1);
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Action failed");
@@ -117,13 +155,12 @@ export default function ManualJournalsPage() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800"
+          aria-expanded={showForm}
+          className="min-h-11 rounded-md bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800"
         >
           {showForm ? "Close form" : "New journal"}
         </button>
       </div>
-
-      {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
       {showForm ? (
         <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
@@ -144,79 +181,85 @@ export default function ManualJournalsPage() {
                 value={memo}
                 onChange={(e) => setMemo(e.target.value)}
                 placeholder="e.g. Owner contribution"
-                className="ml-2 w-64 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className="ml-2 w-64 max-w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
               />
             </label>
           </div>
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-2 py-1">Account</th>
-                <th className="px-2 py-1 text-right">Debit</th>
-                <th className="px-2 py-1 text-right">Credit</th>
-                <th className="px-2 py-1">Line memo</th>
-                <th className="px-2 py-1" />
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l, i) => (
-                <tr key={i} className="border-b border-slate-100">
-                  <td className="px-2 py-1">
-                    <select
-                      value={l.accountId}
-                      onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, accountId: e.target.value } : x)))}
-                      className="w-56 rounded-md border border-slate-300 px-2 py-1 text-sm"
-                    >
-                      <option value="">Choose account…</option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} · {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-2 py-1">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={l.debit}
-                      onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, debit: e.target.value, credit: e.target.value ? "" : x.credit } : x)))}
-                      className="w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
-                    />
-                  </td>
-                  <td className="px-2 py-1">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={l.credit}
-                      onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, credit: e.target.value, debit: e.target.value ? "" : x.debit } : x)))}
-                      className="w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
-                    />
-                  </td>
-                  <td className="px-2 py-1">
-                    <input
-                      type="text"
-                      value={l.memo}
-                      onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, memo: e.target.value } : x)))}
-                      className="w-44 rounded-md border border-slate-300 px-2 py-1 text-sm"
-                    />
-                  </td>
-                  <td className="px-2 py-1">
-                    <button
-                      onClick={() => setLines(lines.filter((_, j) => j !== i))}
-                      className="text-xs text-rose-600 hover:underline"
-                      disabled={lines.length <= 2}
-                    >
-                      Remove
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-2 py-1">Account</th>
+                  <th className="px-2 py-1 text-right">Debit</th>
+                  <th className="px-2 py-1 text-right">Credit</th>
+                  <th className="px-2 py-1">Line memo</th>
+                  <th className="px-2 py-1" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between">
+              </thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="px-2 py-1">
+                      <select
+                        value={l.accountId}
+                        aria-label={`Account for line ${i + 1}`}
+                        onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, accountId: e.target.value } : x)))}
+                        className="w-56 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      >
+                        <option value="">Choose account…</option>
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.code} · {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        aria-label={`Debit for line ${i + 1}`}
+                        value={l.debit}
+                        onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, debit: e.target.value, credit: e.target.value ? "" : x.credit } : x)))}
+                        className="w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        aria-label={`Credit for line ${i + 1}`}
+                        value={l.credit}
+                        onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, credit: e.target.value, debit: e.target.value ? "" : x.debit } : x)))}
+                        className="w-28 rounded-md border border-slate-300 px-2 py-1 text-right text-sm"
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="text"
+                        aria-label={`Memo for line ${i + 1}`}
+                        value={l.memo}
+                        onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, memo: e.target.value } : x)))}
+                        className="w-44 rounded-md border border-slate-300 px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <button
+                        onClick={() => setLines(lines.filter((_, j) => j !== i))}
+                        className="text-xs text-rose-600 hover:underline"
+                        disabled={lines.length <= 2}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <button onClick={() => setLines([...lines, emptyLine()])} className="text-sm text-teal-700 hover:underline">
               + Add line
             </button>
@@ -227,21 +270,64 @@ export default function ManualJournalsPage() {
           <button
             onClick={() => void createJournal()}
             disabled={busy || !balanced}
-            className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+            className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
           >
             Save draft
           </button>
         </div>
       ) : null}
 
-      {items === null && !error ? <p className="text-sm text-slate-500">Loading…</p> : null}
-      {items !== null && items.length === 0 ? (
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <label className="block max-w-sm flex-1 text-sm">
+          <span className="sr-only">Search manual journals</span>
+          <input
+            type="search"
+            value={list.searchInput}
+            onChange={(e) => list.setSearchInput(e.target.value)}
+            placeholder="Search memo"
+            className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none ring-[#006D77] focus:ring-2"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            Status
+            <select
+              value={status}
+              onChange={(e) => list.setFilter("status", e.target.value)}
+              className="min-h-11 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm font-semibold text-slate-800 outline-none ring-[#006D77] focus-visible:ring-2"
+            >
+              <option value="">All</option>
+              <option value="draft">Draft</option>
+              <option value="approved">Approved</option>
+              <option value="posted">Posted</option>
+              <option value="void">Void</option>
+            </select>
+          </label>
+          <SortSelect id="manual-journals-sort" value={list.sort} options={SORT_OPTIONS} onChange={list.setSort} />
+        </div>
+      </div>
+
+      {pagination || loading || error ? (
+        <PaginationControls
+          page={list.page}
+          pageSize={list.pageSize}
+          total={pagination?.total ?? 0}
+          loading={loading}
+          error={error}
+          onRetry={() => setNonce((n) => n + 1)}
+          onPageChange={list.setPage}
+          onPageSizeChange={list.setPageSize}
+          noun="manual journals"
+        />
+      ) : null}
+
+      {!loading && !error && items !== null && items.length === 0 ? (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No manual journals yet.
+          {list.q || status ? "No manual journals match the current search or filters." : "No manual journals yet."}
         </p>
       ) : null}
 
-      {items && items.length > 0 ? (
+      {!error && items && items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="min-w-full text-sm">
             <thead>
@@ -269,6 +355,7 @@ export default function ManualJournalsPage() {
                       <td className="px-3 py-2">
                         <button
                           onClick={() => setExpanded(expanded === j.id ? null : j.id)}
+                          aria-expanded={expanded === j.id}
                           className="text-teal-700 hover:underline"
                         >
                           {expanded === j.id ? "Hide" : `${j.lines.length} lines`}
