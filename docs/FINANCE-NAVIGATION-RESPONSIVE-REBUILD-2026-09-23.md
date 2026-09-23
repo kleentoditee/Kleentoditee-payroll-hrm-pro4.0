@@ -237,11 +237,11 @@ The assignment is complete only when:
 
 - **Implementation branch:** `kimi/finance-nav-responsive-rebuild`
 - **Starting commit:** `0874946b6b216ed27ffd1b32956db24bfc44f1fc`
-- **Completion commits:** `6cf5eaf`, `8976d67`, `beff47c`, `4f1fdb1`, `92bd2d3`, `0c21414`, `b14ce86`, `432de6e`, `671644b`, `9bb29b8`, `8031a6d`, `2c726b2`, `c1836a6`
-- **Remote review:** Branch `kimi/finance-nav-responsive-rebuild` is pushed to `origin`; PR [#7](https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/7) targets `codex/consolidate-live-build`. Merge remains a reviewer action.
+- **Completion commits:** `6cf5eaf`, `8976d67`, `beff47c`, `4f1fdb1`, `92bd2d3`, `0c21414`, `b14ce86`, `432de6e`, `671644b`, `9bb29b8`, `8031a6d`, `2c726b2`, `c1836a6`, `4072d72`, `f644d68`, `506fcf4`
+- **Remote review:** Branch `kimi/finance-nav-responsive-rebuild` is pushed to `origin`; PR [#7](https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/7) targets `codex/consolidate-live-build`. The automated Codex review raised three P2 findings. Commit `506fcf4` preserves search casing while applying case-insensitive Prisma filters, restores the full legacy bank-register response when pagination is not requested, and excludes future-dated payments from 30-day totals. Merge remains a reviewer action.
 - **Type check:** PASS - all workspaces, 2026-09-23
 - **Lint:** PASS with zero errors. One pre-existing Next.js warning remains for the official payroll-form `<img>` element.
-- **API tests:** PASS - 225/225, including pagination and organization-wide finance summary coverage
+- **API tests:** PASS - 226/226, including pagination, case-insensitive finance search filters, recent-payment date bounds, and organization-wide finance summary coverage
 - **Playwright:** PASS - 48/48. The finance-specific 16 tests cover every mapped finance destination and all four target widths.
 - **Production builds:** PASS - database package, API, 67-route admin app, and 12-route employee tracker
 - **Database:** PASS - PostgreSQL reachable; 19 migrations found; schema up to date; `/health/ready` reports database ready
