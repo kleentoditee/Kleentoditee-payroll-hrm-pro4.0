@@ -424,3 +424,10 @@ wsl bash -lc "cd '/mnt/c/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.
 - References cleaned: `.env.example` fallback block, README fallback section, `schema.prisma` comment (now "PostgreSQL is the only supported provider"), `app.ts` dev comment, `backfill-email-canonical.sql` example (now psql), `docs/current-system-inventory.md`, `docs/PROJECT_CLEANUP_AUDIT.md`, `docs/employee-tracker-sharing.md`, `docs/user-role-administration.md`.
 - Left intentionally: `.gitignore` dev.db entries (harmless protection), `env.test.ts` production-rejects-SQLite test (validation still in force), `docs/architecture/2026-04-20-platform-tech-decisions.md` (point-in-time decision record).
 - `prisma validate` on the Postgres schema passes; packages/db tsc clean.
+
+### PR #6 merged (2026-09-22)
+
+- Merge commit `cefad01` — `cleanup/project-workflow-audit` (70 commits) merged into `codex/consolidate-live-build` via merge commit on GitHub; local integration branch fast-forwarded, tree clean.
+- Post-merge verification on `codex/consolidate-live-build`: api tsc EXIT=0, **209/209 unit tests PASS**.
+- The consolidated live build (Gates C + D, go-live package, CodeRabbit pass, SQLite fallback removal) is now the integration branch state. Next work branches should cut fresh from `codex/consolidate-live-build`.
+- Remaining owner actions (from GO-LIVE-CHECKLIST): configure production SMTP; the REAL QuickBooks cutover with live data + human sign-off; schedule the post-release Prisma major upgrade.
