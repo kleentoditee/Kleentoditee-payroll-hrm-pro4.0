@@ -1,4 +1,4 @@
-import { requireOrgId, AccountType, PaymentMethod, Role, TransactionStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, PaymentMethod, Role, TransactionStatus, prisma, type Prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { PeriodClosedError } from "../lib/fiscal-periods.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -95,21 +96,45 @@ async function resolveLines(lines: IncomingLine[]) {
 
 export const financeExpensesRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/expenses", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const status = c.req.query("status");
-    const supplierId = c.req.query("supplierId");
-    const items = await prisma.expense.findMany({
-      where: {
-        ...(status === "draft" || status === "open" || status === "void" ? { status } : {}),
-        ...(supplierId ? { supplierId } : {})
-      },
-      include: {
-        supplier: { select: { id: true, displayName: true } },
-        paymentAccount: { select: { id: true, code: true, name: true } },
-        _count: { select: { lines: true } }
-      },
-      orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }]
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["number", "expenseDate", "total", "status", "createdAt"],
+      defaultSort: [{ expenseDate: "desc" }, { createdAt: "desc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const status = c.req.query("status");
+    const statusFilter = status === "draft" || status === "open" || status === "void" ? status : null;
+    const supplierId = c.req.query("supplierId");
+    const where: Prisma.ExpenseWhereInput = {
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(supplierId ? { supplierId } : {}),
+      ...(list.q
+        ? {
+            OR: [
+              { number: { contains: list.q } },
+              { reference: { contains: list.q } },
+              { payeeName: { contains: list.q } },
+              { memo: { contains: list.q } },
+              { supplier: { displayName: { contains: list.q } } }
+            ]
+          }
+        : {})
+    };
+    const include = {
+      supplier: { select: { id: true, displayName: true } },
+      paymentAccount: { select: { id: true, code: true, name: true } },
+      _count: { select: { lines: true } }
+    };
+    if (!list.paginated) {
+      const items = await prisma.expense.findMany({ where, include, orderBy: list.orderBy });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.expense.count({ where }),
+      prisma.expense.findMany({ where, include, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .get("/expenses/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const expense = await prisma.expense.findUnique({

@@ -1,6 +1,7 @@
 import { Role, TransactionStatus, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
-import { listJournalEntries, loadAccountLedger, loadTrialBalance } from "../lib/gl-reports.js";
+import { countJournalEntries, listJournalEntries, loadAccountLedger, loadTrialBalance } from "../lib/gl-reports.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -167,8 +168,24 @@ export const financeReportsRoutes = new Hono<{ Variables: AuthVariables }>().get
     if (from && to && from > to) {
       return c.json({ error: "The start date must be before the end date." }, 400);
     }
-    const entries = await listJournalEntries({ from, to, sourceType: c.req.query("sourceType") || undefined });
-    return c.json({ entries });
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["date", "memo", "sourceType", "status", "createdAt"],
+      defaultSort: [{ date: "desc" }, { createdAt: "desc" }]
+    });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const filter = { from, to, sourceType: c.req.query("sourceType") || undefined, q: list.q || undefined };
+    if (!list.paginated) {
+      const entries = await listJournalEntries({ ...filter, orderBy: list.orderBy });
+      return c.json({ entries });
+    }
+    const [total, entries] = await Promise.all([
+      countJournalEntries(filter),
+      listJournalEntries({ ...filter, skip: list.skip, limit: list.take, orderBy: list.orderBy })
+    ]);
+    // Keep `entries` (this endpoint's existing field name) and add metadata.
+    return c.json({ entries, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .get("/reports/control-reconciliation", authRequired, requireRole(...CAN_VIEW), async (c) => {
     // GL control account balances (posted + void-with-reversal journals; drafts excluded) vs operational subledgers.

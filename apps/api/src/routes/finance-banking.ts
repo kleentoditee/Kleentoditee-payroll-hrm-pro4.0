@@ -22,6 +22,7 @@ import {
 } from "../lib/bank-statements.js";
 import { round2 } from "../lib/finance-transactions.js";
 import { loadAccountLedger } from "../lib/gl-reports.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
@@ -352,18 +353,43 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
   // ---------------------------------------------------------------------
 
   .get("/banking/lines", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["date", "position", "amount", "status", "reference", "createdAt"],
+      defaultSort: [{ date: "asc" }, { position: "asc" }]
+    });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
     const bankAccountId = c.req.query("bankAccountId");
     const status = c.req.query("status");
-    const items = await prisma.bankStatementLine.findMany({
-      where: {
-        ...(bankAccountId ? { import: { bankAccountId } } : {}),
-        ...(status ? { status: status as BankStatementLineStatus } : {})
-      },
-      orderBy: [{ date: "asc" }, { position: "asc" }],
-      take: 500,
-      include: { import: { select: { id: true, fileName: true, bankAccountId: true } } }
-    });
-    return c.json({ items });
+    const where = {
+      ...(bankAccountId ? { import: { bankAccountId } } : {}),
+      ...(status ? { status: status as BankStatementLineStatus } : {}),
+      ...(list.q
+        ? { OR: [{ description: { contains: list.q } }, { reference: { contains: list.q } }] }
+        : {})
+    };
+    const include = { import: { select: { id: true, fileName: true, bankAccountId: true } } };
+    if (!list.paginated) {
+      const items = await prisma.bankStatementLine.findMany({
+        where,
+        orderBy: list.orderBy,
+        take: 500,
+        include
+      });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.bankStatementLine.count({ where }),
+      prisma.bankStatementLine.findMany({
+        where,
+        orderBy: list.orderBy,
+        skip: list.skip,
+        take: list.take,
+        include
+      })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
 
   .get("/banking/lines/:id/suggestions", authRequired, requireRole(...CAN_VIEW), async (c) => {
@@ -492,14 +518,39 @@ export const financeBankingRoutes = new Hono<{ Variables: AuthVariables }>()
   // ---------------------------------------------------------------------
 
   .get("/banking/reconciliations", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const bankAccountId = c.req.query("bankAccountId");
-    const items = await prisma.bankReconciliation.findMany({
-      where: bankAccountId ? { bankAccountId } : undefined,
-      orderBy: { createdAt: "desc" },
-      take: 100,
-      include: { bankAccount: { select: { id: true, code: true, name: true } }, _count: { select: { lines: true } } }
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["statementEndingDate", "status", "createdAt"],
+      defaultSort: [{ createdAt: "desc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const bankAccountId = c.req.query("bankAccountId");
+    const where = bankAccountId ? { bankAccountId } : undefined;
+    const include = {
+      bankAccount: { select: { id: true, code: true, name: true } },
+      _count: { select: { lines: true } }
+    };
+    if (!list.paginated) {
+      const items = await prisma.bankReconciliation.findMany({
+        where,
+        orderBy: list.orderBy,
+        take: 100,
+        include
+      });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.bankReconciliation.count({ where }),
+      prisma.bankReconciliation.findMany({
+        where,
+        orderBy: list.orderBy,
+        skip: list.skip,
+        take: list.take,
+        include
+      })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
 
   .post("/banking/reconciliations", authRequired, requireRole(...CAN_EDIT), async (c) => {

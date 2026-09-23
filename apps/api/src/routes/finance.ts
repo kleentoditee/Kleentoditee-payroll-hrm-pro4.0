@@ -1,6 +1,13 @@
 import { requireOrgId, AccountType, ProductKind, Role, prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
+import {
+  ZERO_CUSTOMER_SUMMARY,
+  ZERO_SUPPLIER_SUMMARY,
+  customerSummaries,
+  supplierSummaries
+} from "../lib/finance-summary.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -35,18 +42,33 @@ function str(v: unknown): string {
 export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
   // ---------- Chart of Accounts ----------
   .get("/accounts", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["code", "name", "type", "createdAt"],
+      defaultSort: [{ code: "asc" }]
+    });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
     const type = parseAccountType(c.req.query("type"));
     const activeParam = c.req.query("active");
-    const items = await prisma.account.findMany({
-      where: {
-        ...(type ? { type } : {}),
-        ...(activeParam === "true" || activeParam === "false"
-          ? { active: activeParam === "true" }
-          : {})
-      },
-      orderBy: [{ code: "asc" }]
-    });
-    return c.json({ items });
+    const where = {
+      ...(type ? { type } : {}),
+      ...(activeParam === "true" || activeParam === "false"
+        ? { active: activeParam === "true" }
+        : {}),
+      ...(list.q
+        ? { OR: [{ code: { contains: list.q } }, { name: { contains: list.q } }] }
+        : {})
+    };
+    if (!list.paginated) {
+      const items = await prisma.account.findMany({ where, orderBy: list.orderBy });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.account.count({ where }),
+      prisma.account.findMany({ where, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .get("/accounts/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const id = c.req.param("id");
@@ -217,20 +239,45 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
 
   // ---------- Customers ----------
   .get("/customers", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const q = (c.req.query("q") ?? "").trim().toLowerCase();
-    const items = await prisma.customer.findMany({
-      where: q
-        ? {
-            OR: [
-              { displayName: { contains: q } },
-              { companyName: { contains: q } },
-              { email: { contains: q } }
-            ]
-          }
-        : undefined,
-      orderBy: { displayName: "asc" }
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["displayName", "companyName", "email", "createdAt"],
+      defaultSort: [{ displayName: "asc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const where = list.q
+      ? {
+          OR: [
+            { displayName: { contains: list.q } },
+            { companyName: { contains: list.q } },
+            { email: { contains: list.q } }
+          ]
+        }
+      : undefined;
+    // Server-side aggregates let the UI stop downloading invoices/payments.
+    // Included automatically on paginated responses; legacy callers opt in
+    // with ?summary=true.
+    const withSummary = list.paginated || c.req.query("summary") === "true";
+    if (!list.paginated) {
+      const items = await prisma.customer.findMany({ where, orderBy: list.orderBy });
+      if (!withSummary) {
+        return c.json({ items });
+      }
+      const summaries = await customerSummaries(items.map((i) => i.id));
+      return c.json({
+        items: items.map((i) => ({ ...i, ...(summaries.get(i.id) ?? ZERO_CUSTOMER_SUMMARY) }))
+      });
+    }
+    const [total, items] = await Promise.all([
+      prisma.customer.count({ where }),
+      prisma.customer.findMany({ where, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    const summaries = await customerSummaries(items.map((i) => i.id));
+    return c.json({
+      items: items.map((i) => ({ ...i, ...(summaries.get(i.id) ?? ZERO_CUSTOMER_SUMMARY) })),
+      pagination: paginationMeta(list.page, list.pageSize, total)
+    });
   })
   .get("/customers/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const row = await prisma.customer.findUnique({ where: { id: c.req.param("id") } });
@@ -345,20 +392,42 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
 
   // ---------- Suppliers ----------
   .get("/suppliers", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const q = (c.req.query("q") ?? "").trim().toLowerCase();
-    const items = await prisma.supplier.findMany({
-      where: q
-        ? {
-            OR: [
-              { displayName: { contains: q } },
-              { companyName: { contains: q } },
-              { email: { contains: q } }
-            ]
-          }
-        : undefined,
-      orderBy: { displayName: "asc" }
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["displayName", "companyName", "email", "createdAt"],
+      defaultSort: [{ displayName: "asc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const where = list.q
+      ? {
+          OR: [
+            { displayName: { contains: list.q } },
+            { companyName: { contains: list.q } },
+            { email: { contains: list.q } }
+          ]
+        }
+      : undefined;
+    const withSummary = list.paginated || c.req.query("summary") === "true";
+    if (!list.paginated) {
+      const items = await prisma.supplier.findMany({ where, orderBy: list.orderBy });
+      if (!withSummary) {
+        return c.json({ items });
+      }
+      const summaries = await supplierSummaries(items.map((i) => i.id));
+      return c.json({
+        items: items.map((i) => ({ ...i, ...(summaries.get(i.id) ?? ZERO_SUPPLIER_SUMMARY) }))
+      });
+    }
+    const [total, items] = await Promise.all([
+      prisma.supplier.count({ where }),
+      prisma.supplier.findMany({ where, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    const summaries = await supplierSummaries(items.map((i) => i.id));
+    return c.json({
+      items: items.map((i) => ({ ...i, ...(summaries.get(i.id) ?? ZERO_SUPPLIER_SUMMARY) })),
+      pagination: paginationMeta(list.page, list.pageSize, total)
+    });
   })
   .get("/suppliers/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const row = await prisma.supplier.findUnique({ where: { id: c.req.param("id") } });
@@ -473,28 +542,36 @@ export const financeRoutes = new Hono<{ Variables: AuthVariables }>()
 
   // ---------- Products / Services ----------
   .get("/products", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const q = (c.req.query("q") ?? "").trim().toLowerCase();
-    const kind = parseProductKind(c.req.query("kind"));
-    const items = await prisma.product.findMany({
-      where: {
-        ...(kind ? { kind } : {}),
-        ...(q
-          ? {
-              OR: [
-                { sku: { contains: q } },
-                { name: { contains: q } },
-                { description: { contains: q } }
-              ]
-            }
-          : {})
-      },
-      include: {
-        incomeAccount: true,
-        expenseAccount: true
-      },
-      orderBy: { name: "asc" }
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["sku", "name", "kind", "salesPrice", "createdAt"],
+      defaultSort: [{ name: "asc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const kind = parseProductKind(c.req.query("kind"));
+    const where = {
+      ...(kind ? { kind } : {}),
+      ...(list.q
+        ? {
+            OR: [
+              { sku: { contains: list.q } },
+              { name: { contains: list.q } },
+              { description: { contains: list.q } }
+            ]
+          }
+        : {})
+    };
+    const include = { incomeAccount: true, expenseAccount: true };
+    if (!list.paginated) {
+      const items = await prisma.product.findMany({ where, include, orderBy: list.orderBy });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.product.count({ where }),
+      prisma.product.findMany({ where, include, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .get("/products/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const row = await prisma.product.findUnique({

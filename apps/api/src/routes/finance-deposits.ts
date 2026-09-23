@@ -1,10 +1,11 @@
-import { requireOrgId, AccountType, Role, TransactionStatus, prisma } from "@kleentoditee/db";
+import { requireOrgId, AccountType, Role, TransactionStatus, prisma, type Prisma } from "@kleentoditee/db";
 import { Hono } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { buildDepositPostedJournal, ensureControlAccounts, postJournal, reverseJournal } from "../lib/gl-posting.js";
 import { PeriodClosedError } from "../lib/fiscal-periods.js";
 import { MONEY_TOLERANCE, nextDepositNumber, round2 } from "../lib/finance-transactions.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -38,16 +39,32 @@ type IncomingLine = {
 
 export const financeDepositsRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/deposits", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const status = c.req.query("status");
-    const items = await prisma.deposit.findMany({
-      where: status === "draft" || status === "open" || status === "void" ? { status } : {},
-      include: {
-        bankAccount: { select: { id: true, code: true, name: true } },
-        _count: { select: { lines: true } }
-      },
-      orderBy: [{ depositDate: "desc" }, { createdAt: "desc" }]
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["number", "depositDate", "total", "status", "createdAt"],
+      defaultSort: [{ depositDate: "desc" }, { createdAt: "desc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const status = c.req.query("status");
+    const statusFilter = status === "draft" || status === "open" || status === "void" ? status : null;
+    const where: Prisma.DepositWhereInput = {
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(list.q ? { OR: [{ number: { contains: list.q } }, { memo: { contains: list.q } }] } : {})
+    };
+    const include = {
+      bankAccount: { select: { id: true, code: true, name: true } },
+      _count: { select: { lines: true } }
+    };
+    if (!list.paginated) {
+      const items = await prisma.deposit.findMany({ where, include, orderBy: list.orderBy });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.deposit.count({ where }),
+      prisma.deposit.findMany({ where, include, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .get("/deposits/available-payments", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const bankAccountId = c.req.query("bankAccountId");

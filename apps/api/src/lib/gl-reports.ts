@@ -5,6 +5,7 @@
 import { prisma } from "@kleentoditee/db";
 import type { Prisma } from "@kleentoditee/db";
 import { round2 } from "./gl-posting.js";
+import type { OrderByClause } from "./pagination.js";
 
 export type AccountRef = { id: string; code: string; name: string; type: string; subtype: string; active: boolean };
 export type LineAmount = { accountId: string; debit: number; credit: number };
@@ -178,13 +179,31 @@ export async function loadAccountLedger(accountId: string, from?: Date, to?: Dat
   };
 }
 
-export async function listJournalEntries(opts: { from?: Date; to?: Date; sourceType?: string; limit?: number }) {
+function journalEntryWhere(opts: { from?: Date; to?: Date; sourceType?: string; q?: string }) {
+  return {
+    ...(opts.from || opts.to ? { date: { ...(opts.from ? { gte: opts.from } : {}), ...(opts.to ? { lte: opts.to } : {}) } } : {}),
+    ...(opts.sourceType ? { sourceType: opts.sourceType } : {}),
+    ...(opts.q ? { memo: { contains: opts.q } } : {})
+  };
+}
+
+export async function countJournalEntries(opts: { from?: Date; to?: Date; sourceType?: string; q?: string }) {
+  return prisma.journalEntry.count({ where: journalEntryWhere(opts) });
+}
+
+export async function listJournalEntries(opts: {
+  from?: Date;
+  to?: Date;
+  sourceType?: string;
+  limit?: number;
+  skip?: number;
+  q?: string;
+  orderBy?: OrderByClause[];
+}) {
   const entries = await prisma.journalEntry.findMany({
-    where: {
-      ...(opts.from || opts.to ? { date: { ...(opts.from ? { gte: opts.from } : {}), ...(opts.to ? { lte: opts.to } : {}) } } : {}),
-      ...(opts.sourceType ? { sourceType: opts.sourceType } : {})
-    },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    where: journalEntryWhere(opts),
+    orderBy: opts.orderBy ?? [{ date: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+    ...(opts.skip !== undefined ? { skip: opts.skip } : {}),
     take: opts.limit ?? 200,
     include: { lines: { orderBy: { position: "asc" }, include: { account: { select: { code: true, name: true } } } } }
   });

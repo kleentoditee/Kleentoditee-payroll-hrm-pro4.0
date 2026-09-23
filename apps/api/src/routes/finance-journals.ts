@@ -4,6 +4,7 @@ import { Hono, type Context } from "hono";
 import { writeAudit } from "../lib/audit.js";
 import { assertPeriodOpen, fiscalPeriodLabel, PeriodClosedError } from "../lib/fiscal-periods.js";
 import { round2, sourceKey, validateJournalLines } from "../lib/gl-posting.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [Role.platform_owner, Role.finance_admin, Role.payroll_admin, Role.hr_admin] as const;
@@ -46,18 +47,40 @@ function parseDate(value: unknown): Date | null {
 /** Manual journal entries: draft -> approve -> post -> reverse (Batch 13). */
 export const financeJournalRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/journals", authRequired, requireRole(...CAN_VIEW), async (c) => {
-    const status = c.req.query("status");
-    const items = await prisma.journalEntry.findMany({
-      where: {
-        sourceType: "manual_journal",
-        ...(status && ["draft", "approved", "posted", "void"].includes(status)
-          ? { status: status as JournalEntryStatus }
-          : {})
-      },
-      include: LINE_INCLUDE,
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }]
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["date", "memo", "status", "createdAt"],
+      defaultSort: [{ date: "desc" }, { createdAt: "desc" }]
     });
-    return c.json({ items });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
+    const status = c.req.query("status");
+    const where = {
+      sourceType: "manual_journal",
+      ...(status && ["draft", "approved", "posted", "void"].includes(status)
+        ? { status: status as JournalEntryStatus }
+        : {}),
+      ...(list.q ? { memo: { contains: list.q } } : {})
+    };
+    if (!list.paginated) {
+      const items = await prisma.journalEntry.findMany({
+        where,
+        include: LINE_INCLUDE,
+        orderBy: list.orderBy
+      });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.journalEntry.count({ where }),
+      prisma.journalEntry.findMany({
+        where,
+        include: LINE_INCLUDE,
+        orderBy: list.orderBy,
+        skip: list.skip,
+        take: list.take
+      })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .post("/journals", authRequired, requireRole(...CAN_EDIT), async (c) => {
     const body = await c.req.json<Record<string, unknown>>();

@@ -14,6 +14,7 @@ import {
 } from "../lib/gl-posting.js";
 import { isUniqueConstraintError } from "../lib/prisma-errors.js";
 import { PeriodClosedError } from "../lib/fiscal-periods.js";
+import { paginationMeta, parseListQuery } from "../lib/pagination.js";
 import { authRequired, requireRole, type AuthVariables } from "../middleware/auth.js";
 
 const CAN_VIEW = [
@@ -118,20 +119,41 @@ async function resolveLines(lines: IncomingLine[]) {
 
 export const financeInvoicesRoutes = new Hono<{ Variables: AuthVariables }>()
   .get("/invoices", authRequired, requireRole(...CAN_VIEW), async (c) => {
+    const list = parseListQuery((k) => c.req.query(k), {
+      sortable: ["number", "issueDate", "dueDate", "total", "balance", "status", "createdAt"],
+      defaultSort: [{ issueDate: "desc" }, { createdAt: "desc" }]
+    });
+    if (!list.ok) {
+      return c.json({ error: list.error }, 400);
+    }
     const status = parseStatus(c.req.query("status"));
     const customerId = c.req.query("customerId");
-    const items = await prisma.invoice.findMany({
-      where: {
-        ...(status ? { status } : {}),
-        ...(customerId ? { customerId } : {})
-      },
-      include: {
-        customer: { select: { id: true, displayName: true } },
-        _count: { select: { lines: true } }
-      },
-      orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }]
-    });
-    return c.json({ items });
+    const where = {
+      ...(status ? { status } : {}),
+      ...(customerId ? { customerId } : {}),
+      ...(list.q
+        ? {
+            OR: [
+              { number: { contains: list.q } },
+              { memo: { contains: list.q } },
+              { customer: { displayName: { contains: list.q } } }
+            ]
+          }
+        : {})
+    };
+    const include = {
+      customer: { select: { id: true, displayName: true } },
+      _count: { select: { lines: true } }
+    };
+    if (!list.paginated) {
+      const items = await prisma.invoice.findMany({ where, include, orderBy: list.orderBy });
+      return c.json({ items });
+    }
+    const [total, items] = await Promise.all([
+      prisma.invoice.count({ where }),
+      prisma.invoice.findMany({ where, include, orderBy: list.orderBy, skip: list.skip, take: list.take })
+    ]);
+    return c.json({ items, pagination: paginationMeta(list.page, list.pageSize, total) });
   })
   .get("/invoices/:id", authRequired, requireRole(...CAN_VIEW), async (c) => {
     const invoice = await prisma.invoice.findUnique({
