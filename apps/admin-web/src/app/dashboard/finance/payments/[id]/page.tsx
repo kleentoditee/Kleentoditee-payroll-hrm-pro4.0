@@ -115,21 +115,21 @@ export default function PaymentDetailPage() {
     <div className="space-y-6">
       <FinanceRecordBreadcrumbs recordLabel={payment.number} />
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Payment {payment.number}</h2>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 break-words text-sm text-slate-600">
             {payment.customer.displayName}
             {payment.customer.email ? ` · ${payment.customer.email}` : ""}
           </p>
-          <p className="text-sm text-slate-600">
+          <p className="break-words text-sm text-slate-600">
             {fmtDate(payment.paymentDate)} · {payment.method}
             {payment.reference ? ` · ref ${payment.reference}` : ""}
           </p>
-          <p className="text-sm text-slate-600">
+          <p className="break-words text-sm text-slate-600">
             Deposited to {payment.depositAccount.code} {payment.depositAccount.name}
             {payment.depositedAt ? ` (on ${fmtDate(payment.depositedAt)})` : ""}
           </p>
-          {payment.memo ? <p className="mt-2 text-sm text-slate-600">{payment.memo}</p> : null}
+          {payment.memo ? <p className="mt-2 break-words text-sm text-slate-600">{payment.memo}</p> : null}
         </div>
         <div className="text-right">
           <p className="text-lg font-semibold text-slate-900">${payment.amount.toFixed(2)}</p>
@@ -181,7 +181,7 @@ export default function PaymentDetailPage() {
                   onClick={() => unapply(app.id)}
                   disabled={busy || !!payment.depositedAt}
                   title={payment.depositedAt ? "Reverse the deposit first" : undefined}
-                  className="mt-3 min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-3 min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Unapply
                 </button>
@@ -249,7 +249,7 @@ export default function PaymentDetailPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/finance/payments"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+          className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
         >
           Back
         </Link>
@@ -258,7 +258,7 @@ export default function PaymentDetailPage() {
           onClick={deletePayment}
           disabled={busy || !!payment.depositedAt}
           title={payment.depositedAt ? "Reverse the deposit first" : undefined}
-          className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 outline-none ring-[#006D77] hover:bg-red-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 outline-none ring-[#006D77] hover:bg-red-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Delete payment
         </button>

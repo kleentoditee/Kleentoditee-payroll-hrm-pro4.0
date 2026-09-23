@@ -193,10 +193,10 @@ export default function InvoiceDetailPage() {
         <div className="space-y-6">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Invoice</p>
-                <h2 className="mt-1 text-3xl font-black text-slate-950">{invoice.number}</h2>
-                {invoice.memo ? <p className="mt-2 text-sm text-slate-600">{invoice.memo}</p> : null}
+                <h2 className="mt-1 break-words text-3xl font-black text-slate-950">{invoice.number}</h2>
+                {invoice.memo ? <p className="mt-2 break-words text-sm text-slate-600">{invoice.memo}</p> : null}
               </div>
               <div className="grid gap-3 text-sm sm:grid-cols-2 lg:min-w-96">
                 <div className="rounded-xl bg-slate-50 p-3">
@@ -453,7 +453,7 @@ export default function InvoiceDetailPage() {
                   type="button"
                   onClick={() => doAction(`/finance/invoices/${invoice.id}/send`, "POST")}
                   disabled={busy}
-                  className="inline-flex w-full min-h-10 items-center justify-center rounded-lg bg-[#063E4A] px-4 py-2 text-sm font-bold text-white outline-none ring-[#006D77] hover:bg-[#006D77] focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-[#063E4A] px-4 py-2 text-sm font-bold text-white outline-none ring-[#006D77] hover:bg-[#006D77] focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Send invoice
                 </button>
@@ -461,7 +461,7 @@ export default function InvoiceDetailPage() {
               {invoice.status === "open" || invoice.status === "partial" ? (
                 <Link
                   href="/dashboard/finance/payments/new"
-                  className="inline-flex w-full min-h-10 items-center justify-center rounded-lg bg-[#063E4A] px-4 py-2 text-sm font-bold text-white outline-none ring-[#006D77] hover:bg-[#006D77] focus-visible:ring-2"
+                  className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-[#063E4A] px-4 py-2 text-sm font-bold text-white outline-none ring-[#006D77] hover:bg-[#006D77] focus-visible:ring-2"
                 >
                   Receive payment
                 </Link>
@@ -478,7 +478,7 @@ export default function InvoiceDetailPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/finance/invoices"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+          className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
         >
           Back
         </Link>
@@ -488,7 +488,7 @@ export default function InvoiceDetailPage() {
               type="button"
               onClick={() => doAction(`/finance/invoices/${invoice.id}/send`, "POST")}
               disabled={busy}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white outline-none ring-[#006D77] hover:bg-brand-soft focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white outline-none ring-[#006D77] hover:bg-brand-soft focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Send
             </button>
@@ -500,7 +500,7 @@ export default function InvoiceDetailPage() {
                 )
               }
               disabled={busy}
-              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 outline-none ring-[#006D77] hover:bg-red-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 outline-none ring-[#006D77] hover:bg-red-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Delete draft
             </button>
@@ -512,7 +512,7 @@ export default function InvoiceDetailPage() {
             onClick={() => doAction(`/finance/invoices/${invoice.id}/void`, "POST")}
             disabled={busy || invoice.amountPaid > 0}
             title={invoice.amountPaid > 0 ? "Unapply payments before voiding" : undefined}
-            className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 outline-none ring-[#006D77] hover:bg-rose-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 outline-none ring-[#006D77] hover:bg-rose-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Void
           </button>

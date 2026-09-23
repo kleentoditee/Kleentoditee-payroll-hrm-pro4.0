@@ -92,7 +92,7 @@ export default function InvoicesListPage() {
         </div>
         <Link
           href="/dashboard/finance/invoices/new"
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
+          className="inline-flex min-h-11 items-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
         >
           New invoice
         </Link>
@@ -156,9 +156,9 @@ export default function InvoicesListPage() {
       {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+            <li key={row.id} className="flex flex-col items-stretch gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="font-medium text-slate-900">
+                <p className="break-words font-medium text-slate-900">
                   <Link
                     href={`/dashboard/finance/invoices/${row.id}`}
                     className="hover:text-brand"
@@ -167,12 +167,12 @@ export default function InvoicesListPage() {
                   </Link>{" "}
                   <span className="text-slate-500">· {row.customer.displayName}</span>
                 </p>
-                <p className="text-sm text-slate-600">
+                <p className="break-words text-sm text-slate-600">
                   Issue {fmtDate(row.issueDate)} · Due {fmtDate(row.dueDate)} ·{" "}
                   {row._count.lines} line{row._count.lines === 1 ? "" : "s"}
                 </p>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex w-full items-center justify-between gap-4 sm:w-auto sm:justify-end">
                 <div className="text-right">
                   <p className="text-sm font-semibold text-slate-900">${fmtMoney(row.total)}</p>
                   <p className="text-xs text-slate-500">Balance ${fmtMoney(row.balance)}</p>

@@ -452,7 +452,7 @@ export default function CustomerProfilePage() {
   return (
     <div className="grid gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
       <div className="xl:col-span-2"><FinanceRecordBreadcrumbs recordLabel={customer.displayName} /></div>
-      <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+      <aside className="hidden space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:block xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <Link
           href="/dashboard/finance/customers"
           className="inline-flex rounded text-sm font-bold text-[#063E4A] outline-none ring-[#006D77] hover:underline focus-visible:ring-2"

@@ -248,17 +248,8 @@ export default function RecordPaymentPage() {
   return (
     <div className="space-y-6">
       <FinanceRecordBreadcrumbs recordLabel="New payment" />
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h2 className="mt-1 text-3xl font-bold text-slate-950">Receive Payment</h2>
-      </div>
-        <button
-          type="button"
-          onClick={() => router.push("/dashboard/finance/payments")}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Cancel
-        </button>
+      <div>
+        <h2 className="mt-1 text-3xl font-bold text-slate-950">Receive payment</h2>
       </div>
 
       <form
@@ -269,7 +260,7 @@ export default function RecordPaymentPage() {
         className="space-y-6"
       >
         <section className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:grid-cols-3">
-          <label className="text-sm md:col-span-2">
+          <label className="text-sm lg:col-span-2">
             <span className="text-slate-700">Customer</span>
             <select
               required
@@ -424,7 +415,7 @@ export default function RecordPaymentPage() {
                       disabled={!selectedInvoices[inv.id]}
                       value={apply[inv.id] ?? ""}
                       onChange={(e) => setApplyFor(inv.id, e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-right text-sm outline-none ring-brand focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                      className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-right text-sm outline-none ring-brand focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                       placeholder="0.00"
                     />
                   </label>
@@ -511,11 +502,11 @@ export default function RecordPaymentPage() {
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-3">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/finance/payments")}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2"
+            className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 sm:w-auto"
           >
             Cancel
           </button>
@@ -523,14 +514,14 @@ export default function RecordPaymentPage() {
             type="button"
             disabled={!canSubmit}
             onClick={() => void savePayment("new")}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 outline-none ring-[#006D77] hover:bg-slate-50 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? "Saving..." : "Save and new"}
           </button>
           <button
             type="submit"
             disabled={!canSubmit}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white outline-none ring-[#006D77] hover:bg-brand-soft focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 w-full rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white outline-none ring-[#006D77] hover:bg-brand-soft focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? "Saving..." : "Save and close"}
           </button>

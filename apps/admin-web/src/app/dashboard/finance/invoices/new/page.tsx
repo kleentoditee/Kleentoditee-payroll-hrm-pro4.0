@@ -227,12 +227,12 @@ export default function NewInvoicePage() {
             {lines.map((line) => (
               <div
                 key={line.key}
-                className="grid gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3 md:grid-cols-[2fr_3fr_6rem_8rem_2fr_auto]"
+                className="grid min-w-0 gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3 md:grid-cols-[2fr_3fr_6rem_8rem_2fr_auto]"
               >
                 <select
                   value={line.productId}
                   onChange={(e) => onProductChange(line.key, e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
+                  className="min-h-11 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
                 >
                   <option value="">(Custom line)</option>
                   {products.map((p) => (
@@ -245,7 +245,7 @@ export default function NewInvoicePage() {
                   placeholder="Description"
                   value={line.description}
                   onChange={(e) => patchLine(line.key, { description: e.target.value })}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
+                  className="min-h-11 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
                 />
                 <input
                   type="number"
@@ -254,7 +254,7 @@ export default function NewInvoicePage() {
                   placeholder="Qty"
                   value={line.quantity}
                   onChange={(e) => patchLine(line.key, { quantity: e.target.value })}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
+                  className="min-h-11 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
                 />
                 <input
                   type="number"
@@ -263,13 +263,13 @@ export default function NewInvoicePage() {
                   placeholder="Unit"
                   value={line.unitPrice}
                   onChange={(e) => patchLine(line.key, { unitPrice: e.target.value })}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
+                  className="min-h-11 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
                 />
                 <select
                   required
                   value={line.incomeAccountId}
                   onChange={(e) => patchLine(line.key, { incomeAccountId: e.target.value })}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
+                  className="min-h-11 min-w-0 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand focus:ring-2"
                 >
                   <option value="">Revenue account…</option>
                   {revenueAccounts.map((a) => (
@@ -282,7 +282,7 @@ export default function NewInvoicePage() {
                   type="button"
                   onClick={() => removeLine(line.key)}
                   disabled={lines.length <= 1}
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Remove
                 </button>
@@ -299,18 +299,18 @@ export default function NewInvoicePage() {
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
         ) : null}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/finance/invoices")}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 w-full rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? "Saving…" : "Save draft invoice"}
           </button>

@@ -237,7 +237,7 @@ export default function ProductsListPage() {
           <button
             type="submit"
             disabled={submitting || !canSubmit}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 w-full rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? "Adding…" : "Add product or service"}
           </button>
@@ -305,12 +305,12 @@ export default function ProductsListPage() {
       {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
-              <div>
-                <p className="font-medium text-slate-900">
+            <li key={row.id} className="flex flex-col items-stretch gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="break-words font-medium text-slate-900">
                   <span className="text-slate-500">{row.sku}</span> &middot; {row.name}
                 </p>
-                <p className="text-sm text-slate-600">
+                <p className="break-words text-sm text-slate-600">
                   {row.kind} &middot; ${row.salesPrice.toFixed(2)} &middot; income:{" "}
                   {row.incomeAccount.code} {row.incomeAccount.name}
                   {row.expenseAccount ? ` · expense: ${row.expenseAccount.code} ${row.expenseAccount.name}` : ""}
