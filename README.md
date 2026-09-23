@@ -92,13 +92,6 @@ npm run db:migrate:deploy
 
 `npm run db:push` is for prototype/local schema sync only. Do not use `db push` for staging or production.
 
-Local SQLite fallback is still available for offline development with the explicit SQLite schema copy:
-
-```powershell
-$env:DATABASE_URL="file:C:/Kleentoditee Payroll HRM/Kleentoditee-payroll-hrm-pro4.0/packages/db/prisma/dev.db"
-npm exec --workspace @kleentoditee/db -- prisma db push --schema prisma/schema.sqlite.prisma
-```
-
 `start:local` intentionally runs `db:seed` for a reliable demo/dev database. Use `npm run dev:all` only after PostgreSQL is reachable, schema sync has succeeded, and seed has run.
 
 ## HR Document Storage

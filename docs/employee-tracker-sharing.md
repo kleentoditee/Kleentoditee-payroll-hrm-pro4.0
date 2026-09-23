@@ -37,7 +37,7 @@ The script prints **`/health`**, **`/auth/login`**, **`/auth/me`**, and **`/time
 If login still fails:
 
 - Confirm **`GET http://127.0.0.1:8787/health`** returns OK and the API uses the same **`DATABASE_URL`** as `npm run db:seed` (see **`GET /dev/db-status`** in non-production).
-- Re-run **`npm run db:seed`** (stops conflicting API first if SQLite is locked).
+- Re-run **`npm run db:seed`** (stop the API first if the database is busy).
 - **Invited-but-never-accepted** users cannot sign in until they complete the invite link; the API returns **`code: invitation_pending`** (not a password mismatch).
 
 ## Admin: “Share tracker access” on the employee record

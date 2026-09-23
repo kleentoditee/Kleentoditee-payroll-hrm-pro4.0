@@ -55,5 +55,5 @@ Users are not **deleted** for admin offboarding; use `deactivated` (or cancel an
 
 ## Database scripts
 
-- `npm run db:push` — normal sync; may require `npm run db:push:loss` if SQLite cannot migrate `User` in place.
+- `npm run db:push` — normal sync; may require `npm run db:push:loss` if Prisma cannot apply the change without data loss.
 - `packages/db` also exposes `push:loss` (accept data loss) for the same.

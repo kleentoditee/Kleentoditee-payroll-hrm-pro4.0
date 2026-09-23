@@ -58,7 +58,7 @@ Supported local database paths:
 - Docker PostgreSQL: `npm run db:up`, `npm run db:wait`, `npm run start:local`.
 - Native Windows PostgreSQL: start the Windows service, confirm `.env` matches the native install, then `npm run db:doctor`, `npm run start:local`.
 
-PostgreSQL is the main schema provider. SQLite remains only as an explicit offline fallback via `packages/db/prisma/schema.sqlite.prisma`.
+PostgreSQL is the only schema provider. The former SQLite offline fallback (`schema.sqlite.prisma`) was removed on 2026-09-22 by owner decision.
 
 ## Current startup workflow
 

@@ -115,7 +115,7 @@ app.get("/health/ready", async (c) => {
 // Local debugging: which DB file / URL this API is using, and how many users exist.
 // If userCount is 0 after `npm run db:seed`, seed and API are not sharing the same DATABASE_URL
 // (or seed failed). Use the same .env in repo root for both, or stop the API before seeding
-// to avoid SQLite lock.
+// to avoid database locks.
 if (process.env.NODE_ENV !== "production") {
   app.get("/dev/db-status", async (c) => {
     try {

@@ -1,7 +1,7 @@
 # Current system inventory
 
 **Generated from repository review (read-only documentation; no runtime changes).**  
-Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`apps/api`), Prisma + PostgreSQL (`@kleentoditee/db`). SQLite remains an explicit local fallback schema only.
+Stack: npm workspaces, Next.js (`admin-web`, `employee-tracker`), Hono API (`apps/api`), Prisma + PostgreSQL (`@kleentoditee/db`). PostgreSQL is the only supported database.
 
 **Stability guardrails:** root scripts provide `npm run db:doctor`, `npm run start:local`, `npm run typecheck`, `npm run lint`, `npm run test`, `npm run test:unit`, `npm run test:smoke`, `npm run build`, and `npm run ci`. Run targeted smoke tests before merging changes that affect routes or response bodies.
 

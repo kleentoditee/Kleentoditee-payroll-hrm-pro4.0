@@ -3,8 +3,7 @@ generator client {
 }
 
 datasource db {
-  // Production, staging, and CI use PostgreSQL with Prisma migrations.
-  // For local SQLite fallback, use prisma/schema.sqlite.prisma explicitly.
+  // PostgreSQL is the only supported provider (production, staging, CI, and local dev).
   provider = "postgresql"
 }
 
