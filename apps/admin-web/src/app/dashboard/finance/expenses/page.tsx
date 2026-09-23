@@ -85,7 +85,7 @@ export default function ExpensesListPage() {
         </div>
         <Link
           href="/dashboard/finance/expenses/new"
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
+          className="inline-flex min-h-11 items-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
         >
           New expense
         </Link>
@@ -147,9 +147,9 @@ export default function ExpensesListPage() {
       {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+            <li key={row.id} className="flex flex-col items-stretch gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="font-medium text-slate-900">
+                <p className="break-words font-medium text-slate-900">
                   <Link href={`/dashboard/finance/expenses/${row.id}`} className="hover:text-brand">
                     {row.number}
                   </Link>{" "}
@@ -157,16 +157,16 @@ export default function ExpensesListPage() {
                     · {row.supplier?.displayName ?? row.payeeName ?? "—"}
                   </span>
                 </p>
-                <p className="text-sm text-slate-600">
+                <p className="break-words text-sm text-slate-600">
                   {fmtDate(row.expenseDate)} · {row.method}
                   {row.reference ? ` · ref ${row.reference}` : ""} ·{" "}
                   {row._count.lines} line{row._count.lines === 1 ? "" : "s"}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="break-words text-xs text-slate-500">
                   Paid from {row.paymentAccount.code} {row.paymentAccount.name}
                 </p>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex w-full items-center justify-between gap-4 sm:w-auto sm:justify-end">
                 <p className="text-sm font-semibold text-slate-900">${row.total.toFixed(2)}</p>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${

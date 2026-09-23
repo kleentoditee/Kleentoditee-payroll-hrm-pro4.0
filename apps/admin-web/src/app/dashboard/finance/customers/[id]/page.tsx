@@ -1,5 +1,6 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
 import { ActionButton, ActionLink } from "@/components/ui/action-button";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
@@ -441,15 +442,16 @@ export default function CustomerProfilePage() {
   }
 
   if (error) {
-    return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>;
+    return <div className="space-y-5"><FinanceRecordBreadcrumbs /><p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p></div>;
   }
 
   if (!customer) {
-    return <p className="text-sm text-slate-600">Loading customer...</p>;
+    return <div className="space-y-5"><FinanceRecordBreadcrumbs /><p className="text-sm text-slate-600">Loading customer...</p></div>;
   }
 
   return (
     <div className="grid gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="xl:col-span-2"><FinanceRecordBreadcrumbs recordLabel={customer.displayName} /></div>
       <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <Link
           href="/dashboard/finance/customers"

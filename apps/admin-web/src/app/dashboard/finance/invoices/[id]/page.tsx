@@ -1,5 +1,6 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -149,16 +150,17 @@ export default function InvoiceDetailPage() {
   }
 
   if (error) {
-    return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>;
+    return <div className="space-y-6"><FinanceRecordBreadcrumbs /><p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p></div>;
   }
   if (!invoice) {
-    return <p className="text-sm text-slate-600">Loading…</p>;
+    return <div className="space-y-6"><FinanceRecordBreadcrumbs /><p className="text-sm text-slate-600">Loading…</p></div>;
   }
 
   const currentStatus = displayStatus(invoice);
 
   return (
     <div className="space-y-6">
+      <FinanceRecordBreadcrumbs recordLabel={invoice.number} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/dashboard/finance/invoices"

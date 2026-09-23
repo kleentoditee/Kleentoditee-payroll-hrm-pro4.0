@@ -1,5 +1,7 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
+import { BoundedTable, RecordCard, RecordCardField, RecordCardFields, RecordCardList } from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
@@ -164,8 +166,8 @@ export default function PayBillsPage() {
 
   return (
     <div className="space-y-6">
+      <FinanceRecordBreadcrumbs recordLabel="New bill payment" />
       <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
         <h2 className="mt-1 font-serif text-2xl text-slate-900">Pay bills</h2>
       </div>
 
@@ -276,7 +278,35 @@ export default function PayBillsPage() {
               No open or partial bills for this supplier — the payment will stay unapplied.
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <>
+            <RecordCardList>
+              {openBills.map((bill) => (
+                <RecordCard key={bill.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 break-words font-bold text-slate-950">{bill.number}</p>
+                    <p className="shrink-0 font-bold text-slate-950">${bill.balance.toFixed(2)}</p>
+                  </div>
+                  <RecordCardFields>
+                    <RecordCardField label="Bill date">{new Date(bill.billDate).toISOString().slice(0, 10)}</RecordCardField>
+                  </RecordCardFields>
+                  <label className="mt-3 block text-sm font-semibold text-slate-700">
+                    Amount to apply
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      max={bill.balance}
+                      value={apply[bill.id] ?? ""}
+                      onChange={(e) => setApplyFor(bill.id, e.target.value)}
+                      className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-right text-sm outline-none ring-brand focus:ring-2"
+                      placeholder="0.00"
+                    />
+                  </label>
+                </RecordCard>
+              ))}
+            </RecordCardList>
+            <BoundedTable>
+            <table className="min-w-[36rem] w-full text-sm">
               <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="pb-2">Bill</th>
@@ -309,6 +339,8 @@ export default function PayBillsPage() {
                 ))}
               </tbody>
             </table>
+            </BoundedTable>
+            </>
           )}
           <div className="mt-4 flex flex-col items-end gap-1 text-sm">
             <div>
@@ -331,18 +363,18 @@ export default function PayBillsPage() {
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
         ) : null}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={() => router.push("/dashboard/finance/bill-payments")}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:w-auto"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting || !canSubmit}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 w-full rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {submitting ? "Saving…" : "Save bill payment"}
           </button>

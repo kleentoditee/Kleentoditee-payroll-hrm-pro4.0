@@ -1,5 +1,14 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
+import {
+  BoundedTable,
+  RecordCard,
+  RecordCardField,
+  RecordCardFields,
+  RecordCardList,
+  RecordCardTotals
+} from "@/components/finance/record-cards";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -96,22 +105,32 @@ export default function ExpenseDetailPage() {
   }
 
   if (error) {
-    return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>;
+    return (
+      <div className="space-y-6">
+        <FinanceRecordBreadcrumbs />
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>
+      </div>
+    );
   }
   if (!expense) {
-    return <p className="text-sm text-slate-600">Loading…</p>;
+    return (
+      <div className="space-y-6">
+        <FinanceRecordBreadcrumbs />
+        <p className="text-sm text-slate-600">Loading…</p>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
+      <FinanceRecordBreadcrumbs recordLabel={expense.number} />
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
+        <div className="min-w-0">
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Expense {expense.number}</h2>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 break-words text-sm text-slate-600">
             {expense.supplier?.displayName ?? expense.payeeName ?? "—"}
           </p>
-          <p className="text-sm text-slate-600">
+          <p className="break-words text-sm text-slate-600">
             {fmtDate(expense.expenseDate)} · {expense.method}
             {expense.reference ? ` · ref ${expense.reference}` : ""}
           </p>
@@ -119,7 +138,7 @@ export default function ExpenseDetailPage() {
             Paid from {expense.paymentAccount.code} {expense.paymentAccount.name}
             {expense.postedAt ? ` · posted ${fmtDate(expense.postedAt)}` : ""}
           </p>
-          {expense.memo ? <p className="mt-2 text-sm text-slate-600">{expense.memo}</p> : null}
+          {expense.memo ? <p className="mt-2 break-words text-sm text-slate-600">{expense.memo}</p> : null}
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${
@@ -130,8 +149,35 @@ export default function ExpenseDetailPage() {
         </span>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <RecordCardList>
+          {expense.lines.map((line) => (
+            <RecordCard key={line.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Line {line.position}</p>
+                  <p className="mt-1 break-words font-bold text-slate-950">{line.description || "—"}</p>
+                </div>
+                <p className="shrink-0 font-bold text-slate-950">${line.amount.toFixed(2)}</p>
+              </div>
+              <RecordCardFields>
+                <RecordCardField label="Expense account">
+                  {line.expenseAccount.code} · {line.expenseAccount.name}
+                </RecordCardField>
+                <RecordCardField label="Quantity">{line.quantity}</RecordCardField>
+                <RecordCardField label="Unit cost">${line.unitCost.toFixed(2)}</RecordCardField>
+              </RecordCardFields>
+            </RecordCard>
+          ))}
+        </RecordCardList>
+        <RecordCardTotals
+          items={[
+            { label: "Subtotal", value: `$${expense.subtotal.toFixed(2)}` },
+            { label: "Total", value: `$${expense.total.toFixed(2)}`, strong: true }
+          ]}
+        />
+        <BoundedTable>
+        <table className="min-w-[48rem] w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2">#</th>
@@ -171,6 +217,7 @@ export default function ExpenseDetailPage() {
             </tr>
           </tfoot>
         </table>
+        </BoundedTable>
       </section>
 
       {actionError ? (
@@ -180,7 +227,7 @@ export default function ExpenseDetailPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/finance/expenses"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Back
         </Link>
@@ -190,7 +237,7 @@ export default function ExpenseDetailPage() {
               type="button"
               onClick={() => doAction(`/finance/expenses/${expense.id}/post`, "POST")}
               disabled={busy}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-60"
             >
               Post
             </button>
@@ -202,7 +249,7 @@ export default function ExpenseDetailPage() {
                 )
               }
               disabled={busy}
-              className="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Delete draft
             </button>
@@ -213,7 +260,7 @@ export default function ExpenseDetailPage() {
             type="button"
             onClick={() => doAction(`/finance/expenses/${expense.id}/void`, "POST")}
             disabled={busy}
-            className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-11 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Void
           </button>

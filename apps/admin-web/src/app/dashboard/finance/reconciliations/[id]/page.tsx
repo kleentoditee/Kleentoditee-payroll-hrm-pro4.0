@@ -1,5 +1,6 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useParams } from "next/navigation";
@@ -137,6 +138,7 @@ export default function ReconciliationDetailPage() {
   if (!recon) {
     return (
       <section className="space-y-4">
+        <FinanceRecordBreadcrumbs />
         {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : <p className="text-sm text-slate-500">Loading…</p>}
       </section>
     );
@@ -148,6 +150,7 @@ export default function ReconciliationDetailPage() {
 
   return (
     <section className="space-y-4">
+      <FinanceRecordBreadcrumbs recordLabel={`Reconciliation ${recon.statementEndingDate.slice(0, 10)}`} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">

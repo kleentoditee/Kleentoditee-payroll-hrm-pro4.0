@@ -26,6 +26,9 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
   const section = getActiveFinanceSection(pathname);
   const crumbs = getFinanceBreadcrumbs(pathname);
   const isOverview = section.id === "overview";
+  const activeItem = section.items.find((item) => isFinanceItemActive(pathname, item.href));
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  const isNestedRecordRoute = Boolean(activeItem && normalizedPath !== activeItem.href);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -54,7 +57,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="space-y-4">
-      {!isOverview ? <FinanceBreadcrumbs items={crumbs} /> : null}
+      {!isOverview && !isNestedRecordRoute ? <FinanceBreadcrumbs items={crumbs} /> : null}
 
       {/* Desktop: six compact section controls. */}
       <nav aria-label="Finance sections" className="hidden flex-wrap gap-2 lg:flex">

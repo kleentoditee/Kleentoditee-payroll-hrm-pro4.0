@@ -76,7 +76,7 @@ export default function BillPaymentsListPage() {
         </div>
         <Link
           href="/dashboard/finance/bill-payments/new"
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
+          className="inline-flex min-h-11 items-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-soft"
         >
           Pay bills
         </Link>
@@ -121,24 +121,24 @@ export default function BillPaymentsListPage() {
       {!error && items && items.length > 0 ? (
         <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-sm">
           {items.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+            <li key={row.id} className="flex flex-col items-stretch gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="font-medium text-slate-900">
+                <p className="break-words font-medium text-slate-900">
                   <Link href={`/dashboard/finance/bill-payments/${row.id}`} className="hover:text-brand">
                     {row.number}
                   </Link>{" "}
                   <span className="text-slate-500">· {row.supplier.displayName}</span>
                 </p>
-                <p className="text-sm text-slate-600">
+                <p className="break-words text-sm text-slate-600">
                   {fmtDate(row.paymentDate)} · {row.method}
                   {row.reference ? ` · ref ${row.reference}` : ""} ·{" "}
                   {row._count.applications} application{row._count.applications === 1 ? "" : "s"}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="break-words text-xs text-slate-500">
                   Paid from {row.sourceAccount.code} {row.sourceAccount.name}
                 </p>
               </div>
-              <div className="text-right">
+              <div className="text-left sm:text-right">
                 <p className="text-sm font-semibold text-slate-900">${row.amount.toFixed(2)}</p>
                 <p className="text-xs text-slate-500">
                   applied ${row.applied.toFixed(2)} · unapplied ${row.unapplied.toFixed(2)}

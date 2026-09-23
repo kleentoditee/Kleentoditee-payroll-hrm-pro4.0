@@ -1,5 +1,6 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import { useRouter } from "next/navigation";
@@ -246,9 +247,9 @@ export default function RecordPaymentPage() {
 
   return (
     <div className="space-y-6">
+      <FinanceRecordBreadcrumbs recordLabel="New payment" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 text-3xl font-bold text-slate-950">Receive Payment</h2>
       </div>
         <button

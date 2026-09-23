@@ -1,5 +1,6 @@
 "use client";
 
+import { FinanceRecordBreadcrumbs } from "@/components/finance/record-breadcrumb";
 import { apiBase, readApiData } from "@/lib/api";
 import { authHeaders } from "@/lib/auth-storage";
 import Link from "next/link";
@@ -93,17 +94,17 @@ export default function DepositDetailPage() {
   }
 
   if (error) {
-    return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>;
+    return <div className="space-y-6"><FinanceRecordBreadcrumbs /><p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p></div>;
   }
   if (!deposit) {
-    return <p className="text-sm text-slate-600">Loading…</p>;
+    return <div className="space-y-6"><FinanceRecordBreadcrumbs /><p className="text-sm text-slate-600">Loading…</p></div>;
   }
 
   return (
     <div className="space-y-6">
+      <FinanceRecordBreadcrumbs recordLabel={deposit.number} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Finance</p>
           <h2 className="mt-1 font-serif text-2xl text-slate-900">Deposit {deposit.number}</h2>
           <p className="mt-2 text-sm text-slate-600">
             {fmtDate(deposit.depositDate)} · {deposit.bankAccount.code} {deposit.bankAccount.name}
