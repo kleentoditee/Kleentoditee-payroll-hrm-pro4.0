@@ -8,19 +8,28 @@ export type NavItem = {
   action?: "all-apps";
 };
 
-export type NavGroup = { id: string; title: string; icon: string; items: NavItem[] };
+export type NavGroup = {
+  id: string;
+  title: string;
+  icon: string;
+  /** Workspace landing route — clicking the workspace name navigates here. */
+  landingHref: string;
+  items: NavItem[]
+};
 
 export const NAV_GROUPS: NavGroup[] = [
   {
     id: "dashboard",
-    title: "Dashboard",
+    title: "Home",
     icon: "layout-dashboard",
+    landingHref: "/dashboard",
     items: [{ label: "Home", href: "/dashboard", icon: "home" }]
   },
   {
     id: "people",
     title: "People",
     icon: "users",
+    landingHref: "/dashboard/people",
     items: [
       { label: "Employees", href: "/dashboard/people/employees", icon: "users", description: "Manage employee records and payroll setup." },
       { label: "HR structure", href: "/dashboard/people/structure", icon: "building", description: "Departments, positions, cost centres, locations, schedules, contracts." },
@@ -33,6 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "time",
     title: "Time",
     icon: "clock",
+    landingHref: "/dashboard/time",
     items: [
       { label: "Time entries", href: "/dashboard/time/entries", icon: "clock", description: "Review submitted work time." },
       { label: "Approvals", href: "/dashboard/time/approvals", icon: "activity", description: "Approve pending time entries." },
@@ -44,6 +54,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "payroll",
     title: "Payroll",
     icon: "dollar-sign",
+    landingHref: "/dashboard/payroll",
     items: [
       { label: "Pay periods", href: "/dashboard/payroll/periods", icon: "calendar", description: "Create and manage payroll periods." },
       { label: "Pay runs", href: "/dashboard/payroll/runs", icon: "dollar-sign", description: "Build, review, and finalize payroll." },
@@ -57,6 +68,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "finance",
     title: "Finance",
     icon: "wallet",
+    landingHref: "/dashboard/finance",
     items: [
       { label: "Chart of accounts", href: "/dashboard/finance/accounts", icon: "building", description: "Manage accounting categories." },
       { label: "Customers", href: "/dashboard/finance/customers", icon: "users", description: "Manage customer records." },
@@ -74,6 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "reports",
     title: "Reports",
     icon: "bar-chart",
+    landingHref: "/dashboard/reports",
     items: [
       { label: "Reports home", href: "/dashboard/reports", icon: "bar-chart", description: "View business reports." },
       { label: "Audit reports", href: "/dashboard/audit", icon: "scroll", description: "Review system and payroll audit history." }
@@ -83,6 +96,9 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "admin",
     title: "Admin",
     icon: "shield",
+    // No dedicated /dashboard/admin landing route exists yet; land on the
+    // first Admin destination instead of opening a launcher or a 404.
+    landingHref: "/dashboard/users",
     items: [
       { label: "Users & roles", href: "/dashboard/users", icon: "user-check", description: "Manage access and permissions." },
       { label: "Email queue", href: "/dashboard/email-queue", icon: "inbox", description: "Monitor transactional email delivery, retry failures." },
