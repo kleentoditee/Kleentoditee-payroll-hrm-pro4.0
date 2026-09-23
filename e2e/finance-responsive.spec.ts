@@ -52,7 +52,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("every finance destination is reachable without page overflow", async ({ page }, testInfo) => {
-  const compact = (testInfo.project.use.viewport?.width ?? 1440) < 1024;
+  const compact = (testInfo.project.use.viewport?.width ?? 1440) < 1280;
 
   for (const route of FINANCE_ROUTES) {
     await page.goto(route.path);
@@ -73,7 +73,7 @@ test("every finance destination is reachable without page overflow", async ({ pa
   await capture(page, testInfo, "bank-statements");
 });
 
-test("sidebar keeps finance grouped without losing destinations", async ({ page }, testInfo) => {
+test("sidebar stays workspace-only while All Apps preserves destinations", async ({ page }, testInfo) => {
   await page.goto("/dashboard/finance/statements");
   const compact = (testInfo.project.use.viewport?.width ?? 1440) < 1024;
 
@@ -84,11 +84,11 @@ test("sidebar keeps finance grouped without losing destinations", async ({ page 
 
   const workspaceNav = page.getByRole("navigation", { name: "Workspaces" });
   await expect(workspaceNav).toBeVisible();
-  for (const section of ["Overview", "Sales", "Purchases", "Banking", "Accounting", "Reports & compliance"]) {
-    await expect(workspaceNav.getByRole("link", { name: section, exact: true })).toBeVisible();
+  for (const workspace of ["Home", "People", "Time", "Payroll", "Finance", "Reports", "Admin"]) {
+    await expect(workspaceNav.getByRole("link", { name: workspace, exact: true })).toBeVisible();
   }
-  await expect(workspaceNav.getByRole("link", { name: "Banking", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(workspaceNav.getByRole("link", { name: "Overview", exact: true })).not.toHaveAttribute("aria-current", "page");
+  await expect(workspaceNav.getByRole("link")).toHaveCount(7);
+  await expect(workspaceNav.getByRole("link", { name: "Finance", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(workspaceNav.getByRole("link", { name: "Invoices", exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "All apps" }).click();

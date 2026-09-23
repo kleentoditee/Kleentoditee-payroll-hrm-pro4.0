@@ -61,7 +61,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       {!isOverview && !isNestedRecordRoute ? <FinanceBreadcrumbs items={crumbs} /> : null}
 
       {/* Desktop: six compact section controls. */}
-      <nav aria-label="Finance sections" className="hidden flex-wrap gap-2 lg:flex">
+      <nav aria-label="Finance sections" className="hidden flex-wrap gap-2 xl:flex">
         {FINANCE_SECTIONS.map((entry) => (
           <Link
             key={entry.id}
@@ -75,7 +75,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       </nav>
 
       {/* Tablet and phone: compact disclosure — never all destinations at once. */}
-      <div className="lg:hidden">
+      <div className="xl:hidden">
         <button
           ref={menuButtonRef}
           type="button"
@@ -132,7 +132,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       {/* Secondary navigation: only the active section's destinations. */}
       {section.items.length > 0 ? (
         <>
-          <label className="block text-sm font-medium text-slate-700 lg:hidden">
+          <label className="block text-sm font-medium text-slate-700 xl:hidden">
             {section.label} page
             <select
               value={activeItem?.href ?? section.items[0]?.href ?? ""}
@@ -144,7 +144,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
               ))}
             </select>
           </label>
-          <nav aria-label={`${section.label} pages`} className="hidden border-b border-slate-200 pb-3 lg:block">
+          <nav aria-label={`${section.label} pages`} className="hidden border-b border-slate-200 pb-3 xl:block">
             <div className="flex flex-wrap gap-2">
               {section.items.map((item) => (
                 <Link

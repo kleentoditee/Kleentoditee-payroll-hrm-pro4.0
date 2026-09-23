@@ -50,7 +50,7 @@ export function NavPanel({
         <CreateMenu userRoles={userRoles} idPrefix={idPrefix} onNavigate={onNavigate} />
       </div>
 
-      <NavTree pathname={pathname} idPrefix={idPrefix} onNavigate={onNavigate} />
+      <NavTree pathname={pathname} onNavigate={onNavigate} />
 
       <div className="shrink-0 border-t border-slate-100 p-2">
         <button
