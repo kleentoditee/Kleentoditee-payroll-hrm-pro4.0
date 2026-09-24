@@ -2,10 +2,11 @@
 
 **Created:** 2026-09-23
 **Repository:** `C:\Kleentoditee Payroll HRM\Kleentoditee-payroll-hrm-pro4.0`
-**Current branch:** `kimi/finance-nav-responsive-rebuild`
+**Current branch:** `codex/consolidate-live-build`
 **Current committed HEAD at initial review:** `4f1fdb156ffa46c68bd917efc91be84632e5d6dd`
 **Completed implementation HEAD:** `506fcf4` (handoff documentation continues in later commits)
-**Pull request:** [#7 - feat(finance): finish responsive navigation and finance workflows](https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/7)
+**Merged integration HEAD before this record update:** `4851842323327e75d504eff781b81f40793d8f62`
+**Pull request:** [#7 - feat(finance): finish responsive navigation and finance workflows](https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/7) (merged)
 **Purpose:** Recover Kimi K3's unfinished finance/navigation batch, finish it safely, and continue through evidence-based release readiness in bounded Codex work sessions.
 
 ## Instructions to ChatGPT Codex
@@ -29,7 +30,7 @@ Committed work:
 
 The branch contains approximately 5,008 inserted lines and 2,540 removed lines across 43 committed paths compared with `0874946`.
 
-At the time of the initial review, the branch had not been pushed and the original Completion Record remained entirely `Pending`. Recovery and implementation are now complete, the full local release gate passes, and the branch is open for review in PR #7.
+At the time of the initial review, the branch had not been pushed and the original Completion Record remained entirely `Pending`. Recovery, implementation, review, and integration are now complete. The full local release gate passed and GitHub recorded PR #7 as merged into `codex/consolidate-live-build` at 2026-09-24 00:16 UTC (2026-09-23 local time).
 
 ## Exact Point Where Kimi Stopped
 
@@ -287,8 +288,8 @@ Update this section at the end of every Codex work window.
 
 ### Current Working-Tree Handoff
 
-- **Branch:** `kimi/finance-nav-responsive-rebuild`
-- **HEAD before this documentation update:** `506fcf4`
+- **Branch:** `codex/consolidate-live-build`
+- **Merged integration HEAD before this documentation update:** `4851842323327e75d504eff781b81f40793d8f62`
 - **Dirty paths:** Only the two dated documentation records while this completion evidence is being written
 - **Known failing code gate:** None
 - **Last verified API suite:** 226/226
@@ -297,5 +298,5 @@ Update this section at the end of every Codex work window.
 - **Database state:** 19 migrations; schema up to date; readiness database check passes
 - **Configuration blockers:** SMTP not configured; document storage is local; production deployment and backup/restore are not yet rehearsed
 - **Security audit:** Four high transitive Prisma-chain advisories are disclosed and deferred to the separate breaking-upgrade batch
-- **Remote state:** Branch `kimi/finance-nav-responsive-rebuild` is pushed to `origin`. PR [#7](https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/7) is open against `codex/consolidate-live-build` and attached to the Codex task. The automated Codex review completed with three P2 comments, all resolved by `506fcf4`; CodeRabbit auto-review was skipped because the target is not the repository default branch.
-- **Next single action:** Confirm the updated PR checks are green, then merge PR #7 into `codex/consolidate-live-build` after reviewer approval
+- **Remote state:** PR [#7](https://github.com/kleentoditee/Kleentoditee-payroll-hrm-pro4.0/pull/7) is merged into `codex/consolidate-live-build`. GitHub reports merged commit `4851842323327e75d504eff781b81f40793d8f62`. The automated Codex review completed with three P2 comments, all resolved by `506fcf4`; CodeRabbit auto-review was skipped because the target is not the repository default branch.
+- **Next single action:** Begin the production deployment gate by configuring SMTP, durable document storage, and backup/restore in the selected host; then run the owner-supplied QuickBooks cutover rehearsal and sign-off
